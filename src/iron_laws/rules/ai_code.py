@@ -42,6 +42,7 @@ class AiRule(BaseRule):
 
 class HardcodedConfigRule(AiRule):
     rule_id = "AI-101"
+    sensitive_snippet = True
     name = "하드코딩된 설정값(URL·IP·경로·포트) 탐지"
     iron_law = IronLaw.LAW_1
     severity = Severity.MEDIUM
@@ -136,6 +137,7 @@ class HardcodedConfigRule(AiRule):
 
 class SecretDefaultFallbackRule(AiRule):
     rule_id = "AI-102"
+    sensitive_snippet = True
     name = "비밀 값의 기본값 폴백 탐지"
     iron_law = IronLaw.LAW_1
     severity = Severity.HIGH
@@ -178,6 +180,7 @@ class SecretDefaultFallbackRule(AiRule):
 
 class FrontendSecretRule(LineRegexRule, AiRule):
     rule_id = "AI-103"
+    sensitive_snippet = True
     name = "프론트엔드에 노출되는 비밀 환경변수 탐지"
     iron_law = IronLaw.LAW_1
     severity = Severity.HIGH
@@ -493,6 +496,7 @@ class DevOpsConfigRule(AiRule):
 
 class CommittedSecretFilesRule(AiRule):
     rule_id = "AI-104"
+    sensitive_snippet = True
     name = "저장소에 포함된 비밀 파일(.env, 개인키) 탐지"
     iron_law = IronLaw.LAW_1
     severity = Severity.CRITICAL
@@ -680,7 +684,7 @@ class UnauthenticatedEndpointRule(BaseRule):
             methods = [method_m.group(1)] if method_m else [x.lower() for x in re.findall(r"['\"](GET|POST|PUT|PATCH|DELETE)['\"]", rtext)] or ["get"]
             if not any(self._sensitive(mm, path) for mm in methods):
                 continue
-            scope = src.text_of(node)
+            scope = src.code_of(node)
             if AUTH_MARKER.search(scope):
                 continue
             found.append(self._make(src, definition, f"{' '.join(m.upper() for m in methods)} {path or '(경로 미상)'} 핸들러"))
@@ -698,7 +702,7 @@ class UnauthenticatedEndpointRule(BaseRule):
             path = string_value(src, path_arg)
             if not self._sensitive(m.group(1), path):
                 continue
-            scope = src.text_of(call.node)
+            scope = src.code_of(call.node)
             if AUTH_MARKER.search(scope):
                 continue
             file_has_global = re.search(r"(?:app|router)\.use\(\s*(?:['\"][^'\"]*['\"]\s*,\s*)?(?:\w*auth\w*|passport\.authenticate|jwt\w*|protect|verifyToken)", src.code_text, re.IGNORECASE)
@@ -715,7 +719,7 @@ class UnauthenticatedEndpointRule(BaseRule):
         if class_secured:
             return found
         for fn in iter_functions(src):
-            text = src.text_of(fn.node)
+            text = src.code_of(fn.node)
             head = self._head(src, fn)
             m = re.search(r"@(Get|Post|Put|Patch|Delete|Request)Mapping(?:\(([^)]*)\))?", head)
             if not m:
@@ -737,7 +741,7 @@ class UnauthenticatedEndpointRule(BaseRule):
         if re.search(r"\[Authorize\b", src.text.split("class ", 1)[0]):
             return found
         for fn in iter_functions(src):
-            text = src.text_of(fn.node)
+            text = src.code_of(fn.node)
             head = self._head(src, fn)
             m = re.search(r"\[Http(Get|Post|Put|Patch|Delete)(?:\(\s*\"([^\"]*)\"\s*\))?\]", head)
             if not m:

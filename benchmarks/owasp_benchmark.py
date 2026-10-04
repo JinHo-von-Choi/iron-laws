@@ -3,7 +3,7 @@ OWASP Benchmark(Java) 정확도 측정 도구
 
 사용법:
     git clone --depth 1 https://github.com/OWASP-Benchmark/BenchmarkJava.git
-    uv run python benchmarks/owasp_benchmark.py BenchmarkJava [all|confirmed]
+    uv run python benchmarks/owasp_benchmark.py BenchmarkJava [all|confirmed] [원시결과.json]
 
 confirmed는 외부 입력 도달이 코드에서 확인된 지적(확정)만, all은 확인 필요 지적까지 포함한다.
 벤치마크 코드는 저장소에 포함하지 않는다.
@@ -12,11 +12,13 @@ confirmed는 외부 입력 도달이 코드에서 확인된 지적(확정)만, a
 """
 
 import csv
+import json
+import subprocess
 import sys
 from collections import Counter, defaultdict
 from pathlib import Path
 
-from iron_laws.core.scanner import AuditScanner
+from iron_laws.core.scanner import AuditScanner, tool_version
 
 CATEGORY_RULES = {
     "sqli": {"IL-501"},
@@ -42,7 +44,14 @@ def load_expected(root: Path) -> dict[str, tuple[str, bool]]:
     return expected
 
 
-def main(root: Path, mode: str) -> None:
+def dataset_commit(root: Path) -> str:
+    try:
+        return subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"], capture_output=True, text=True, check=True).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return "(git 정보 없음)"
+
+
+def main(root: Path, mode: str, raw_output: Path | None = None) -> None:
     code = root / "src/main/java/org/owasp/benchmark/testcode"
     report = AuditScanner(code).scan()
     found: dict[str, set[str]] = defaultdict(set)
@@ -58,13 +67,29 @@ def main(root: Path, mode: str) -> None:
         key = ("TP" if hit else "FN") if real else ("FP" if hit else "TN")
         stats[category][key] += 1
 
+    commit = dataset_commit(root)
+    print(f"도구 {tool_version()} · 벤치마크 커밋 {commit}")
     print(f"파일 {report.summary.total_files_scanned}개, 모드 {mode}")
+    raw: dict = {
+        "tool_version": tool_version(),
+        "dataset_commit": commit,
+        "mode": mode,
+        "command": f"benchmarks/owasp_benchmark.py <BenchmarkJava 폴더> {mode}",
+        "files": report.summary.total_files_scanned,
+        "categories": {},
+    }
     for category, k in sorted(stats.items()):
         tp, fn, fp, tn = k["TP"], k["FN"], k["FP"], k["TN"]
         tpr = tp / (tp + fn) if tp + fn else 0.0
         fpr = fp / (fp + tn) if fp + tn else 0.0
+        raw["categories"][category] = {"TP": tp, "FN": fn, "FP": fp, "TN": tn, "TPR": round(tpr, 4), "FPR": round(fpr, 4)}
         print(f"{category:13s} TP={tp:4d} FN={fn:4d} FP={fp:4d} TN={tn:4d} TPR={tpr:6.1%} FPR={fpr:6.1%} 점수={tpr - fpr:+7.1%}")
 
 
+    if raw_output is not None:
+        raw_output.write_text(json.dumps(raw, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        print(f"원시 결과 저장: {raw_output}")
+
+
 if __name__ == "__main__":
-    main(Path(sys.argv[1]), sys.argv[2] if len(sys.argv) > 2 else "confirmed")
+    main(Path(sys.argv[1]), sys.argv[2] if len(sys.argv) > 2 else "confirmed", Path(sys.argv[3]) if len(sys.argv) > 3 else None)

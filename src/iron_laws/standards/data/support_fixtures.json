@@ -1,0 +1,994 @@
+{
+ "AI-101": {
+  "javascript": {
+   "negative": 1,
+   "positive": 0
+  },
+  "python": {
+   "negative": 3,
+   "positive": 5
+  }
+ },
+ "AI-102": {
+  "javascript": {
+   "negative": 0,
+   "positive": 1
+  },
+  "kind:compose": {
+   "negative": 1,
+   "positive": 1
+  },
+  "python": {
+   "negative": 1,
+   "positive": 1
+  }
+ },
+ "AI-103": {
+  "kind:env": {
+   "negative": 1,
+   "positive": 1
+  },
+  "typescript": {
+   "negative": 0,
+   "positive": 1
+  }
+ },
+ "AI-104": {
+  "kind:env": {
+   "negative": 3,
+   "positive": 1
+  },
+  "kind:text": {
+   "negative": 1,
+   "positive": 1
+  }
+ },
+ "AI-105": {
+  "java": {
+   "negative": 0,
+   "positive": 1
+  },
+  "javascript": {
+   "negative": 1,
+   "positive": 1
+  },
+  "python": {
+   "negative": 0,
+   "positive": 1
+  }
+ },
+ "AI-106": {
+  "kind:properties": {
+   "negative": 0,
+   "positive": 1
+  },
+  "python": {
+   "negative": 0,
+   "positive": 1
+  }
+ },
+ "AI-108": {
+  "javascript": {
+   "negative": 2,
+   "positive": 0
+  },
+  "kind:rules": {
+   "negative": 0,
+   "positive": 1
+  },
+  "kind:sql": {
+   "negative": 1,
+   "positive": 1
+  }
+ },
+ "AI-109": {
+  "javascript": {
+   "negative": 0,
+   "positive": 1
+  }
+ },
+ "AI-110": {
+  "kind:actions": {
+   "negative": 0,
+   "positive": 1
+  },
+  "kind:compose": {
+   "negative": 1,
+   "positive": 1
+  },
+  "kind:docker": {
+   "negative": 1,
+   "positive": 1
+  }
+ },
+ "AI-111": {
+  "kind:json": {
+   "negative": 1,
+   "positive": 3
+  },
+  "kind:text": {
+   "negative": 0,
+   "positive": 1
+  }
+ },
+ "AI-112": {
+  "python": {
+   "negative": 1,
+   "positive": 2
+  }
+ },
+ "AI-113": {
+  "javascript": {
+   "negative": 0,
+   "positive": 1
+  },
+  "python": {
+   "negative": 1,
+   "positive": 1
+  }
+ },
+ "AI-114": {
+  "kind:json": {
+   "negative": 0,
+   "positive": 1
+  }
+ },
+ "AI-115": {
+  "java": {
+   "negative": 1,
+   "positive": 1
+  },
+  "javascript": {
+   "negative": 2,
+   "positive": 2
+  },
+  "python": {
+   "negative": 1,
+   "positive": 1
+  }
+ },
+ "AI-118": {
+  "java": {
+   "negative": 1,
+   "positive": 1
+  }
+ },
+ "AI-119": {
+  "java": {
+   "negative": 2,
+   "positive": 0
+  },
+  "kind:xml": {
+   "negative": 1,
+   "positive": 1
+  }
+ },
+ "AI-120": {
+  "java": {
+   "negative": 1,
+   "positive": 1
+  },
+  "javascript": {
+   "negative": 0,
+   "positive": 1
+  }
+ },
+ "AI-121": {
+  "kind:doc": {
+   "negative": 2,
+   "positive": 0
+  },
+  "kind:docker": {
+   "negative": 4,
+   "positive": 2
+  },
+  "kind:version": {
+   "negative": 0,
+   "positive": 2
+  },
+  "kind:xml": {
+   "negative": 4,
+   "positive": 3
+  },
+  "kind:yaml": {
+   "negative": 1,
+   "positive": 0
+  }
+ },
+ "AI-122": {
+  "java": {
+   "negative": 1,
+   "positive": 1
+  }
+ },
+ "ARC-201": {
+  "python": {
+   "negative": 0,
+   "positive": 3
+  }
+ },
+ "ARC-202": {
+  "python": {
+   "negative": 1,
+   "positive": 1
+  }
+ },
+ "ARC-203": {
+  "javascript": {
+   "negative": 1,
+   "positive": 1
+  },
+  "python": {
+   "negative": 0,
+   "positive": 1
+  }
+ },
+ "ARC-204": {
+  "python": {
+   "negative": 1,
+   "positive": 1
+  }
+ },
+ "ARC-205": {
+  "python": {
+   "negative": 0,
+   "positive": 1
+  }
+ },
+ "ARC-206": {
+  "python": {
+   "negative": 1,
+   "positive": 1
+  }
+ },
+ "ARC-207": {
+  "csharp": {
+   "negative": 1,
+   "positive": 1
+  },
+  "java": {
+   "negative": 3,
+   "positive": 1
+  },
+  "python": {
+   "negative": 2,
+   "positive": 2
+  },
+  "typescript": {
+   "negative": 0,
+   "positive": 2
+  }
+ },
+ "ARC-208": {
+  "java": {
+   "negative": 1,
+   "positive": 1
+  }
+ },
+ "ARC-209": {
+  "java": {
+   "negative": 1,
+   "positive": 1
+  }
+ },
+ "ARC-210": {
+  "java": {
+   "negative": 1,
+   "positive": 1
+  }
+ },
+ "ARC-211": {
+  "java": {
+   "negative": 1,
+   "positive": 1
+  },
+  "python": {
+   "negative": 1,
+   "positive": 1
+  }
+ },
+ "ARC-212": {
+  "java": {
+   "negative": 1,
+   "positive": 2
+  },
+  "javascript": {
+   "negative": 1,
+   "positive": 1
+  }
+ },
+ "IL-101": {
+  "javascript": {
+   "negative": 1,
+   "positive": 2
+  },
+  "kind:env": {
+   "negative": 1,
+   "positive": 1
+  },
+  "kind:json": {
+   "negative": 1,
+   "positive": 0
+  },
+  "kind:shell": {
+   "negative": 1,
+   "positive": 1
+  },
+  "kind:template": {
+   "negative": 1,
+   "positive": 0
+  },
+  "kind:yaml": {
+   "negative": 2,
+   "positive": 1
+  },
+  "php": {
+   "negative": 1,
+   "positive": 0
+  },
+  "python": {
+   "negative": 5,
+   "positive": 4
+  },
+  "typescript": {
+   "negative": 0,
+   "positive": 1
+  }
+ },
+ "IL-102": {
+  "c": {
+   "negative": 2,
+   "positive": 0
+  },
+  "java": {
+   "negative": 1,
+   "positive": 2
+  },
+  "python": {
+   "negative": 2,
+   "positive": 2
+  }
+ },
+ "IL-103": {
+  "python": {
+   "negative": 1,
+   "positive": 1
+  }
+ },
+ "IL-104": {
+  "javascript": {
+   "negative": 1,
+   "positive": 1
+  },
+  "python": {
+   "negative": 1,
+   "positive": 1
+  }
+ },
+ "IL-105": {
+  "python": {
+   "negative": 0,
+   "positive": 1
+  }
+ },
+ "IL-106": {
+  "go": {
+   "negative": 0,
+   "positive": 1
+  },
+  "javascript": {
+   "negative": 0,
+   "positive": 1
+  },
+  "python": {
+   "negative": 1,
+   "positive": 1
+  }
+ },
+ "IL-107": {
+  "python": {
+   "negative": 1,
+   "positive": 1
+  }
+ },
+ "IL-108": {
+  "python": {
+   "negative": 1,
+   "positive": 2
+  }
+ },
+ "IL-109": {
+  "python": {
+   "negative": 1,
+   "positive": 1
+  }
+ },
+ "IL-110": {
+  "python": {
+   "negative": 0,
+   "positive": 1
+  }
+ },
+ "IL-111": {
+  "python": {
+   "negative": 0,
+   "positive": 1
+  }
+ },
+ "IL-112": {
+  "python": {
+   "negative": 0,
+   "positive": 1
+  }
+ },
+ "IL-113": {
+  "kind:docker": {
+   "negative": 0,
+   "positive": 1
+  }
+ },
+ "IL-114": {
+  "kind:shell": {
+   "negative": 1,
+   "positive": 1
+  }
+ },
+ "IL-301": {
+  "csharp": {
+   "negative": 1,
+   "positive": 1
+  },
+  "go": {
+   "negative": 2,
+   "positive": 2
+  },
+  "java": {
+   "negative": 1,
+   "positive": 3
+  },
+  "javascript": {
+   "negative": 2,
+   "positive": 6
+  },
+  "php": {
+   "negative": 0,
+   "positive": 2
+  },
+  "python": {
+   "negative": 4,
+   "positive": 4
+  },
+  "rust": {
+   "negative": 1,
+   "positive": 3
+  }
+ },
+ "IL-302": {
+  "csharp": {
+   "negative": 0,
+   "positive": 1
+  },
+  "java": {
+   "negative": 0,
+   "positive": 1
+  },
+  "javascript": {
+   "negative": 0,
+   "positive": 1
+  },
+  "kind:sql": {
+   "negative": 1,
+   "positive": 0
+  },
+  "python": {
+   "negative": 1,
+   "positive": 1
+  }
+ },
+ "IL-303": {
+  "java": {
+   "negative": 0,
+   "positive": 1
+  },
+  "javascript": {
+   "negative": 0,
+   "positive": 2
+  },
+  "python": {
+   "negative": 1,
+   "positive": 1
+  }
+ },
+ "IL-304": {
+  "java": {
+   "negative": 0,
+   "positive": 1
+  },
+  "python": {
+   "negative": 1,
+   "positive": 1
+  }
+ },
+ "IL-305": {
+  "go": {
+   "negative": 0,
+   "positive": 1
+  },
+  "javascript": {
+   "negative": 0,
+   "positive": 1
+  },
+  "python": {
+   "negative": 0,
+   "positive": 1
+  }
+ },
+ "IL-306": {
+  "go": {
+   "negative": 0,
+   "positive": 1
+  },
+  "java": {
+   "negative": 0,
+   "positive": 1
+  },
+  "javascript": {
+   "negative": 1,
+   "positive": 1
+  },
+  "python": {
+   "negative": 1,
+   "positive": 1
+  }
+ },
+ "IL-307": {
+  "java": {
+   "negative": 1,
+   "positive": 2
+  },
+  "python": {
+   "negative": 3,
+   "positive": 1
+  }
+ },
+ "IL-501": {
+  "csharp": {
+   "negative": 1,
+   "positive": 1
+  },
+  "go": {
+   "negative": 2,
+   "positive": 2
+  },
+  "java": {
+   "negative": 1,
+   "positive": 1
+  },
+  "javascript": {
+   "negative": 2,
+   "positive": 2
+  },
+  "kind:xml": {
+   "negative": 1,
+   "positive": 1
+  },
+  "php": {
+   "negative": 1,
+   "positive": 1
+  },
+  "python": {
+   "negative": 4,
+   "positive": 3
+  },
+  "rust": {
+   "negative": 1,
+   "positive": 1
+  }
+ },
+ "IL-502": {
+  "csharp": {
+   "negative": 1,
+   "positive": 0
+  },
+  "go": {
+   "negative": 0,
+   "positive": 1
+  },
+  "java": {
+   "negative": 1,
+   "positive": 1
+  },
+  "javascript": {
+   "negative": 4,
+   "positive": 1
+  },
+  "php": {
+   "negative": 0,
+   "positive": 1
+  },
+  "python": {
+   "negative": 5,
+   "positive": 5
+  }
+ },
+ "IL-503": {
+  "javascript": {
+   "negative": 2,
+   "positive": 1
+  },
+  "php": {
+   "negative": 0,
+   "positive": 1
+  },
+  "python": {
+   "negative": 2,
+   "positive": 2
+  }
+ },
+ "IL-504": {
+  "go": {
+   "negative": 1,
+   "positive": 1
+  },
+  "java": {
+   "negative": 1,
+   "positive": 1
+  },
+  "javascript": {
+   "negative": 2,
+   "positive": 2
+  },
+  "php": {
+   "negative": 0,
+   "positive": 1
+  },
+  "python": {
+   "negative": 3,
+   "positive": 5
+  }
+ },
+ "IL-505": {
+  "java": {
+   "negative": 0,
+   "positive": 1
+  },
+  "javascript": {
+   "negative": 3,
+   "positive": 3
+  },
+  "kind:template": {
+   "negative": 1,
+   "positive": 3
+  },
+  "php": {
+   "negative": 1,
+   "positive": 1
+  },
+  "python": {
+   "negative": 1,
+   "positive": 1
+  }
+ },
+ "IL-506": {
+  "go": {
+   "negative": 0,
+   "positive": 2
+  },
+  "javascript": {
+   "negative": 3,
+   "positive": 2
+  },
+  "python": {
+   "negative": 2,
+   "positive": 3
+  }
+ },
+ "IL-507": {
+  "java": {
+   "negative": 0,
+   "positive": 1
+  },
+  "javascript": {
+   "negative": 0,
+   "positive": 1
+  },
+  "python": {
+   "negative": 1,
+   "positive": 1
+  }
+ },
+ "IL-508": {
+  "python": {
+   "negative": 1,
+   "positive": 1
+  }
+ },
+ "IL-509": {
+  "java": {
+   "negative": 2,
+   "positive": 4
+  },
+  "python": {
+   "negative": 0,
+   "positive": 1
+  }
+ },
+ "IL-510": {
+  "java": {
+   "negative": 0,
+   "positive": 1
+  },
+  "javascript": {
+   "negative": 1,
+   "positive": 1
+  },
+  "python": {
+   "negative": 1,
+   "positive": 1
+  }
+ },
+ "IL-511": {
+  "java": {
+   "negative": 0,
+   "positive": 1
+  }
+ },
+ "IL-512": {
+  "csharp": {
+   "negative": 1,
+   "positive": 0
+  },
+  "python": {
+   "negative": 1,
+   "positive": 1
+  }
+ },
+ "IL-513": {
+  "python": {
+   "negative": 1,
+   "positive": 1
+  }
+ },
+ "IL-514": {
+  "c": {
+   "negative": 3,
+   "positive": 3
+  }
+ },
+ "IL-515": {
+  "csharp": {
+   "negative": 0,
+   "positive": 1
+  },
+  "java": {
+   "negative": 0,
+   "positive": 1
+  },
+  "php": {
+   "negative": 0,
+   "positive": 1
+  },
+  "python": {
+   "negative": 2,
+   "positive": 2
+  }
+ },
+ "IL-516": {
+  "python": {
+   "negative": 1,
+   "positive": 1
+  }
+ },
+ "IL-517": {
+  "go": {
+   "negative": 1,
+   "positive": 0
+  },
+  "python": {
+   "negative": 1,
+   "positive": 1
+  }
+ },
+ "IL-518": {
+  "csharp": {
+   "negative": 1,
+   "positive": 1
+  },
+  "go": {
+   "negative": 1,
+   "positive": 1
+  },
+  "java": {
+   "negative": 1,
+   "positive": 1
+  },
+  "python": {
+   "negative": 2,
+   "positive": 1
+  }
+ },
+ "IL-519": {
+  "c": {
+   "negative": 1,
+   "positive": 1
+  },
+  "python": {
+   "negative": 0,
+   "positive": 1
+  }
+ },
+ "IL-520": {
+  "javascript": {
+   "negative": 0,
+   "positive": 1
+  },
+  "php": {
+   "negative": 0,
+   "positive": 1
+  },
+  "python": {
+   "negative": 2,
+   "positive": 2
+  }
+ },
+ "IL-521": {
+  "java": {
+   "negative": 1,
+   "positive": 1
+  }
+ },
+ "IL-522": {
+  "java": {
+   "negative": 1,
+   "positive": 1
+  }
+ },
+ "IL-523": {
+  "python": {
+   "negative": 0,
+   "positive": 1
+  }
+ },
+ "IL-524": {
+  "c": {
+   "negative": 0,
+   "positive": 1
+  }
+ },
+ "IL-525": {
+  "csharp": {
+   "negative": 0,
+   "positive": 1
+  },
+  "java": {
+   "negative": 1,
+   "positive": 1
+  },
+  "javascript": {
+   "negative": 1,
+   "positive": 1
+  },
+  "python": {
+   "negative": 3,
+   "positive": 2
+  }
+ },
+ "IL-526": {
+  "java": {
+   "negative": 0,
+   "positive": 1
+  },
+  "python": {
+   "negative": 1,
+   "positive": 1
+  }
+ },
+ "IL-527": {
+  "java": {
+   "negative": 0,
+   "positive": 1
+  },
+  "python": {
+   "negative": 1,
+   "positive": 1
+  }
+ },
+ "IL-528": {
+  "c": {
+   "negative": 1,
+   "positive": 1
+  }
+ },
+ "IL-529": {
+  "c": {
+   "negative": 2,
+   "positive": 1
+  }
+ },
+ "IL-530": {
+  "java": {
+   "negative": 1,
+   "positive": 1
+  },
+  "python": {
+   "negative": 0,
+   "positive": 1
+  }
+ },
+ "IL-531": {
+  "java": {
+   "negative": 1,
+   "positive": 1
+  },
+  "python": {
+   "negative": 0,
+   "positive": 1
+  }
+ },
+ "IL-532": {
+  "javascript": {
+   "negative": 0,
+   "positive": 1
+  },
+  "php": {
+   "negative": 0,
+   "positive": 1
+  },
+  "python": {
+   "negative": 1,
+   "positive": 1
+  }
+ },
+ "IL-533": {
+  "javascript": {
+   "negative": 2,
+   "positive": 3
+  }
+ },
+ "TYP-301": {
+  "kind:json": {
+   "negative": 0,
+   "positive": 1
+  },
+  "typescript": {
+   "negative": 1,
+   "positive": 3
+  }
+ },
+ "TYP-302": {
+  "python": {
+   "negative": 1,
+   "positive": 2
+  }
+ },
+ "TYP-303": {
+  "java": {
+   "negative": 1,
+   "positive": 2
+  }
+ },
+ "TYP-304": {
+  "csharp": {
+   "negative": 0,
+   "positive": 2
+  }
+ },
+ "TYP-305": {
+  "go": {
+   "negative": 0,
+   "positive": 2
+  },
+  "javascript": {
+   "negative": 0,
+   "positive": 1
+  },
+  "php": {
+   "negative": 0,
+   "positive": 2
+  },
+  "rust": {
+   "negative": 1,
+   "positive": 2
+  }
+ }
+}

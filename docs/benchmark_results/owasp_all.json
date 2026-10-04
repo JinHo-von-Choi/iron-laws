@@ -1,0 +1,97 @@
+{
+  "tool_version": "1.1.0",
+  "dataset_commit": "8b67a88d73b2594570fc21150705283de884620b",
+  "mode": "all",
+  "command": "benchmarks/owasp_benchmark.py <BenchmarkJava 폴더> all",
+  "files": 2740,
+  "categories": {
+    "cmdi": {
+      "TP": 64,
+      "FN": 62,
+      "FP": 46,
+      "TN": 79,
+      "TPR": 0.5079,
+      "FPR": 0.368
+    },
+    "crypto": {
+      "TP": 130,
+      "FN": 0,
+      "FP": 27,
+      "TN": 89,
+      "TPR": 1.0,
+      "FPR": 0.2328
+    },
+    "hash": {
+      "TP": 89,
+      "FN": 40,
+      "FP": 0,
+      "TN": 107,
+      "TPR": 0.6899,
+      "FPR": 0.0
+    },
+    "ldapi": {
+      "TP": 27,
+      "FN": 0,
+      "FP": 32,
+      "TN": 0,
+      "TPR": 1.0,
+      "FPR": 1.0
+    },
+    "pathtraver": {
+      "TP": 118,
+      "FN": 15,
+      "FP": 84,
+      "TN": 51,
+      "TPR": 0.8872,
+      "FPR": 0.6222
+    },
+    "securecookie": {
+      "TP": 36,
+      "FN": 0,
+      "FP": 0,
+      "TN": 31,
+      "TPR": 1.0,
+      "FPR": 0.0
+    },
+    "sqli": {
+      "TP": 218,
+      "FN": 54,
+      "FP": 173,
+      "TN": 59,
+      "TPR": 0.8015,
+      "FPR": 0.7457
+    },
+    "trustbound": {
+      "TP": 65,
+      "FN": 18,
+      "FP": 32,
+      "TN": 11,
+      "TPR": 0.7831,
+      "FPR": 0.7442
+    },
+    "weakrand": {
+      "TP": 0,
+      "FN": 218,
+      "FP": 0,
+      "TN": 275,
+      "TPR": 0.0,
+      "FPR": 0.0
+    },
+    "xpathi": {
+      "TP": 15,
+      "FN": 0,
+      "FP": 20,
+      "TN": 0,
+      "TPR": 1.0,
+      "FPR": 1.0
+    },
+    "xss": {
+      "TP": 212,
+      "FN": 34,
+      "FP": 86,
+      "TN": 123,
+      "TPR": 0.8618,
+      "FPR": 0.4115
+    }
+  }
+}

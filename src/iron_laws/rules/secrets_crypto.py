@@ -98,6 +98,7 @@ def _jwt_role(token_payload: str) -> str:
 
 class HardcodedSecretRule(BaseRule):
     rule_id = "IL-101"
+    sensitive_snippet = True
     name = "하드코딩된 패스워드 및 비밀키 탐지"
     iron_law = IronLaw.LAW_1
     severity = Severity.CRITICAL
@@ -239,6 +240,7 @@ class HardcodedSecretRule(BaseRule):
 
 class HardcodedCredentialCompareRule(BaseRule):
     rule_id = "IL-108"
+    sensitive_snippet = True
     name = "비밀번호/토큰을 문자열 상수와 비교하는 인증 코드 탐지"
     iron_law = IronLaw.LAW_1
     severity = Severity.CRITICAL
@@ -581,6 +583,7 @@ class WeakPasswordPolicyRule(BaseRule):
 
 class CommentSensitiveInfoRule(BaseRule):
     rule_id = "IL-111"
+    sensitive_snippet = True
     name = "주석 안의 시스템 주요정보 탐지"
     iron_law = IronLaw.LAW_1
     severity = Severity.MEDIUM

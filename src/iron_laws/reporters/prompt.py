@@ -4,7 +4,7 @@
 작성일: 2026-10-04
 """
 
-from iron_laws.core.models import AuditReport, Severity, Violation
+from iron_laws.core.models import AuditReport, BaselineStatus, Confidence, Severity, Violation
 
 SEVERITY_ORDER = {Severity.CRITICAL: 0, Severity.HIGH: 1, Severity.MEDIUM: 2, Severity.LOW: 3}
 
@@ -17,15 +17,19 @@ PREAMBLE = """아래는 보안·품질 점검 도구(오철칙)가 이 프로젝
 - 타입 검사를 any, type: ignore, 강제 캐스팅으로 덮지 않습니다. 실제 타입을 정의합니다.
 - 같은 일을 하는 함수가 이미 있으면 새로 만들지 말고 기존 것을 재사용하거나 한 곳으로 통합합니다.
 - 설정값(주소, 포트, 경로)은 코드에 박지 않고 환경변수나 설정 파일로 분리합니다.
+- '확인 필요'로 표시된 문제는 도구가 확정하지 못한 것입니다. 먼저 외부 입력이 실제로 그 코드에 닿는지 흐름을 확인하고, 위험이 사실일 때만 고칩니다. 아니라면 고치지 말고 근거를 한 줄 남깁니다.
 - 수정 후 관련 테스트를 실행합니다. 테스트가 없으면 수정한 동작을 검증하는 테스트를 추가합니다.
 """
 
 
 def _entry(index: int, v: Violation) -> str:
+    label = "확인 필요" if v.confidence is Confidence.REVIEW else "확정"
     lines = [
-        f"[문제 {index}] {v.severity.value} · {v.rule_id} {v.rule_name} · {v.file_path.as_posix()}:{v.line_number}",
+        f"[문제 {index}] {v.severity.value} · {label} · {v.rule_id} {v.rule_name} · {v.file_path.as_posix()}:{v.line_number}",
         f"- 문제: {v.message}",
     ]
+    if v.confidence is Confidence.REVIEW:
+        lines.append("- 먼저 할 일: 이 지적이 실제로 위험한지 코드 흐름을 확인한 뒤 수정 여부를 정합니다.")
     if v.plain:
         lines.append(f"- 왜 위험한가: {v.plain}")
     if v.how_to_fix:
@@ -36,8 +40,11 @@ def _entry(index: int, v: Violation) -> str:
 
 
 def generate_fix_prompt(report: AuditReport, limit: int = 40) -> str:
+    candidates = report.violations
+    if report.summary.new_count is not None:
+        candidates = [v for v in candidates if v.baseline_status in (BaselineStatus.NEW, BaselineStatus.REVIEW)]
     ordered = sorted(
-        report.violations,
+        candidates,
         key=lambda v: (SEVERITY_ORDER[v.severity], str(v.file_path), v.line_number),
     )
     if not ordered:

@@ -13,6 +13,7 @@ from tree_sitter import Node
 
 from iron_laws.engine.languages import Lang, detect_language, get_parser
 
+TEMPLATE_SUFFIXES = {".html", ".htm", ".jinja", ".jinja2", ".j2", ".cshtml", ".razor", ".twig", ".ejs"}
 HASH_COMMENT_KINDS = {"shell", "yaml", "env", "properties", "docker", "compose", "actions"}
 
 
@@ -49,6 +50,8 @@ def detect_kind(rel_path: Path) -> str:
         return "doc"
     if suffix == ".gradle":
         return "gradle"
+    if suffix in TEMPLATE_SUFFIXES:
+        return "template"
     if suffix == ".txt":
         return "text"
     if detect_language(rel_path) is not None:
@@ -103,7 +106,7 @@ class SourceFile:
 
     def release(self) -> None:
         """메모리 절약을 위해 구문 트리와 파생 캐시를 버린다. 필요하면 다시 파싱한다."""
-        for name in ("root", "nodes", "comment_nodes", "_memo", "_taint_cache", "_defs_cache"):
+        for name in ("root", "nodes", "comment_nodes", "code_data", "_memo", "_taint_cache", "_defs_cache", "_events_cache"):
             self.__dict__.pop(name, None)
 
     def text_of(self, node: Node) -> str:
@@ -136,15 +139,29 @@ class SourceFile:
         ]
 
     @cached_property
+    def code_data(self) -> bytes | None:
+        """구문 분석된 파일의 주석을 공백으로 지운 바이트열. 위치는 원본과 같다."""
+        if self.root is None:
+            return None
+        data = bytearray(self.data)
+        for node in [*self.comment_nodes, *self._bare_string_statements()]:
+            for i in range(node.start_byte, node.end_byte):
+                if data[i] not in (10, 13):
+                    data[i] = 32
+        return bytes(data)
+
+    def code_of(self, node: Node) -> str:
+        """node 범위의 원문에서 주석을 지운 텍스트. 주석에 적힌 낱말이 코드로 오인되지 않게 한다."""
+        data = self.code_data
+        if data is None:
+            return self.text_of(node)
+        return data[node.start_byte : node.end_byte].decode("utf-8", errors="replace")
+
+    @cached_property
     def code_text(self) -> str:
         """주석을 공백으로 지운 본문. 줄 번호와 위치는 그대로 유지된다."""
-        if self.root is not None:
-            data = bytearray(self.data)
-            for node in [*self.comment_nodes, *self._bare_string_statements()]:
-                for i in range(node.start_byte, node.end_byte):
-                    if data[i] not in (10, 13):
-                        data[i] = 32
-            return data.decode("utf-8", errors="replace")
+        if self.code_data is not None:
+            return self.code_data.decode("utf-8", errors="replace")
         if self.kind in HASH_COMMENT_KINDS:
             return "\n".join(re.sub(r"(^|\s)#.*$", r"\1", line) for line in self.lines)
         if self.kind == "sql":

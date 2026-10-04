@@ -17,6 +17,13 @@ BASIS_NONE = "오철칙 자체 품질 규칙 (참고 가이드 항목 외)"
 CONFIDENCE_LABEL = {Confidence.CONFIRMED: "확정", Confidence.REVIEW: "확인 필요"}
 
 
+_ROLE = {"source": "입력", "propagation": "전파", "sink": "싱크"}
+_BASELINE_LABEL = {"new": "신규", "existing": "기존(승인된 부채)", "review": "규칙 의미 변경으로 재검토 필요"}
+
+
+_STATUS_LABEL = {"complete": "완료", "incomplete": "불완전 (일부를 점검하지 못함)", "empty": "점검한 파일 없음"}
+
+
 def _basis(v: Violation) -> str:
     return v.gov_standard.clause_id if v.gov_standard else BASIS_NONE
 
@@ -32,6 +39,11 @@ def _detail(idx: int, v: Violation) -> list[str]:
         md.append(f"- **적용 기준**: {BASIS_NONE}")
     md.append(f"- **위치**: `{v.file_path}:{v.line_number}`")
     md.append(f"- **현황**: {v.message}")
+    if v.evidence:
+        flow = " → ".join(f"{_ROLE.get(e.role, e.role)} `{e.file_path}:{e.line}`" for e in v.evidence)
+        md.append(f"- **판단 근거**: {flow}")
+    if v.baseline_status is not None:
+        md.append(f"- **기준선 대비**: {_BASELINE_LABEL[v.baseline_status.value]}")
     if v.plain:
         md.append(f"- **왜 문제인가**: {v.plain}")
     md.append("\n**[해당 코드]**")
@@ -87,7 +99,14 @@ def generate_markdown_report(report: AuditReport, rules: list[BaseRule] | None =
     md.append(f"- **점검 대상 경로**: `{report.target_path}`")
     md.append(f"- **점검 주체**: {report.auditor}")
     md.append(f"- **점검일자**: {report.audit_date}")
-    md.append(f"- **종합 등급**: **{s.grade}** ({status_str})\n")
+    md.append(f"- **종합 등급**: **{s.grade}** ({status_str})")
+    meta = report.metadata
+    md.append(f"- **점검 완료 상태**: {_STATUS_LABEL.get(s.scan_status, s.scan_status)}")
+    if meta.get("tool_version"):
+        md.append(f"- **도구·규칙셋**: 오철칙 {meta['tool_version']} / 규칙 {meta.get('ruleset', {}).get('count', '?')}개 (해시 {meta.get('ruleset', {}).get('hash', '?')})")
+    if meta.get("config_source"):
+        md.append(f"- **설정**: {meta['config_source']} (설정 해시 {meta.get('config_hash', '?')})")
+    md.append("")
     md.append("---\n")
 
     md.append("## 1. 점검 요약 통계\n")
@@ -103,6 +122,20 @@ def generate_markdown_report(report: AuditReport, rules: list[BaseRule] | None =
     skipped = report.metadata.get("skipped_files") or []
     if skipped:
         md.append(f"> 점검에서 제외된 파일 {len(skipped)}개: " + ", ".join(f"`{x['path']}`({x['reason']})" for x in skipped[:5]) + "\n")
+    problems = [d for d in report.diagnostics if d.severity in ("error", "warning")]
+    if problems:
+        md.append("### 점검 진단\n")
+        for d in problems[:30]:
+            where = f"`{d.file_path}`: " if d.file_path else ""
+            md.append(f"- [{d.severity}] {where}{d.message}")
+        if len(problems) > 30:
+            md.append(f"- … 외 {len(problems) - 30}건")
+        md.append("")
+    scope = report.metadata.get("scope")
+    if scope:
+        md.append(f"> 범위 제한: {scope['ref']} 이후 바뀐 파일 {scope['changed_files']}개의 지적만 표시했습니다. {scope['note']}\n")
+    if s.new_count is not None:
+        md.append(f"> 기준선 대비: 신규·재검토 {s.new_count}건, 기존(승인) {s.existing_count}건, 해소 {s.resolved_count}건\n")
     md.append("---\n")
 
     md.append("## 2. 지적사항 총괄표\n")

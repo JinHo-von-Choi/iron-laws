@@ -41,6 +41,38 @@ def _print_diagnostics(report: AuditReport) -> None:
         console.print(Text(f"  … 외 {len(shown) - 8}건", style="dim"))
 
 
+_STATE_LABEL = {
+    "evidence_met": "근거 충족",
+    "unsupported": "미지원",
+    "unresolved": "해석 미확정",
+    "budget_exceeded": "예산 초과",
+    "policy_excluded": "정책 제외",
+}
+_CONTRACT_LABEL = {"met": "충족", "unmet": "미충족", "policy_change_review": "정책 변경 검토 필요", "not_applicable": "해당 없음"}
+
+
+def _print_ledger(report: AuditReport) -> None:
+    ledger = report.coverage_ledger
+    if ledger is None:
+        return
+    console.print(
+        Text(
+            f"근거 계약: {_CONTRACT_LABEL.get(ledger.status, ledger.status)} (모드 {ledger.contract_mode}, 범위 {ledger.contract_scope}, 계약 {ledger.contract_source})",
+            style="bold green" if ledger.status == "met" else "bold yellow",
+        )
+    )
+    for tally in ledger.families:
+        states = " · ".join(f"{_STATE_LABEL.get(k, k)} {v}" for k, v in sorted(tally.by_state.items())) or "관심 지점 없음"
+        console.print(Text(f"  [{tally.family}] 지점 {tally.in_scope}개(범위 안) — {states}", style="dim"))
+    unclassified = [f for f in ledger.files if f.classification == "unclassified"]
+    if unclassified:
+        console.print(Text(f"  분류하지 못한 파일 {len(unclassified)}개 (변경 파일 중 {len(ledger.unclassified_changed_files)}개)", style="yellow"))
+    for blocker in ledger.blockers[:5]:
+        console.print(Text(f"  - {blocker}", style="yellow"))
+    if len(ledger.blockers) > 5:
+        console.print(Text(f"  … 외 {len(ledger.blockers) - 5}건", style="dim"))
+
+
 def print_console_report(report: AuditReport, limit: int = DEFAULT_LIMIT) -> None:
     console.print()
     title_text = Text("오철칙 (五鐵則) SW 개발보안 점검 리포트", style="bold white on blue", justify="center")
@@ -83,9 +115,10 @@ def print_console_report(report: AuditReport, limit: int = DEFAULT_LIMIT) -> Non
         console.print(Text(f"범위 제한: {scope['ref']} 이후 바뀐 파일 {scope['changed_files']}개의 지적만 표시했습니다. {scope['note']}", style="yellow"))
     if s.new_count is not None:
         console.print(
-            Text(f"기준선 대비: 신규·재검토 {s.new_count}건 · 기존(승인) {s.existing_count}건 · 해소 {s.resolved_count}건", style="bold")
+            Text(f"기준선 대비: 신규·재검토 {s.new_count}건 · 기존(승인) {s.existing_count}건 · 해소 {s.resolved_count}건 · 미확인 {s.unobserved_count}건", style="bold")
         )
     _print_diagnostics(report)
+    _print_ledger(report)
     if s.suppressed_count:
         console.print(f"[dim]사유와 함께 억제된 지적 {s.suppressed_count}건은 제외되었습니다.[/dim]")
     console.print()

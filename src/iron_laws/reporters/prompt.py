@@ -39,7 +39,33 @@ def _entry(index: int, v: Violation) -> str:
     return "\n".join(lines)
 
 
+def _status_notice(report: AuditReport) -> str:
+    if report.summary.scan_status != "incomplete":
+        return ""
+    errors = [d for d in report.diagnostics if d.severity == "error"]
+    return (
+        f"※ 점검이 끝까지 이루어지지 않았습니다(오류 {len(errors)}건). 아래 목록이 전부가 아니며, 목록에 없다고 안전하다는 뜻이 아닙니다.\n"
+        + "\n".join(f"  - {d.file_path + ': ' if d.file_path else ''}{d.message}" for d in errors[:5])
+        + "\n"
+    )
+
+
+def _ledger_section(report: AuditReport, limit: int = 10) -> str:
+    ledger = report.coverage_ledger
+    if ledger is None or not ledger.blockers:
+        return ""
+    lines = [
+        "[검사 공백] 도구가 아래 지점의 입력 출처를 확정하지 못했습니다. 위험하다는 뜻이 아니라 '확인하지 못했다'는 뜻입니다.",
+        "고치는 방법: 값이 어디서 오는지 코드에서 분명히 드러나게(상수·검증 함수·호출자에서 닫힌 값으로) 정리하고, 정리한 뒤 다시 점검하세요.",
+    ]
+    lines.extend(f"- {b}" for b in ledger.blockers[:limit])
+    if len(ledger.blockers) > limit:
+        lines.append(f"- … 외 {len(ledger.blockers) - limit}건")
+    return "\n".join(lines) + "\n"
+
+
 def generate_fix_prompt(report: AuditReport, limit: int = 40) -> str:
+    notice = _status_notice(report)
     candidates = report.violations
     if report.summary.new_count is not None:
         candidates = [v for v in candidates if v.baseline_status in (BaselineStatus.NEW, BaselineStatus.REVIEW)]
@@ -47,13 +73,20 @@ def generate_fix_prompt(report: AuditReport, limit: int = 40) -> str:
         candidates,
         key=lambda v: (SEVERITY_ORDER[v.severity], str(v.file_path), v.line_number),
     )
+    if report.summary.scan_status == "empty":
+        return "점검한 파일이 없어 수정할 문제를 판단할 수 없습니다. 경로와 제외 설정을 확인하세요."
+    gap = _ledger_section(report)
+    if not ordered and gap:
+        return (notice + "\n" if notice else "") + "점검 결과 지적은 없지만 검사 공백이 있습니다.\n\n" + gap
     if not ordered:
-        return "점검 결과 수정할 문제가 없습니다."
+        return (notice + "\n" if notice else "") + "점검 결과 수정할 문제가 없습니다." + (" (불완전한 점검이므로 문제가 없다는 뜻이 아닙니다)" if notice else "")
     selected = ordered[:limit]
-    parts = [PREAMBLE, f"총 {len(ordered)}건 중 우선순위가 높은 {len(selected)}건입니다.\n"]
+    parts = [*([notice] if notice else []), PREAMBLE, f"총 {len(ordered)}건 중 우선순위가 높은 {len(selected)}건입니다.\n"]
     parts.extend(_entry(i, v) + "\n" for i, v in enumerate(selected, start=1))
     if len(ordered) > limit:
         parts.append(
             f"나머지 {len(ordered) - limit}건은 위 문제를 모두 고친 뒤 오철칙을 다시 실행해 확인합니다."
         )
+    if gap:
+        parts.append("\n" + gap)
     return "\n".join(parts)

@@ -59,4 +59,39 @@ with tempfile.TemporaryDirectory() as tmp:
     (root / "ok" / "a.py").write_text("x = 1\n", encoding="utf-8")
     expect(run("check", str(root / "ok")).returncode == 0, "문제 없는 코드는 종료코드 0")
 
+# ---- 패치 검증·승인 기록(격리 실행기 없이 정적 단계만): 어느 운영체제에서도 같은 판정이어야 한다 ----
+with tempfile.TemporaryDirectory() as tmp:
+    project = Path(tmp) / "proj"
+    project.mkdir()
+    vulnerable = 'import os\nfrom flask import request\n\ndef run_tool():\n    d = request.args["d"]\n    os.system("ls " + d)\n'
+    (project / "app.py").write_text(vulnerable, encoding="utf-8", newline="\n")
+    fixed = 'import os\nimport subprocess\nfrom flask import request\n\ndef run_tool():\n    d = request.args["d"]\n    subprocess.run(["ls", d], check=True)\n'
+    patch = Path(tmp) / "fix.diff"
+    patch.write_text(
+        "diff --git a/app.py b/app.py\n--- a/app.py\n+++ b/app.py\n@@ -1,6 +1,7 @@\n import os\n+import subprocess\n from flask import request\n \n def run_tool():\n     d = request.args[\"d\"]\n-    os.system(\"ls \" + d)\n+    subprocess.run([\"ls\", d], check=True)\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    receipt = Path(tmp) / "receipt.json"
+    undetermined = run("verify-patch", str(project), "--patch", str(patch), "--finding", "IL-504@app.py:6", "--runner", "none", "-o", str(receipt))
+    expect(undetermined.returncode == 2, "격리 실행기가 없으면 시험을 실행하지 않고 판정 불가(종료코드 2)")
+    relaxed = run("verify-patch", str(project), "--patch", str(patch), "--finding", "IL-504@app.py:6", "--runner", "none", "--no-require-tests")
+    expect(relaxed.returncode == 0, "정적 검사만으로는 --no-require-tests에서 통과(종료코드 0)")
+    hidden = Path(tmp) / "hide.diff"
+    hidden.write_text(
+        "diff --git a/app.py b/app.py\n--- a/app.py\n+++ b/app.py\n@@ -3,4 +3,4 @@\n \n def run_tool():\n     d = request.args[\"d\"]\n-    os.system(\"ls \" + d)\n+    os.system(\"ls \" + d)  # iron-laws: ignore[IL-504] 내부 도구라 괜찮다\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    refused = run("verify-patch", str(project), "--patch", str(hidden), "--finding", "IL-504@app.py:6", "--runner", "none", "--no-require-tests")
+    expect(refused.returncode == 1, "경고를 가리는 패치는 수정으로 인정하지 않음(종료코드 1)")
+    expect((project / "app.py").read_text(encoding="utf-8") == vulnerable, "원본은 수정되지 않음")
+    store = Path(tmp) / "approvals.jsonl"
+    added = run("approvals", "add", str(project), "--finding", "IL-504@app.py", "--reason", "관리자 전용 화면", "--store", str(store))
+    expect(added.returncode == 0, "승인 기록 추가")
+    expect(run("approvals", "status", str(project), "--store", str(store)).returncode == 0, "승인이 유효함")
+    expect(run("approvals", "verify", "--store", str(store)).returncode == 0, "승인 기록 해시 연결 이상 없음")
+    (project / "app.py").write_text(vulnerable + "\ndef api():\n    return run_tool()\n", encoding="utf-8", newline="\n")
+    expect(run("approvals", "status", str(project), "--store", str(store)).returncode == 1, "새 호출자가 생기면 승인을 다시 검토")
+
 print("smoke test 완료")

@@ -19,12 +19,14 @@ from iron_laws.engine.ast_tools import (
     CALL_TYPES,
     FUNCTION_TYPES,
     NESTING_TYPES,
+    STRING_TYPES,
     enclosing_function,
     identifiers_in,
     iter_calls,
     iter_functions,
     walk,
 )
+from iron_laws.engine.languages import Lang
 from iron_laws.engine.source import SourceFile
 
 WEB_SOURCE_RE = re.compile(
@@ -104,9 +106,25 @@ def _target_names(src: SourceFile, target: Node) -> set[str]:
     return identifiers_in(src, target) if target.type != "member_expression" else set()
 
 
+def _text_without_plain_strings(src: SourceFile, node: Node) -> str:
+    """보간이 없는 문자열 리터럴의 내용을 지운 식의 원문. 문자열 안에 적힌 `request.args` 같은 글자는 코드가 아니다."""
+    buf = bytearray(src.data[node.start_byte : node.end_byte])
+    for n in walk(node):
+        if n.type in STRING_TYPES and "interpol" not in n.type and not any("interpol" in c.type for c in n.children):
+            for i in range(n.start_byte - node.start_byte, n.end_byte - node.start_byte):
+                buf[i] = 32
+    return buf.decode("utf-8", errors="replace")
+
+
 def expr_has_source(src: SourceFile, node: Node, cli: bool = False) -> bool:
     text = src.text_of(node)
-    return bool(WEB_SOURCE_RE.search(text)) or (cli and bool(CLI_SOURCE_RE.search(text)))
+    if not (WEB_SOURCE_RE.search(text) or (cli and CLI_SOURCE_RE.search(text))):
+        return False
+    if src.root is None:
+        return True
+    # 원문에서 입력 원천처럼 보이는 글자가 보이면, 그것이 문자열 리터럴 안의 글자인지 코드인지 가려서 다시 본다
+    code = _text_without_plain_strings(src, node)
+    return bool(WEB_SOURCE_RE.search(code)) or (cli and bool(CLI_SOURCE_RE.search(code)))
 
 
 # ---------------------------------------------------------------------------
@@ -159,6 +177,7 @@ _CONTEXT_SANITIZERS: dict[Ctx, re.Pattern[str]] = {
 }
 
 
+_UNIVERSAL_RE = _fn_re(_UNIVERSAL)
 _BASE_SANITIZERS = _fn_re(f"{_UNIVERSAL}|{_GENERIC}")
 # HTML 출력용 이스케이프는 이름이 escape라도 SQL·셸·경로에는 아무 보호도 하지 못한다
 _HTML_ONLY_RE = re.compile(
@@ -562,6 +581,14 @@ class _Flow:
         names = _target_names(self.src, left)
         if not names:
             return state
+        if node.type in LOOP_ASSIGN_TYPES and self.src.lang is Lang.PYTHON:
+            callee = (_call_parts(self.src, right) or ("", []))[0]
+            if callee == "range":
+                return state  # range()가 만드는 반복 변수는 정수라 문자열 주입 경로가 아니다
+            if callee == "enumerate":
+                first = re.match(r"\s*\(?\s*([A-Za-z_]\w*)", self.src.text_of(left))
+                if first:
+                    names = names - {first.group(1)}  # enumerate의 첫 값(순번)은 정수다
         if expr_tainted(self.src, right, set(state), self.cli, self.ctx):
             return state | names
         if kill:
@@ -630,6 +657,8 @@ def _call_is_clean(src: SourceFile, parts, names: set[str], cli: bool, ctx: Ctx,
         return not _helper_returns_tainted(src, helpers, args, names, cli, ctx)
     if by_name and sanitizer_name_matches(callee, ctx):
         return True
+    if not by_name and _UNIVERSAL_RE.search(callee):
+        return True  # 중첩된 호출이라도 len()·int() 같은 값의 종류를 바꾸는 호출은 문자열 주입 경로가 아니다
     return None
 
 

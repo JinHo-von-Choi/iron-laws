@@ -11,22 +11,27 @@ from tree_sitter import Node
 
 from iron_laws.core.models import Confidence, EvidenceStep, IronLaw, Severity, Violation
 from iron_laws.engine.ast_tools import (
+    CALL_TYPES,
     Call,
     enclosing_function,
     identifiers_in,
     is_literal,
     iter_calls,
+    iter_functions,
+    walk,
 )
 from iron_laws.engine.languages import JS_FAMILY, Lang
 from iron_laws.engine.project import ProjectContext
 from iron_laws.engine.source import SourceFile
 from iron_laws.engine.taint import (
+    ASSIGN_TYPES,
     CLI_SOURCE_RE,
     WEB_SOURCE_RE,
     Ctx,
     definitions,
     expr_has_source,
     is_tainted,
+    reaching_definitions,
     taint_state,
 )
 from iron_laws.rules.base import BaseRule
@@ -96,6 +101,82 @@ class SinkRule(BaseRule):
     def skip_hit(self, src: SourceFile, call: Call, arg: Node, flow: Flow) -> bool:
         return False
 
+    DEAD_END_RE = re.compile(r"\b(raise|return|abort|exit|throw|panic|die)\b|sys\.exit")
+    LITERAL_ELEMENT_TYPES = frozenset({"string", "integer", "float", "true", "false", "none", "concatenated_string"})
+
+    def _literal_collection(self, src: SourceFile, node: Node, depth: int = 0) -> bool:
+        """문자열·숫자 리터럴만 담은 목록·튜플·집합·사전(또는 그런 값으로 정의된 모듈 상수)인지"""
+        if node.type in ("list", "tuple", "set", "dictionary", "parenthesized_expression"):
+            items = [c for c in node.named_children if "comment" not in c.type]
+            return all(
+                (c.type in self.LITERAL_ELEMENT_TYPES and not (c.type == "string" and "interpolation" in {k.type for k in c.children}))
+                or (c.type == "pair" and (key := c.child_by_field_name("key")) is not None and key.type in self.LITERAL_ELEMENT_TYPES)
+                for c in items
+            ) and bool(items)
+        if node.type == "call" and src.text_of(node).startswith(("frozenset(", "set(", "tuple(", "list(")):
+            inner = [c for c in node.named_children if c.type == "argument_list"]
+            return bool(inner) and len(inner[0].named_children) == 1 and self._literal_collection(src, inner[0].named_children[0], depth + 1)
+        if node.type == "identifier" and depth < 2 and src.root is not None:
+            defs = [d for d in definitions(src, src.root, src.text_of(node)) if enclosing_function(d, src.lang) is None]
+            return bool(defs) and all(self._literal_collection(src, d, depth + 1) for d in defs)
+        return False
+
+    def _membership(self, src: SourceFile, cond: Node) -> tuple[str, bool] | None:
+        """`x in 허용목록` / `x not in 허용목록` 형태의 조건이면 (변수 이름, 부정 여부)"""
+        negated = False
+        if cond.type == "not_operator" and cond.named_children:
+            negated, cond = True, cond.named_children[0]
+        while cond.type == "parenthesized_expression" and cond.named_children:
+            cond = cond.named_children[0]
+        if cond.type != "comparison_operator" or len(cond.named_children) != 2:
+            return None
+        left, right = cond.named_children
+        between = src.data[left.end_byte : right.start_byte].decode("utf-8", errors="replace")
+        match = re.fullmatch(r"\s*(not\s+in|in)\s*", between)
+        if match is None or left.type != "identifier" or not self._literal_collection(src, right):
+            return None
+        return src.text_of(left), negated != (match.group(1) != "in")
+
+    def _allowlisted(self, src: SourceFile, call: Call, arg: Node) -> bool:
+        """싱크에 들어가는 동적 변수가 모두, 싱크보다 앞서 실행되는 허용 목록 검사(`x not in (...)` → 거부, 또는 통과 분기 안에서만 사용)를 거친다"""
+        if src.lang is not Lang.PYTHON:
+            return False
+        scope = enclosing_function(call.node, src.lang) or src.root
+        if scope is None:
+            return False
+        names = set()
+        for name in identifiers_in(src, arg):
+            defs = reaching_definitions(src, scope, name, arg.start_byte)
+            if defs and all(is_literal(d) for d in defs):
+                continue  # 상수로만 정의된 변수는 닫혀 있다
+            names.add(name)
+        if not names:
+            return False
+        guarded: set[str] = set()
+        for node in walk(scope):
+            if node.type not in ("if_statement", "assert_statement"):
+                continue
+            cond = node.child_by_field_name("condition") or (node.named_children[0] if node.type == "assert_statement" and node.named_children else None)
+            if cond is None:
+                continue
+            membership = self._membership(src, cond)
+            if membership is None or membership[0] not in names:
+                continue
+            variable, rejects_when_true = membership
+            if node.type == "assert_statement":
+                if node.end_byte <= call.node.start_byte and not rejects_when_true:
+                    guarded.add(variable)
+                continue
+            consequence = node.child_by_field_name("consequence")
+            if consequence is None:
+                continue
+            if rejects_when_true:
+                if node.end_byte <= call.node.start_byte and self.DEAD_END_RE.search(src.text_of(consequence)):
+                    guarded.add(variable)
+            elif consequence.start_byte <= call.node.start_byte and call.node.end_byte <= consequence.end_byte:
+                guarded.add(variable)
+        return names <= guarded
+
     def select_args(self, src: SourceFile, call: Call, sink: Sink) -> list[Node]:
         """싱크 호출에서 검사할 인자. 기본은 Sink에 지정한 위치(None이면 전부)"""
         if sink.arg is None:
@@ -131,6 +212,8 @@ class SinkRule(BaseRule):
         for call, arg, flow, via in hits:
             if via is None and self.skip_hit(src, call, arg, flow):
                 continue
+            if via is None and self._allowlisted(src, call, arg):
+                continue  # 허용 목록 검사를 통과한 값만 싱크에 닿는다
             if flow is Flow.TAINTED:
                 message = self.tainted_message.format(callee=call.callee)
                 if via:
@@ -177,6 +260,7 @@ class SqlInjectionRule(SinkRule):
     dynamic_message = "SQL 문을 변수와 결합해 {callee}로 실행합니다. 외부 입력이 닿는지 확인하고 파라미터 바인딩을 쓰십시오."
     sinks = [
         Sink.of(PY, r"(^|\.)(execute|executemany|executescript|raw|read_sql|read_sql_query|text|mogrify|extra)$"),
+        Sink.of(PY, r"(^|\.)(fetch|fetchrow|fetchval|fetchmany)$"),  # asyncpg: 질의문을 직접 실행하는 API
         Sink.of(JS, r"(^|\.)(query|execute|raw|\$queryRawUnsafe|\$executeRawUnsafe|queryRawUnsafe|executeRawUnsafe|unsafe|all|get|run|exec)$"),
         Sink.of(JAVA, r"(^|\.)(executeQuery|executeUpdate|execute|executeLargeUpdate|createQuery|createNativeQuery|prepareStatement|prepareCall|queryForObject|queryForList|queryForMap|update|batchUpdate|query)$"),
         Sink.of(CS, r"(^|\.)(ExecuteReader|ExecuteNonQuery|ExecuteScalar|FromSqlRaw|ExecuteSqlRaw|ExecuteSqlRawAsync|SqlQuery|QueryAsync|ExecuteAsync|QueryFirst|QuerySingle)$"),
@@ -341,14 +425,114 @@ class PathTraversalRule(SinkRule):
         Sink.of(RUST, r"(^|::)(File::open|File::create|read_to_string|fs::read|fs::write|remove_file|Path::new|PathBuf::from)$", None),
     ]
 
+    DEAD_END_RE = re.compile(r"\b(raise|return|abort|exit|throw|panic|die)\b|sys\.exit")
+
+    RECEIVER_PATH_METHODS = re.compile(r"\.(read_text|write_text|read_bytes|write_bytes|open|unlink|rmdir|mkdir|rename|touch)$")
+
+    def select_args(self, src: SourceFile, call: Call, sink: Sink) -> list[Node]:
+        """경로가 인자가 아니라 객체(수신자)에 들어 있는 pathlib 호출은 수신자 식도 본다: `(Path(base) / name).read_text()`"""
+        args = super().select_args(src, call, sink)
+        if src.lang is Lang.PYTHON and self.RECEIVER_PATH_METHODS.search(call.callee):
+            function = call.node.child_by_field_name("function")
+            receiver = function.child_by_field_name("object") if function is not None else None
+            if receiver is not None:
+                return [receiver, *args]
+        return args
+
+    BUILDER_RE = re.compile(r"^(os\.path\.join|path\.join|path\.resolve|filepath\.Join|Path|pathlib\.Path|Paths\.get|Path\.of|Path\.Combine)$")
+
+    @staticmethod
+    def _assignment_of(src: SourceFile, call: Call) -> Node | None:
+        """호출 결과가 (정규화 함수 등을 거쳐) 변수에 대입되는 대입문"""
+        parent = call.node.parent
+        passthrough = {"parenthesized_expression", "await_expression", "argument_list", "arguments", *CALL_TYPES.get(src.lang, set())} if src.lang else set()
+        while parent is not None and parent.type in passthrough:
+            parent = parent.parent
+        return parent if parent is not None and parent.type in ASSIGN_TYPES else None
+
+    def _builder_variable(self, src: SourceFile, call: Call) -> str | None:
+        """경로를 조립만 하고 변수에 담는 호출이면 그 변수 이름. 실제 접근은 그 변수를 쓰는 뒤쪽 싱크가 판정한다."""
+        if not self.BUILDER_RE.search(call.callee):
+            return None
+        parent = self._assignment_of(src, call)
+        if parent is None:
+            return None
+        left = parent.child_by_field_name("left") or parent.child_by_field_name("name")
+        return src.text_of(left).lstrip("$") if left is not None and left.type in ("identifier", "variable_name") else None
+
+    def _guarded_after(self, src: SourceFile, call: Call, variable: str) -> bool:
+        """조립한 경로 변수가 뒤에서 정규화·범위 검사를 받는지(거부 분기 또는 assert)"""
+        scope = enclosing_function(call.node, src.lang) or src.root
+        if scope is None:
+            return False
+        assignment = self._assignment_of(src, call)
+        defs_text = src.text_of(assignment) if assignment is not None else ""
+        for node in walk(scope):
+            if node.type not in ("if_statement", "assert_statement") or node.start_byte < call.node.end_byte:
+                continue
+            cond = node.child_by_field_name("condition")
+            if cond is None and node.type == "assert_statement" and node.named_children:
+                cond = node.named_children[0]
+            if cond is None:
+                continue
+            cond_text = src.text_of(cond)
+            if not CONFINEMENT_RE.search(cond_text) or variable not in identifiers_in(src, cond):
+                continue
+            if not (NORMALIZE_RE.search(cond_text) or NORMALIZE_RE.search(defs_text)):
+                continue
+            if node.type == "assert_statement":
+                return True
+            consequence = node.child_by_field_name("consequence") or node.child_by_field_name("body")
+            if consequence is not None and re.match(r"\s*\(?\s*(not\b|!)", cond_text) and self.DEAD_END_RE.search(src.text_of(consequence)):
+                return True
+        return False
+
+    def _confined(self, src: SourceFile, call: Call, arg: Node) -> bool:
+        """싱크로 가는 경로 변수가 정규화된 뒤 허용 폴더 안인지 검사되는지 본다.
+        검사 대상 변수가 같아야 하고, 싱크보다 앞서 실행되어야 하며(거부 분기가 끝나거나 싱크가 통과 분기 안에 있음),
+        경로가 정규화된 값이어야 한다. 다른 변수를 검사하거나 싱크 뒤에 검사하면 인정하지 않는다."""
+        scope = enclosing_function(call.node, src.lang) or src.root
+        names = identifiers_in(src, arg)
+        if scope is None or not names:
+            return False
+        defs_text = " ".join(src.text_of(d) for n in names for d in reaching_definitions(src, scope, n, arg.start_byte))
+        for node in walk(scope):
+            if node.type not in ("if_statement", "assert_statement", "if_expression"):
+                continue
+            cond = node.child_by_field_name("condition")
+            if cond is None and node.type == "assert_statement" and node.named_children:
+                cond = node.named_children[0]
+            if cond is None:
+                continue
+            cond_text = src.text_of(cond)
+            if not CONFINEMENT_RE.search(cond_text) or not (identifiers_in(src, cond) & names):
+                continue
+            if not (NORMALIZE_RE.search(cond_text) or NORMALIZE_RE.search(defs_text)):
+                continue
+            if node.type == "assert_statement":
+                if node.end_byte <= call.node.start_byte:
+                    return True
+                continue
+            consequence = node.child_by_field_name("consequence") or node.child_by_field_name("body")
+            if consequence is None:
+                continue
+            negated = re.match(r"\s*\(?\s*(not\b|!)", cond_text) is not None
+            if negated:
+                if node.end_byte <= call.node.start_byte and self.DEAD_END_RE.search(src.text_of(consequence)):
+                    return True
+            elif consequence.start_byte <= call.node.start_byte and call.node.end_byte <= consequence.end_byte:
+                return True
+        return False
+
     def skip_hit(self, src: SourceFile, call: Call, arg: Node, flow: Flow) -> bool:
         text = _context_text(src, arg)
         if SANITIZER_RE.search(text) or re.search(r"\.(Body|InputStream|OutputStream|BaseStream)\b", text):
             return True
-        scope = enclosing_function(call.node, src.lang)
-        scope_text = src.code_of(scope) if scope is not None else src.code_text
-        if NORMALIZE_RE.search(scope_text) and CONFINEMENT_RE.search(scope_text):
-            return True  # 정규화한 뒤 허용 폴더 안인지 확인하는 검사가 같은 함수에 있다
+        variable = self._builder_variable(src, call)
+        if variable is not None and self._guarded_after(src, call, variable):
+            return True  # 경로를 조립한 변수가 뒤에서 정규화·범위 검사를 받는다. 접근하는 싱크가 따로 판정한다
+        if self._confined(src, call, arg):
+            return True  # 정규화한 같은 변수를 허용 폴더와 비교하는 검사가 싱크보다 앞서 실행된다
         # 파일명 입력은 업로드 규칙(IL-513)이 담당한다.
         return bool(FILENAME_RE.search(src.text_of(call.node)))
 
@@ -708,48 +892,63 @@ class XxeRule(BaseRule):
     java_use = re.compile(
         r"(?P<var>\w+)\.(?:newDocumentBuilder|newSAXParser|createXMLStreamReader|createXMLEventReader|newTransformer|newSchema|parse|build)\("
     )
-    # 이 설정이 "차단" 값일 때만 인정한다. (이름, 차단 값) 형태
+    # 설정 이름 → (이름 식별자, 그 설정이 '차단' 상태가 되는 값)
     java_safe_settings = (
-        (re.compile(r"disallow-doctype-decl|FEATURE_SECURE_PROCESSING"), re.compile(r"\btrue\b")),
-        (re.compile(r"external-(general|parameter)-entities|load-external-dtd"), re.compile(r"\bfalse\b")),
-        (re.compile(r"IS_SUPPORTING_EXTERNAL_ENTITIES|SUPPORT_DTD"), re.compile(r"\bfalse\b")),
-        (re.compile(r"ACCESS_EXTERNAL_(DTD|SCHEMA|STYLESHEET)"), re.compile(r"\"\"")),
-        (re.compile(r"^$"), re.compile(r"^false$")),  # setExpandEntityReferences(false)
+        ("doctype", re.compile(r"disallow-doctype-decl"), re.compile(r"\btrue\b")),
+        ("secure", re.compile(r"FEATURE_SECURE_PROCESSING"), re.compile(r"\btrue\b")),
+        ("external", re.compile(r"external-(general|parameter)-entities|load-external-dtd"), re.compile(r"\bfalse\b")),
+        ("ext_entities", re.compile(r"IS_SUPPORTING_EXTERNAL_ENTITIES"), re.compile(r"\bfalse\b")),
+        ("dtd", re.compile(r"SUPPORT_DTD"), re.compile(r"\bfalse\b")),
+        ("access_dtd", re.compile(r"ACCESS_EXTERNAL_DTD"), re.compile(r'""')),
+        ("access_schema", re.compile(r"ACCESS_EXTERNAL_SCHEMA"), re.compile(r'""')),
+        ("access_style", re.compile(r"ACCESS_EXTERNAL_STYLESHEET"), re.compile(r'""')),
     )
 
-    def _java_hardened(self, text: str, var: str, before: int) -> bool:
-        for m in self.java_setting.finditer(text):
-            if m.group("var") != var or m.start() >= before:
+    def _java_final_state(self, text: str, var: str, start: int, before: int) -> bool:
+        """var에 [start, before) 사이에서 적용한 설정을 순서대로 반영한 최종 상태가 차단 상태인지.
+        같은 설정을 나중에 다시 바꾸면 마지막 값이 이긴다."""
+        final: dict[str, bool] = {}
+        for m in self.java_setting.finditer(text, start, before):
+            if m.group("var") != var:
                 continue
             args = m.group("args")
             if m.group("method") == "setExpandEntityReferences":
-                if re.fullmatch(r"\s*false\s*", args):
-                    return True
+                final["expand"] = re.fullmatch(r"\s*false\s*", args) is not None
                 continue
             name_part, _, value_part = args.rpartition(",")
-            for name_re, value_re in self.java_safe_settings[:-1]:
-                if name_re.search(name_part) and value_re.search(value_part):
-                    return True
-        return False
+            for key, name_re, safe_re in self.java_safe_settings:
+                if name_re.search(name_part):
+                    final[key] = safe_re.search(value_part) is not None
+        return any(final.values())
 
     def _check_java(self, src: SourceFile) -> list[Violation]:
         found = []
         text = src.code_text
-        uses: dict[str, int] = {}
-        for m in self.java_use.finditer(text):
-            uses.setdefault(m.group("var"), m.start())
+        spans = [(f.node.start_byte, f.node.end_byte) for f in iter_functions(src)] if src.root is not None else []
+        data = src.data
         for m in self.java_factory.finditer(text):
             var = m.group("var")
             line = text.count("\n", 0, m.start()) + 1
-            first_use = uses.get(var, len(text)) if var else len(text)
-            if var and self._java_hardened(text, var, first_use):
+            # 객체의 범위는 그 객체를 만든 메서드 안이다. 다른 메서드의 같은 이름 변수는 다른 객체다.
+            byte_pos = len(text[: m.start()].encode("utf-8"))
+            enclosing = [(a, b) for a, b in spans if a <= byte_pos < b]
+            lo, hi = (min(enclosing, key=lambda ab: ab[1] - ab[0]) if enclosing else (0, len(data)))
+            start_char = len(data[:lo].decode("utf-8", errors="replace"))
+            end_char = len(data[:hi].decode("utf-8", errors="replace"))
+            first_use = end_char
+            if var:
+                for use in self.java_use.finditer(text, m.end(), end_char):
+                    if use.group("var") == var:
+                        first_use = use.start()
+                        break
+            if var and self._java_final_state(text, var, max(m.end(), start_char), first_use):
                 continue
             found.append(
                 self.at_line(
                     src,
                     line,
                     "XML 파서 팩토리를 만들면서 DTD·외부 개체를 막는 설정이 없습니다. "
-                    "(차단 값이 true/false인지, 설정한 객체가 실제로 파싱에 쓰는 객체인지 확인하십시오.)",
+                    "(차단 값이 true/false인지, 같은 메서드 안의 그 객체에 파싱 전에 적용했는지, 나중에 값을 되돌리지 않았는지 확인하십시오.)",
                 )
             )
         return found

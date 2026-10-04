@@ -90,6 +90,44 @@ def _design_section(report: AuditReport, rules: list[BaseRule]) -> list[str]:
     return md
 
 
+_STATE_LABEL = {
+    "evidence_met": "근거 충족",
+    "unsupported": "미지원",
+    "unresolved": "해석 미확정",
+    "budget_exceeded": "예산 초과",
+    "policy_excluded": "정책 제외",
+}
+
+
+def _ledger_section(report: AuditReport) -> list[str]:
+    ledger = report.coverage_ledger
+    if ledger is None:
+        return []
+    md = ["### 검사 공백 장부 (근거 계약)\n"]
+    md.append(
+        f"- 계약 상태: **{ledger.status}** (모드 {ledger.contract_mode}, 범위 {ledger.contract_scope}, 계약 {ledger.contract_source}, 계약 해시 {ledger.contract_digest})"
+    )
+    md.append("- 해시: " + ", ".join(f"{k} `{v}`" for k, v in ledger.digests.items()))
+    md.append("\n| 계열 | 필수 | 지점(범위 안/전체) | 상태별 |")
+    md.append("|---|---|---|---|")
+    for t in ledger.families:
+        states = ", ".join(f"{_STATE_LABEL.get(k, k)} {v}" for k, v in sorted(t.by_state.items())) or "-"
+        md.append(f"| {t.family} | {'예' if t.required else '아니오'} | {t.in_scope}/{t.total} | {states} |")
+    unclassified = [f for f in ledger.files if f.classification == "unclassified"]
+    md.append(f"\n분모: 분석한 파일 {sum(1 for f in ledger.files if f.classification in ('analyzed', 'policy_excluded'))}개, "
+              f"계약 범위 밖 파일 {sum(1 for f in ledger.files if f.classification in ('out_of_scope', 'unsupported_language'))}개, "
+              f"분류하지 못한 파일 {len(unclassified)}개(변경 파일 중 {len(ledger.unclassified_changed_files)}개)")
+    if ledger.blockers:
+        md.append("\n**차단 사유**")
+        md.extend(f"- {b}" for b in ledger.blockers[:20])
+        if len(ledger.blockers) > 20:
+            md.append(f"- … 외 {len(ledger.blockers) - 20}건")
+    md.append("\n**한계**")
+    md.extend(f"- {x}" for x in ledger.limitations)
+    md.append("")
+    return md
+
+
 def generate_markdown_report(report: AuditReport, rules: list[BaseRule] | None = None) -> str:
     s = report.summary
     status_str = "통과 (PASS)" if s.is_passed else "미통과 (시정조치 필요 / FAIL)"
@@ -136,6 +174,7 @@ def generate_markdown_report(report: AuditReport, rules: list[BaseRule] | None =
         md.append(f"> 범위 제한: {scope['ref']} 이후 바뀐 파일 {scope['changed_files']}개의 지적만 표시했습니다. {scope['note']}\n")
     if s.new_count is not None:
         md.append(f"> 기준선 대비: 신규·재검토 {s.new_count}건, 기존(승인) {s.existing_count}건, 해소 {s.resolved_count}건\n")
+    md.extend(_ledger_section(report))
     md.append("---\n")
 
     md.append("## 2. 지적사항 총괄표\n")

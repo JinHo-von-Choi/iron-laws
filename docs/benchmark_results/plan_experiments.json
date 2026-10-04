@@ -1,0 +1,46 @@
+{
+  "tool_version": "1.2.0",
+  "note": "구현자가 직접 만들고 분류한 표본이다. 독립 검토자의 분류가 아니며 효과 주장의 근거가 아니다. 호스트 실행 대역 실행기로 측정했다.",
+  "ledger": {
+    "known_gaps": 30,
+    "gaps_exposed": 30,
+    "safe_changes": 30,
+    "safe_changes_blocked": 0,
+    "unnecessary_block_rate": 0.0
+  },
+  "regression": {
+    "defects": 30,
+    "proposals_generated": 21,
+    "generation_rate": 0.7,
+    "correct_fixes": 21,
+    "correct_fixes_accepted": 21,
+    "wrong_fixes": 105,
+    "wrong_fixes_accepted": 0
+  },
+  "patch_verification": {
+    "correct_total": 30,
+    "correct_verified": 30,
+    "hiding_total": 30,
+    "hiding_accepted": 0,
+    "breaking_total": 30,
+    "breaking_accepted": 0,
+    "verdicts": {
+      "correct": {
+        "verified": 30
+      },
+      "hiding": {
+        "failed": 30
+      },
+      "breaking": {
+        "failed": 30
+      }
+    }
+  },
+  "approvals": {
+    "safe_changes": 30,
+    "unnecessary_re_review": 0,
+    "unnecessary_re_review_rate": 0.0,
+    "risky_changes_evaluated": 24,
+    "dangerous_inheritance": 0
+  }
+}

@@ -20,6 +20,7 @@ from iron_laws.core.models import (
     Severity,
     Violation,
 )
+from iron_laws.core.redaction import MAX_SNIPPET_LENGTH, limit, redact_text
 from iron_laws.engine.languages import Lang
 from iron_laws.engine.project import ProjectContext
 from iron_laws.engine.source import SourceFile
@@ -76,7 +77,11 @@ class BaseRule(ABC):
         how_to_fix: str | None = None,
         column: int = 1,
     ) -> Violation:
-        shown = snippet.strip()[:300]
+        # 원문을 먼저 가린 뒤 길이를 제한한다. 자른 뒤에 가리면 잘린 비밀 조각이 남는다
+        shown = redact_text(snippet.strip())
+        if self.sensitive_snippet:
+            shown = mask_secrets(shown)
+        shown = limit(shown, MAX_SNIPPET_LENGTH)
         return Violation(
             rule_id=self.rule_id,
             rule_name=self.name,
@@ -85,7 +90,7 @@ class BaseRule(ABC):
             file_path=file_path,
             line_number=line_number,
             column=column,
-            snippet=mask_secrets(shown) if self.sensitive_snippet else shown,
+            snippet=shown,
             rule_version=self.version,
             message=message,
             gov_standard=self.gov_standard,

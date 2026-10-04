@@ -30,7 +30,8 @@ uv run ruff check .
    ```bash
    uv run iron-laws check .
    ```
-5. Pull Request 제출
+5. 사용자에게 보이는 변경은 `CHANGELOG.md`의 `[Unreleased]` 항목에 적습니다
+6. Pull Request 제출
 
 ## 코딩 원칙 (오철칙 준수)
 - 빈 catch 블록이나 에러를 삼키는 코드는 절대로 머지되지 않습니다.

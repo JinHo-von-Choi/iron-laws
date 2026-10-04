@@ -1,0 +1,63 @@
+[project]
+name = "iron-laws"
+version = "1.0.0"
+description = "오철칙 (五鐵則) - SI 감리에서 자주 지적되는 항목을 정리한 소스코드 보안·품질 점검 CLI, AI가 만든 코드의 보정용"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [
+    { name = "최진호", email = "62224489+JinHo-von-Choi@users.noreply.github.com" }
+]
+requires-python = ">=3.12"
+keywords = ["security", "audit", "linter", "mois", "kisa", "iron-laws", "secure-coding", "ai-generated-code", "vibe-coding", "sast"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Security",
+    "Topic :: Software Development :: Quality Assurance",
+]
+dependencies = [
+    "pydantic>=2.0.0",
+    "pyyaml>=6.0.0",
+    "rich>=13.0.0",
+    "tree-sitter>=0.26.0",
+    "tree-sitter-c>=0.24.2",
+    "tree-sitter-c-sharp>=0.23.5",
+    "tree-sitter-cpp>=0.23.4",
+    "tree-sitter-go>=0.25.0",
+    "tree-sitter-java>=0.23.5",
+    "tree-sitter-javascript>=0.25.0",
+    "tree-sitter-php>=0.24.1",
+    "tree-sitter-python>=0.25.0",
+    "tree-sitter-rust>=0.24.2",
+    "tree-sitter-typescript>=0.23.2",
+    "typer>=0.12.0",
+]
+
+[project.scripts]
+iron-laws = "iron_laws:main"
+
+[build-system]
+requires = ["uv_build>=0.11.11,<0.12.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-cov>=4.0.0",
+    "ruff>=0.4.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["B008", "E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

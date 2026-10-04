@@ -91,8 +91,13 @@ class Violation(BaseModel):
     rule_version: int = 1
     fingerprint: str = ""
     scope_name: str = ""  # 지적이 속한 함수 이름 (구문 분석 언어에서만)
+    shape: str = Field(default="", exclude=True)  # 주석을 뺀 정규화한 코드 줄(지문 계산용, 비밀은 가린 상태)
     evidence: list[EvidenceStep] = Field(default_factory=list)
     baseline_status: BaselineStatus | None = None
+    approval_status: str | None = None  # 사람의 검토 승인 대비 상태: approved / needs_review / expired / revoked / none
+    approval_id: str | None = None
+    approval_reasons: list[str] = Field(default_factory=list)  # 승인을 유지할 수 없는 이유(바뀐 전제)
+    dependencies: dict | None = Field(default=None, exclude=True)  # 승인 유효성 판단에 쓰는 의존성 지문. 보고서에는 싣지 않는다
 
 
 class Diagnostic(BaseModel):
@@ -121,9 +126,66 @@ class AuditSummary(BaseModel):
     new_count: int | None = None  # 기준선과 비교했을 때의 신규·재검토 건수
     existing_count: int | None = None
     resolved_count: int | None = None
+    unobserved_count: int | None = None  # 기준선의 지적 중 파일이 없거나 점검하지 못해 알 수 없는 것
+    approvals_valid: int | None = None  # 승인 기록을 쓸 때: 유효한 승인으로 받아들인 지적 수
+    approvals_review: int | None = None  # 전제가 바뀌었거나 만료·철회되어 다시 검토해야 하는 지적 수
+    approvals_unobserved: int | None = None  # 승인 대상 파일이 없거나 읽지 못해 알 수 없는 승인 수
+    contract_status: str | None = None  # 근거 계약 충족 여부: met / unmet / policy_change_review / not_applicable. scan_status와 별개
+    contract_mode: str | None = None
 
 
-REPORT_SCHEMA_VERSION = "1.1"
+class InterestPoint(BaseModel):
+    """보안 관심 지점(명령 실행·경로 접근·SQL 조립 호출)과 그 지점에서 확보한 분석 근거의 상태"""
+
+    id: str
+    family: str = Field(..., description="command / path / sql")
+    path: str
+    line: int
+    callee: str
+    state: str = Field(..., description="evidence_met / unsupported / unresolved / budget_exceeded / policy_excluded")
+    reason: str = ""
+    in_scope: bool = True  # 계약 범위(전체 또는 변경 파일) 안에 있는가
+    finding: bool = False  # 같은 지점에서 지적이 나왔는가
+
+
+class LedgerFile(BaseModel):
+    path: str
+    classification: str = Field(
+        ..., description="analyzed / unsupported_language / out_of_scope / policy_excluded / unclassified"
+    )
+    reason: str = ""
+    changed: bool = False
+    interest_points: int = 0
+
+
+class FamilyTally(BaseModel):
+    family: str
+    required: bool
+    total: int = 0
+    in_scope: int = 0
+    by_state: dict[str, int] = Field(default_factory=dict)  # 계약 범위 안 지점의 상태별 수
+
+
+class CoverageLedger(BaseModel):
+    """파일과 보안 관심 지점별 분석 근거 기록. 단일 '안전 점수'를 만들지 않고, 분모(발견한 지점·분류하지 못한 파일)를 함께 공개한다."""
+
+    contract_version: int
+    contract_mode: str
+    contract_scope: str
+    contract_digest: str
+    contract_source: str = "기본값"
+    languages: list[str] = Field(default_factory=list)
+    digests: dict[str, str] = Field(default_factory=dict)
+    families: list[FamilyTally] = Field(default_factory=list)
+    points: list[InterestPoint] = Field(default_factory=list)
+    files: list[LedgerFile] = Field(default_factory=list)
+    unclassified_changed_files: list[str] = Field(default_factory=list)
+    status: str = Field(..., description="met / unmet / policy_change_review / not_applicable")
+    blockers: list[str] = Field(default_factory=list)
+    limitations: list[str] = Field(default_factory=list)
+
+
+REPORT_SCHEMA_VERSION = "1.2"
 
 
 class AuditReport(BaseModel):
@@ -138,4 +200,5 @@ class AuditReport(BaseModel):
     summary: AuditSummary
     violations: list[Violation] = Field(default_factory=list)
     diagnostics: list[Diagnostic] = Field(default_factory=list)
+    coverage_ledger: CoverageLedger | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)

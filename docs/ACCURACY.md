@@ -54,7 +54,11 @@ Java, JavaScript, Python, C#, Go, Rust, PHP, C/C++ 오픈소스·자체 프로�
 - 이 결과는 Java에만 해당한다. 다른 언어는 §1의 사례 시험과 §2의 실제 프로젝트 점검으로만 확인했고, 공개 벤치마크 수치는 아직 없다.
 - 이 수치를 국정원 인증 도구의 정확도와 비교하거나 감리 증빙으로 쓰면 안 된다.
 
-## 4. 재현
+## 4. 패치 검증 기능의 표본 측정
+
+근거 계약·패치 검증·회귀시험·승인 추적의 표본 측정은 [docs/PATCH_VERIFICATION.md](PATCH_VERIFICATION.md) §6과 `docs/benchmark_results/plan_experiments.json`에 있다. 구현자가 직접 분류한 표본이며 독립 검토나 실사용 파일럿 결과가 아니다. 위 OWASP Benchmark(Java) 수치는 이번 변경 전후로 같다(새 기능은 Python 중심이다).
+
+## 5. 재현
 
 측정은 도구 버전, 데이터 커밋, 명령, 원시 건수(TP·FN·FP·TN)를 함께 남긴다. 이번 측정의 원시 결과는 `docs/benchmark_results/owasp_confirmed.json`, `owasp_all.json`이다.
 점수 비교는 같은 데이터 커밋에서만 한다. 한 언어의 점수를 전체 정확도로 합산하지 않는다.

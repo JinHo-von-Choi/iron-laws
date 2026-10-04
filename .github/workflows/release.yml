@@ -6,12 +6,91 @@ on:
       - "v*.*.*"
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  build-and-publish:
-    name: Build & Publish
+  verify:
+    name: Verify (tests, lint, self-audit, tag/version)
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+
+      - name: Tag must match the package version
+        shell: bash
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          VERSION="$(python3 - <<'PY'
+          import tomllib
+          print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])
+          PY
+          )"
+          if [ "$TAG" != "$VERSION" ]; then
+            echo "태그($TAG)와 pyproject 버전($VERSION)이 다릅니다."
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Tests
+        run: uv run pytest -q
+
+      - name: Support matrix manifest is current
+        run: uv run python benchmarks/build_support_manifest.py --check
+
+      - name: Self-audit
+        run: uv run iron-laws check . --fail-on HIGH
+
+  smoke:
+    name: Wheel smoke (${{ matrix.os }}, Python ${{ matrix.python-version }})
+    needs: verify
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: true
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ["3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Build wheel
+        run: uv build --wheel
+
+      - name: Install wheel into a clean environment
+        shell: bash
+        run: |
+          python -m venv .smoke-env
+          if [ -f .smoke-env/Scripts/python.exe ]; then PY=.smoke-env/Scripts/python.exe; else PY=.smoke-env/bin/python; fi
+          "$PY" -m pip install --quiet dist/*.whl
+          echo "SMOKE_PY=$PY" >> "$GITHUB_ENV"
+
+      - name: Run smoke test against the installed package
+        shell: bash
+        run: '"$SMOKE_PY" .github/scripts/smoke.py'
+
+  publish:
+    name: Build & Publish
+    needs: [verify, smoke]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 

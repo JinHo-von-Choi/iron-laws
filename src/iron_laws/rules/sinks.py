@@ -23,6 +23,7 @@ from iron_laws.engine.ast_tools import (
 from iron_laws.engine.languages import ALL_LANGS, C_FAMILY, JS_FAMILY, Lang
 from iron_laws.engine.source import SourceFile
 from iron_laws.engine.taint import Ctx, is_tainted, param_name, reaching_definitions, resolve_any
+from iron_laws.engine.xfile import note_limit
 
 PY = frozenset({Lang.PYTHON})
 JS = frozenset(JS_FAMILY)
@@ -127,15 +128,18 @@ def _calls_inside(calls: list[Call], fn: Func) -> list[Call]:
     return [c for c in calls if fn.node.start_byte <= c.node.start_byte and c.node.end_byte <= fn.node.end_byte]
 
 
-def _tainted_helper_params(src: SourceFile, calls: list[Call], cli: bool, ctx: Ctx):
-    """프로젝트의 도우미 함수 중 외부 입력이 인자로 넘어가는 (호출, 함수 파일, 함수, 매개변수) 조합"""
+MAX_CHAIN_DEPTH = 4
+
+
+def _helper_entries(src: SourceFile, calls: list[Call], cli: bool, ctx: Ctx, seeds: frozenset[str] = frozenset()):
+    """calls 중 인자가 오염된 채 프로젝트의 도우미 함수로 넘어가는 (호출, 인자, 함수 파일, 함수, 매개변수) 조합"""
     found = []
     for call in calls:
         for hsrc, fn in resolve_any(src, call.callee, len(call.args)):
             params = [p for p in fn.params if hsrc.text_of(p) not in ("self", "cls")]
             for param, arg in zip(params, call.args, strict=False):
                 name = param_name(hsrc, param)
-                if name and not is_literal(arg) and is_tainted(src, arg, cli, ctx=ctx):
+                if name and not is_literal(arg) and is_tainted(src, arg, cli, seeds, ctx):
                     found.append((call, arg, hsrc, fn, name))
     return found
 
@@ -149,8 +153,9 @@ def sink_hits(
     skip: SkipCheck | None = None,
 ) -> Iterator[Hit]:
     """싱크 호출과 그 인자의 흐름을 돌려준다. 프로젝트의 도우미 함수 안에 있는 싱크도
-    호출부에서 외부 입력이 매개변수로 넘어가면 확정 지적으로 포함한다.
-    같은 파일이면 싱크 위치에, 다른 파일이면 호출한 위치에 지적하고 via에 싱크 위치를 담는다."""
+    호출부에서 외부 입력이 매개변수로 넘어가면 확정 지적으로 포함한다. 도우미가 다시 다른 도우미로 넘기는
+    여러 단계도 따라간다(깊이 4). 같은 파일이면 싱크 위치에, 다른 파일이면 처음 호출한 위치에
+    지적하고 via에 싱크 위치를 담는다."""
     applicable = [s for s in sinks if src.lang in s.langs]
     if not applicable:
         return
@@ -159,16 +164,21 @@ def sink_hits(
     merged: dict[int, Hit] = {}
     for call, arg, flow in _hits_in(src, calls, applicable, cli, pick, frozenset(), ctx):
         merged[call.node.id] = Hit(call, arg, flow)
+
+    # (처음 호출, 처음 인자, 함수 파일, 함수, 오염된 매개변수, 깊이)
+    work = [(c, a, hs, fn, name, 1) for c, a, hs, fn, name in _helper_entries(src, calls, cli, ctx)]
     seen: set[tuple[int, str, int, str]] = set()
-    for call_site, arg_at_site, hsrc, fn, name in _tainted_helper_params(src, calls, cli, ctx):
-        key = (call_site.node.id, hsrc.path.as_posix(), fn.node.id, name)
+    while work:
+        root_call, root_arg, hsrc, fn, name, depth = work.pop()
+        key = (root_call.node.id, hsrc.path.as_posix(), fn.node.id, name)
         if key in seen:
             continue
         seen.add(key)
-        inner_calls = list(iter_calls(hsrc)) if hsrc is not src else calls
+        seeds = frozenset({name})
+        inner_all = list(iter_calls(hsrc)) if hsrc is not src else calls
+        inner_calls = _calls_inside(inner_all, fn)
         for inner, inner_arg, flow in _hits_in(
-            hsrc, _calls_inside(inner_calls, fn), [s for s in sinks if hsrc.lang in s.langs], cli,
-            select or _default_args, frozenset({name}), ctx,
+            hsrc, inner_calls, [s for s in sinks if hsrc.lang in s.langs], cli, select or _default_args, seeds, ctx
         ):
             if flow is not Flow.TAINTED:
                 continue
@@ -178,6 +188,12 @@ def sink_hits(
                 merged[inner.node.id] = Hit(inner, inner_arg, flow)
             else:
                 where = f"{hsrc.path.as_posix()}:{inner.line}"
-                proxy = Call(call_site.node, inner.callee, call_site.args)
-                merged[call_site.node.id] = Hit(proxy, arg_at_site, flow, via=where)
+                proxy = Call(root_call.node, inner.callee, root_call.args)
+                merged[root_call.node.id] = Hit(proxy, root_arg, flow, via=where)
+        # 이 함수가 오염된 매개변수를 다시 다른 도우미 함수로 넘기면 한 단계 더 따라간다
+        if depth >= MAX_CHAIN_DEPTH:
+            note_limit()
+            continue
+        for _call, _arg, hsrc2, fn2, name2 in _helper_entries(hsrc, inner_calls, cli, ctx, seeds):
+            work.append((root_call, root_arg, hsrc2, fn2, name2, depth + 1))
     yield from merged.values()

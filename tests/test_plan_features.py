@@ -611,7 +611,7 @@ def test_multiline_secret_assignment_keeps_surrounding_code(tmp_path: Path):
 def test_report_json_has_schema_version(tmp_path: Path):
     (tmp_path / "a.py").write_text("x = 1\n")
     data = json.loads(runner.invoke(app, ["audit", str(tmp_path), "--format", "json"]).output)
-    assert data["schema_version"] == "1.1"
+    assert data["schema_version"] == "1.2"
     assert "diagnostics" in data
 
 
@@ -626,6 +626,7 @@ def test_support_matrix_command_lists_rules_and_verification_counts():
     assert "IL-501" in result.output
     assert "미검증" in result.output
     assert "양성·음성 시험이 모두 있는 칸" in result.output
+    assert "분석 정확도나 탐지 보증이 아닙니다" in result.output
 
 
 def test_support_matrix_single_rule_shows_benchmark_only_for_java():

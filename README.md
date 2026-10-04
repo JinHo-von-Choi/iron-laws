@@ -76,9 +76,27 @@ iron-laws baseline create .             # 현재 지적을 승인된 부채로 �
 iron-laws check . --baseline .iron-laws-baseline.json   # 새로 생긴 지적만 판정
 iron-laws check . --changed-since origin/main           # 바뀐 파일의 지적만 표시 (전체 점검과 정기 대조)
 iron-laws feedback add IL-501 src/a.py:3 --verdict false-positive --minutes 10   # '확인 필요' 검토 결과 기록
+iron-laws check . --contract .iron-laws-contract.yml    # 근거 계약: 요구한 분석 근거가 충족됐는지(검사 공백 장부)
+iron-laws verify-patch . --patch fix.diff --finding IL-504@app.py:6 --runner docker --image 이미지 -o receipt.json   # AI 패치 검증
+iron-laws regression propose . --finding IL-504@app.py -o spec.yml    # 결함을 구별하는 회귀시험 후보(확정 전)
+iron-laws approvals add . --finding IL-504@app.py --reason "사유" --store 승인기록.jsonl   # 사람의 검토 승인 기록
+iron-laws check . --approvals 승인기록.jsonl                          # 전제가 유지되는 유효한 승인만 받아들임
 ```
 
 종료코드는 `0` 통과, `1` 설정한 심각도 이상의 지적 발견, `2` 잘못된 입력·설정 오류, 점검한 파일이 없는 경우, 또는 점검이 끝까지 이루어지지 않은 경우(규칙 오류·파일 읽기 실패 등)입니다. 불완전한 점검은 등급과 통과를 확정하지 않고 보고서의 `diagnostics`에 사유를 남깁니다. 없는 경로, 등록되지 않은 규칙 ID, 범위를 벗어난 제한값, 점검 대상 파일이 0개인 경우는 통과로 처리하지 않습니다(점검 대상이 비어 있는 것이 의도라면 `--allow-empty`). `fix-prompt`는 지시문 생성이 목적이라 지적이 있어도 종료코드 0이므로, 배포 관문에는 `check`나 `audit`를 쓰십시오.
+
+---
+
+## AI가 만든 패치의 검증과 승인 근거
+
+점검 결과를 AI에게 고치게 한 뒤, **무엇을 확인했고 무엇을 확인하지 못했는지**를 승인 판단에서 사라지지 않게 남기는 기능입니다. 자세한 설명과 안전 경계, 측정한 것·측정하지 못한 것은 [docs/PATCH_VERIFICATION.md](docs/PATCH_VERIFICATION.md)에 있습니다.
+
+- **근거 계약과 검사 공백 장부**: 검사가 끝났다는 것과 요구한 근거가 충족됐다는 것을 구별합니다. 입력 출처를 확정하지 못한 지점(`해석 미확정`)을 깨끗함으로 바꾸지 않습니다. (Python의 명령 실행·경로 접근·SQL 조립 세 계열)
+- **패치 검증과 Receipt**: 원본과 후보를 같은 정책으로 검사하고, 시험 삭제·skip 증가·무시 주석·정책 약화 같은 우회 변경을 따로 표시합니다. 경고가 사라졌다는 이유만으로 수정으로 인정하지 않습니다. 시험은 자격증명 없는 일회용 격리 환경에서만 실행하며, 격리를 얻지 못하면 호스트에서 대신 실행하지 않고 `판정 불가`로 남깁니다.
+- **결함을 구별하는 회귀시험**: 원본에서 결함 때문에 실패 → 후보에서 통과 → 수정을 되돌린 mutant에서 다시 실패를 세 번 반복해 확인합니다.
+- **승인 기록**: 사유·전제를 남기고, 코드가 승인 전제(호출자·흐름·정제 함수·접근 범위·규칙 의미)를 바꾸면 관련 승인만 다시 검토하게 합니다. 복제된 취약 코드는 승인을 물려받지 않습니다.
+
+이 기능의 '통과'는 지정된 검사 계약을 충족했다는 뜻이며 안전성, 취약점 부재, 완전한 기능 동등성을 증명하지 않습니다.
 
 ---
 
@@ -165,6 +183,7 @@ jobs:
 ## 한계
 
 - 실행 순서를 따르는 흐름 분석(분기·반복·예외를 합쳐서 판정)은 함수 안에서 합니다. 같은 파일의 도우미 함수는 호출 깊이 4단계까지 따라가고, **Python은 import를 따라 다른 파일의 함수까지**(시범 지원, 해석 횟수 상한 있음) 따라갑니다. 그 밖의 언어에서 파일 사이 호출로 전달되는 입력은 놓치거나 확인이 필요한 지적(`확인 필요`)으로만 보고합니다. 정제 함수는 자기가 막는 문맥(HTML·SQL·셸·경로 등)에서만 인정합니다.
+- 패치 검증·회귀시험·승인 추적의 표본 평가는 구현자가 직접 분류한 것이며 독립 검토나 실사용 파일럿은 아직 없습니다([docs/PATCH_VERIFICATION.md](docs/PATCH_VERIFICATION.md) §6).
 - 통과 결과만으로 배포를 승인하지 마십시오. 기존 테스트, 코드 검토, 다른 보안 점검과 함께 쓰는 보조 도구입니다.
 - 비밀값이 들어 있는 코드 줄은 모든 보고서와 AI 수정 지시문에서 값을 가려서(`****`) 출력합니다. 다만 규칙이 비밀로 인식하지 못한 값까지 가려 주는 것은 아니므로 지시문을 외부 AI에 붙여넣기 전에 한 번 읽어 보십시오.
 - 정확도 수치와 측정 방법은 [docs/ACCURACY.md](docs/ACCURACY.md), 언어·규칙별 검증 현황은 [docs/SUPPORT_MATRIX.md](docs/SUPPORT_MATRIX.md), 보고서 형식과 호환 정책은 [docs/REPORT_FORMATS.md](docs/REPORT_FORMATS.md)에 있습니다. OWASP Benchmark(Java) 기준으로 XSS 점수 +45%, 취약 암호 +77%이지만 SQL 삽입 +26%, 명령어 삽입 +14%로, 안전하게 가려진 사례에서 오탐이 남아 있습니다.

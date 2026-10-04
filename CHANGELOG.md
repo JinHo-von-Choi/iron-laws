@@ -5,6 +5,30 @@
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-05
+
+### Added
+- **근거 계약과 검사 공백 장부**(`--contract`, `coverage_ledger`): 검사 완료(`scan_status`)와 근거 충족(`contract_status`)을 구별한다. Python의 명령 실행·경로 접근·SQL 조립 관심 지점마다 근거 충족 / 미지원 / 해석 미확정 / 예산 초과 / 정책 제외를 기록하고, 분모(발견한 지점, 분류하지 못한 파일)를 함께 공개한다. 보고 모드와 차단 모드, 계약 파일이 변경에 포함되면 `policy_change_review`
+- **패치 검증**(`verify-patch`)과 검증 기록(Receipt), 재실행(`--replay`): 원본·후보 스냅샷 해시, 동결된 정책과 원본 시험, 우회 변경 탐지(시험 삭제·skip 증가·단언 약화·무시 주석·정책 약화·baseline 재생성·시험 기반 파일 변경), 동일 조건 정적 검사, 변경 범위, 격리 시험 실행. 항목 결과는 통과 / 실패 / 미실행 / 판정 불가로 구분
+- **격리 실행기**: docker 또는 bubblewrap, 네트워크 차단, 비특권 사용자, 자원·시간·출력 상한, 신뢰된 명령 목록. 격리를 얻지 못하면 호스트 실행으로 대체하지 않고 판정 불가
+- **회귀시험**(`regression propose|check`, `verify-patch --regression`): 지적에서 시험 후보를 제안하고, 사람이 확정한 명세를 mock sink harness로 원본 실패·후보 통과·mutant 재실패·세 번 반복 일치로 검증
+- **승인 기록**(`approvals add|list|status|queue|stats|revoke|verify|forget|prune`, `--approvals`): 사유·전제·정책·Receipt를 추가 전용 해시 연결 기록으로 남기고, 승인 전제(호출자·흐름·호출 함수·정제 함수·접근 범위·규칙 의미·정책)가 바뀌면 관련 승인만 재검토. 복제본은 승인을 물려받지 않음
+- `baseline migrate`(승인된 부채로만 옮김, 승인으로 승격하지 않음), `kind: debt`
+- JSON `schema_version` 1.2: `coverage_ledger`, `approval_*`, `unobserved_count`
+- 벤치마크: `benchmarks/plan_experiments.py`(표본 측정과 원시 결과)
+- Python: asyncpg `fetch`·`fetchrow`·`fetchval` SQL 싱크, pathlib 수신자 경로(`(Path(base) / name).read_text()`), 허용 목록 검사(`x not in (...)` → 거부) 인식, `range()`·`enumerate()` 순번과 중첩된 `len()`·`int()`를 오염으로 보지 않음
+
+### Changed
+- 기준선 대응을 전체 지적 집합에서 일대일로 먼저 확정하고 표시 범위를 줄인다. 원본이 남은 복제본은 승인을 물려받지 않고, 파일이 없거나 읽지 못한 항목은 해소가 아니라 미확인
+- `--changed-since`가 NUL 구분 git 경로를 쓴다(한글·공백·탭·개행·인용부호 경로, 하위 폴더, 스테이징·미추적 파일)
+- 억제 지시문은 YAML·shell·TOML·SQL·Dockerfile의 문자열·여러 줄 문자열·here-document 안에서는 주석으로 인정하지 않는다
+- 비밀 가림: 원문을 먼저 가린 뒤 길이를 제한하고, 같은 줄의 다른 규칙·message·evidence·진단과 알려진 토큰 형식(GitHub·OpenAI·AWS·Slack·JWT·개인키·URL 인증정보·Authorization·명령행 비밀번호)에도 적용
+- 여러 단계 도우미 함수 호출(깊이 4)을 따라가고, 경로 검증은 대상 변수·실행 순서·정규화를 확인하며, XXE는 메서드 범위와 최종 설정 상태를 따른다
+- 모든 명령이 불완전·빈 점검 상태를 보존한다. 사람이 읽는 메시지는 stderr로 보내 JSON·SARIF stdout을 오염시키지 않는다
+- 릴리스는 시험·린트·자체 점검·3개 OS wheel smoke를 통과해야 게시되고, 태그와 패키지 버전이 같아야 한다
+- 지원 행렬의 '모델·패턴'을 '적용(싱크 정의)·적용(패턴)'으로 바꾸고 적용 선언이 분석 보증이 아님을 명시
+- `limits.max_cross_file_lookups` 기본값 2000 → 20000(장부 작성이 별도 해석 허용량을 씀)
+
 ## [1.1.1] - 2026-10-04
 
 ### Fixed

@@ -18,14 +18,22 @@ from rich.markup import escape
 from rich.panel import Panel
 from rich.table import Table
 
+from iron_laws.core.approvals import (
+    DEFAULT_APPROVALS_FILE,
+    ApprovalStore,
+    Record,
+    approve_record,
+)
 from iron_laws.core.baseline import (
     DEFAULT_BASELINE_FILE,
     Baseline,
     build_baseline,
     load_baseline,
+    migrate_baseline,
     save_baseline,
 )
 from iron_laws.core.config import ConfigError, InputPathError, IronLawsConfig
+from iron_laws.core.contract import load_contract
 from iron_laws.core.models import AuditReport, AuditSummary, Severity
 from iron_laws.core.scanner import AuditScanner, tool_version
 from iron_laws.reporters.console import DEFAULT_LIMIT, print_console_report
@@ -48,11 +56,16 @@ app = typer.Typer(
     help="오철칙 (五鐵則) - SI 감리에서 자주 지적되는 항목을 정리한 소스코드 보안·품질 점검 CLI",
     add_completion=False,
 )
+regression_app = typer.Typer(help="결함을 구별하는 최소 회귀시험: 제안 → 사람이 확인 → 격리 환경에서 원본 실패·후보 통과·mutant 재실패 검증")
+approvals_app = typer.Typer(help="사람의 검토 승인 기록: 사유·전제를 남기고, 코드가 승인 전제를 바꾸면 관련 승인만 다시 검토하게 합니다")
 baseline_app = typer.Typer(help="기준선(baseline): 이미 알려진 지적을 승인된 부채로 기록하고 새 지적만 걸러 냅니다")
 feedback_app = typer.Typer(help="'확인 필요' 지적의 검토 결과(채택·오탐·소요 시간)를 기록하고 모아 봅니다")
+app.add_typer(regression_app, name="regression")
+app.add_typer(approvals_app, name="approvals")
 app.add_typer(baseline_app, name="baseline")
 app.add_typer(feedback_app, name="feedback")
-console = Console()
+console = Console()  # 사람이 읽는 본문(표·보고서)은 stdout
+err = Console(stderr=True)  # 상태·오류 메시지는 stderr. JSON·SARIF 같은 기계용 stdout을 오염시키지 않는다
 
 BASIS_NONE = "오철칙 자체 품질 규칙 (참고 가이드 항목 외)"
 FEEDBACK_FILE = ".iron-laws-feedback.jsonl"
@@ -70,6 +83,15 @@ BaselineOpt = typer.Option(
 )
 GitignoreOpt = typer.Option(
     False, "--respect-gitignore", help=".gitignore에 걸리는 파일과 폴더를 점검하지 않습니다 (기본은 점검). 설정의 respect_gitignore와 같습니다"
+)
+ContractOpt = typer.Option(
+    None, "--contract", help="근거 계약 파일(신뢰 정책). 보안 관심 지점에 요구하는 분석 근거를 선언하며, 충족 여부가 보고서에 남습니다"
+)
+ContractModeOpt = typer.Option(
+    None, "--contract-mode", help="계약 모드를 덮어씁니다: report(공백을 모으기만 함) 또는 block(필수 범위 미충족이면 실패)"
+)
+ApprovalsOpt = typer.Option(
+    None, "--approvals", help="승인 기록 파일. 지정하면 전제가 유지되는 유효한 승인만 받아들이고, 전제가 바뀐 승인은 다시 검토 대상으로 셉니다"
 )
 ChangedSinceOpt = typer.Option(
     None, "--changed-since", help="이 git 기준(브랜치·커밋)보다 바뀐 파일의 지적만 표시합니다. 전체 점검과 정기적으로 대조하십시오"
@@ -89,20 +111,25 @@ def _tool_version() -> str:
     return tool_version()
 
 
-def _git(args: list[str], cwd: Path) -> str:
+def _git(args: list[str], cwd: Path) -> bytes:
     try:
-        result = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, check=True, timeout=60)
+        result = subprocess.run(["git", *args], cwd=cwd, capture_output=True, check=True, timeout=60)
     except (OSError, subprocess.SubprocessError) as e:
         raise ConfigError(f"git 명령을 실행하지 못했습니다 (git {' '.join(args)}): {e}") from e
     return result.stdout
 
 
+def _nul_paths(raw: bytes) -> list[str]:
+    """`-z` 출력은 경로를 NUL로 구분하므로 한글·공백·탭·개행·인용부호가 들어 있어도 이스케이프 없이 온전하다."""
+    return [chunk.decode("utf-8", errors="surrogateescape") for chunk in raw.split(b"\0") if chunk]
+
+
 def _changed_files(root: Path, ref: str) -> set[str]:
-    """ref 이후 바뀐 파일(추적 중인 변경과 새 파일)을 점검 루트 기준 상대 경로로 돌려준다."""
+    """ref 이후 바뀐 파일(추적 중인 변경, 스테이징된 파일, 새 파일)을 점검 루트 기준 상대 경로로 돌려준다."""
     folder = root if root.is_dir() else root.parent
-    top = Path(_git(["rev-parse", "--show-toplevel"], folder).strip())
-    names = _git(["diff", "--name-only", "--diff-filter=ACMRT", ref], folder).splitlines()
-    names += _git(["ls-files", "--others", "--exclude-standard"], folder).splitlines()
+    top = Path(_git(["rev-parse", "--show-toplevel"], folder).decode("utf-8", errors="surrogateescape").strip())
+    names = _nul_paths(_git(["diff", "--name-only", "-z", "--diff-filter=ACMRT", ref, "--"], folder))
+    names += _nul_paths(_git(["ls-files", "-z", "--full-name", "--others", "--exclude-standard"], folder))
     base = root.resolve() if root.is_dir() else root.resolve().parent
     changed: set[str] = set()
     for name in names:
@@ -120,8 +147,22 @@ def _build_scanner(
     baseline: Path | None = None,
     changed_since: str | None = None,
     respect_gitignore: bool = False,
+    contract: Path | None = None,
+    contract_mode: str | None = None,
+    approvals: Path | None = None,
+    collect_dependencies: bool = False,
 ) -> AuditScanner:
     try:
+        loaded_contract = None
+        if contract is not None:
+            loaded_contract, _digest = load_contract(contract)
+        if contract_mode is not None:
+            if contract_mode not in ("report", "block"):
+                raise ConfigError("--contract-mode는 report 또는 block이어야 합니다")
+            from iron_laws.core.contract import default_contract
+
+            loaded_contract = loaded_contract or default_contract()
+            loaded_contract.mode = contract_mode  # type: ignore[assignment]
         loaded: Baseline | None = load_baseline(baseline) if baseline else None
         changed = _changed_files(path, changed_since) if changed_since else None
         scanner = AuditScanner(
@@ -132,11 +173,16 @@ def _build_scanner(
             changed_files=changed,
             changed_since=changed_since,
             respect_gitignore=respect_gitignore,
+            contract=loaded_contract,
+            contract_source=(str(contract) if contract else "기본값") + (f" (모드 {contract_mode}는 명령행)" if contract_mode else ""),
+            contract_path=contract,
+            approvals=ApprovalStore(approvals) if approvals else None,
+            collect_dependencies=collect_dependencies,
         )
         return scanner
     except ConfigError as e:
         label = "입력 오류" if isinstance(e, InputPathError) else "설정 오류"
-        console.print(f"[bold red]{label}: {escape(str(e))}[/bold red]")
+        err.print(f"[bold red]{label}: {escape(str(e))}[/bold red]")
         raise typer.Exit(2) from e
 
 
@@ -147,24 +193,24 @@ def _check_completion(report: AuditReport, allow_empty: bool) -> None:
         if allow_empty:
             report.summary.is_passed = True
             return
-        console.print(
+        err.print(
             "[bold red]점검한 파일이 없습니다. 경로, 제외 설정, 확장자 설정을 확인하세요. "
             "의도한 경우 --allow-empty를 붙이세요.[/bold red]"
         )
         raise typer.Exit(2)
     if status == "incomplete":
         errors = [d for d in report.diagnostics if d.severity == "error"]
-        console.print(f"[bold red]점검이 끝까지 이루어지지 않았습니다 (오류 {len(errors)}건). 통과로 판정하지 않습니다.[/bold red]")
+        err.print(f"[bold red]점검이 끝까지 이루어지지 않았습니다 (오류 {len(errors)}건). 통과로 판정하지 않습니다.[/bold red]")
         for d in errors[:10]:
             where = f"{d.file_path}: " if d.file_path else ""
-            console.print(f"  - {escape(where + d.message)}")
+            err.print(f"  - {escape(where + d.message)}")
         raise typer.Exit(2)
 
 
 def _write_or_print(content: str, output: Path | None, label: str) -> None:
     if output:
         output.write_text(content, encoding="utf-8")
-        console.print(f"[bold green]{label} 저장 완료: {output}[/bold green]")
+        err.print(f"[bold green]{label} 저장 완료: {output}[/bold green]")
     else:
         sys.stdout.write(content + "\n")
 
@@ -186,11 +232,14 @@ def check_command(
     baseline: Path | None = BaselineOpt,
     changed_since: str | None = ChangedSinceOpt,
     respect_gitignore: bool = GitignoreOpt,
+    contract: Path | None = ContractOpt,
+    contract_mode: str | None = ContractModeOpt,
+    approvals: Path | None = ApprovalsOpt,
 ):
     """
     프로젝트의 보안 약점과 품질 결함을 신속 진단합니다. (CI/CD 적합)
     """
-    scanner = _build_scanner(path, config, search_parents, baseline, changed_since, respect_gitignore)
+    scanner = _build_scanner(path, config, search_parents, baseline, changed_since, respect_gitignore, contract, contract_mode, approvals)
     if fail_on is not None:
         scanner.config.fail_on = fail_on
         scanner.fail_on_source = "명령행 옵션"
@@ -199,7 +248,9 @@ def check_command(
     _check_completion(report, allow_empty)
 
     if not report.summary.is_passed:
-        console.print(
+        if report.summary.contract_mode == "block" and report.summary.contract_status in ("unmet", "policy_change_review"):
+            err.print("[bold red]근거 계약을 충족하지 못해 점검이 실패했습니다. 지적이 없어도 요구한 분석 근거가 없으면 통과가 아닙니다.[/bold red]")
+        err.print(
             f"[bold red]오철칙 기준 미달 (등급: {report.summary.grade})로 인해 점검이 실패했습니다.[/bold red]"
         )
         sys.exit(1)
@@ -223,11 +274,14 @@ def audit_command(
     baseline: Path | None = BaselineOpt,
     changed_since: str | None = ChangedSinceOpt,
     respect_gitignore: bool = GitignoreOpt,
+    contract: Path | None = ContractOpt,
+    contract_mode: str | None = ContractModeOpt,
+    approvals: Path | None = ApprovalsOpt,
 ):
     """
     점검을 수행하고 보고서를 발행합니다. markdown 보고서에는 행안부 구현단계 49개 항목별 점검 현황이 포함됩니다.
     """
-    scanner = _build_scanner(path, config, search_parents, baseline, changed_since, respect_gitignore)
+    scanner = _build_scanner(path, config, search_parents, baseline, changed_since, respect_gitignore, contract, contract_mode, approvals)
     report = scanner.scan()
     if report.summary.scan_status == "empty" and not allow_empty:
         _check_completion(report, allow_empty)
@@ -250,7 +304,7 @@ def _emit_report(
         print_console_report(report, limit)
         if output:
             output.write_text(generate_markdown_report(report, scanner.rules), encoding="utf-8")
-            console.print(f"[bold green]보고서가 파일에 저장되었습니다: {output}[/bold green]")
+            err.print(f"[bold green]보고서가 파일에 저장되었습니다: {output}[/bold green]")
     elif report_format is ReportFormat.MARKDOWN:
         _write_or_print(generate_markdown_report(report, scanner.rules), output, "보고서")
     elif report_format is ReportFormat.JSON:
@@ -273,13 +327,20 @@ def fix_prompt_command(
     baseline: Path | None = BaselineOpt,
     changed_since: str | None = ChangedSinceOpt,
     respect_gitignore: bool = GitignoreOpt,
+    contract: Path | None = ContractOpt,
+    contract_mode: str | None = ContractModeOpt,
+    approvals: Path | None = ApprovalsOpt,
 ):
     """
     점검 결과를 코딩 AI에게 그대로 붙여넣을 수정 지시문으로 만듭니다. 지시문 생성이 목적이라 지적이 있어도 종료코드는 0입니다.
     """
-    scanner = _build_scanner(path, config, search_parents, baseline, changed_since, respect_gitignore)
+    scanner = _build_scanner(path, config, search_parents, baseline, changed_since, respect_gitignore, contract, contract_mode, approvals)
     report = scanner.scan()
+    if report.summary.scan_status == "empty":
+        _check_completion(report, False)
     _write_or_print(generate_fix_prompt(report, limit), output, "수정 지시문")
+    if report.summary.scan_status == "incomplete":
+        _check_completion(report, False)  # 지시문은 내보내되 불완전한 점검이었음을 종료코드로 알린다
 
 
 @baseline_app.command("create")
@@ -295,14 +356,44 @@ def baseline_create_command(
     scanner = _build_scanner(path, config, search_parents)
     report = scanner.scan()
     if report.summary.scan_status != "complete":
-        console.print("[bold red]점검이 완전하지 않아 기준선을 만들지 않습니다. 분석 실패나 빈 점검은 기준선으로 면제할 수 없습니다.[/bold red]")
+        err.print("[bold red]점검이 완전하지 않아 기준선을 만들지 않습니다. 분석 실패나 빈 점검은 기준선으로 면제할 수 없습니다.[/bold red]")
         for d in [d for d in report.diagnostics if d.severity == "error"][:10]:
-            console.print(f"  - {escape(d.file_path + ': ' if d.file_path else '')}{escape(d.message)}")
+            err.print(f"  - {escape(d.file_path + ': ' if d.file_path else '')}{escape(d.message)}")
         raise typer.Exit(2)
     baseline = build_baseline(report, _tool_version())
     save_baseline(baseline, output)
-    console.print(f"[bold green]기준선 저장 완료: {output} (지적 {len(baseline.entries)}건)[/bold green]")
-    console.print("[dim]기준선의 지적은 승인된 부채로 기록됩니다. 이후 `--baseline`으로 새로 생긴 지적만 판정하십시오.[/dim]")
+    err.print(f"[bold green]기준선 저장 완료: {output} (지적 {len(baseline.entries)}건)[/bold green]")
+    err.print("[dim]기준선의 지적은 승인된 부채로 기록됩니다. 이후 `--baseline`으로 새로 생긴 지적만 판정하십시오.[/dim]")
+
+
+@baseline_app.command("migrate")
+def baseline_migrate_command(
+    old: Path = typer.Argument(..., help="옛 기준선 파일"),
+    path: Path = typer.Argument(Path("."), help="점검할 프로젝트"),
+    output: Path = typer.Option(None, "--output", "-o", help="새 기준선 저장 경로(생략하면 옛 파일을 덮어쓰지 않고 `<옛 이름>.migrated.json`)"),
+    config: Path | None = ConfigOpt,
+):
+    """
+    옛 기준선을 현재 지문으로 옮깁니다. 옮긴 항목은 '승인된 부채'일 뿐이며 사람의 검토 승인으로 승격되지 않습니다.
+    현재 지적과 일대일로 맺어지지 않는 항목은 옮기지 않고 목록으로 알립니다.
+    """
+    try:
+        legacy = load_baseline(old)
+    except ConfigError as e:
+        err.print(f"[bold red]입력 오류: {escape(str(e))}[/bold red]")
+        raise typer.Exit(2) from e
+    scanner = _build_scanner(path, config)
+    report = scanner.scan()
+    if report.summary.scan_status != "complete":
+        err.print("[bold red]점검이 완전하지 않아 기준선을 옮기지 않습니다.[/bold red]")
+        raise typer.Exit(2)
+    result = migrate_baseline(legacy, report.violations, _tool_version())
+    target = output or old.with_suffix(".migrated.json")
+    save_baseline(result.baseline, target)
+    err.print(f"[green]옮김 {len(result.migrated)}건, 맺지 못해 옮기지 않음 {len(result.unmatched)}건 → {target}[/green]")
+    for entry in result.unmatched[:10]:
+        err.print(f"  - 옮기지 않음: {escape(entry.rule_id)} {escape(entry.path)}:{entry.line}")
+    err.print("[dim]이 기준선은 기존 지적 관리 데이터입니다. 승인 기록(approvals)은 자동으로 만들지 않았습니다.[/dim]")
 
 
 @baseline_app.command("diff")
@@ -316,16 +407,19 @@ def baseline_diff_command(
     """
     scanner = _build_scanner(path, config, False, baseline)
     report = scanner.scan()
+    _check_completion(report, False)
     s = report.summary
     table = Table(title="[기준선 대비 현황]")
-    for column in ("신규", "기존(승인)", "해소", "재검토(규칙 의미 변경)"):
+    for column in ("신규", "기존(승인)", "해소", "미확인", "재검토(규칙 의미 변경)"):
         table.add_column(column, justify="center")
     review = sum(1 for v in report.violations if v.baseline_status and v.baseline_status.value == "review")
-    table.add_row(str((s.new_count or 0) - review), str(s.existing_count or 0), str(s.resolved_count or 0), str(review))
+    table.add_row(
+        str((s.new_count or 0) - review), str(s.existing_count or 0), str(s.resolved_count or 0), str(s.unobserved_count or 0), str(review)
+    )
     console.print(table)
     for d in report.diagnostics:
         if d.kind == "baseline":
-            console.print(f"[yellow]{escape(d.message)}[/yellow]")
+            err.print(f"[yellow]{escape(d.message)}[/yellow]")
 
 
 @feedback_app.command("add")
@@ -341,7 +435,7 @@ def feedback_add_command(
     '확인 필요' 지적을 검토한 결과를 기록합니다. 규칙 개선과 오탐 줄이기에 쓸 자료입니다.
     """
     if verdict not in ("accepted", "false-positive", "deferred"):
-        console.print("[bold red]--verdict는 accepted, false-positive, deferred 중 하나여야 합니다.[/bold red]")
+        err.print("[bold red]--verdict는 accepted, false-positive, deferred 중 하나여야 합니다.[/bold red]")
         raise typer.Exit(2)
     record = {
         "time": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -353,7 +447,7 @@ def feedback_add_command(
     }
     with file.open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(record, ensure_ascii=False) + "\n")
-    console.print(f"[green]검토 기록을 추가했습니다: {file}[/green]")
+    err.print(f"[green]검토 기록을 추가했습니다: {file}[/green]")
 
 
 @feedback_app.command("summary")
@@ -362,7 +456,7 @@ def feedback_summary_command(file: Path = typer.Option(Path(FEEDBACK_FILE), "--f
     규칙별 채택률·오탐률·평균 검토 시간을 보여 줍니다.
     """
     if not file.is_file():
-        console.print(f"[yellow]기록 파일이 없습니다: {file}[/yellow]")
+        err.print(f"[yellow]기록 파일이 없습니다: {file}[/yellow]")
         raise typer.Exit(2)
     stats: dict[str, dict[str, int]] = {}
     for raw in file.read_text(encoding="utf-8").splitlines():
@@ -371,7 +465,7 @@ def feedback_summary_command(file: Path = typer.Option(Path(FEEDBACK_FILE), "--f
         try:
             rec = json.loads(raw)
         except json.JSONDecodeError:
-            console.print(f"[yellow]읽을 수 없는 줄을 건너뜁니다: {escape(raw[:60])}[/yellow]")
+            err.print(f"[yellow]읽을 수 없는 줄을 건너뜁니다: {escape(raw[:60])}[/yellow]")
             continue
         row = stats.setdefault(rec.get("rule_id", "?"), {"accepted": 0, "false-positive": 0, "deferred": 0, "minutes": 0, "n": 0})
         row[rec.get("verdict", "deferred")] = row.get(rec.get("verdict", "deferred"), 0) + 1
@@ -382,6 +476,392 @@ def feedback_summary_command(file: Path = typer.Option(Path(FEEDBACK_FILE), "--f
         table.add_column(column, justify="center")
     for rule_id, row in sorted(stats.items()):
         table.add_row(rule_id, str(row["n"]), str(row["accepted"]), str(row["false-positive"]), str(row["deferred"]), f"{row['minutes'] / row['n']:.1f}")
+    console.print(table)
+
+
+@regression_app.command("propose")
+def regression_propose_command(
+    original: Path = typer.Argument(..., help="원본 프로젝트 폴더"),
+    finding: str = typer.Option(..., "--finding", help="시험을 만들 지적: 지문 접두사, RULE@경로:줄, RULE@경로"),
+    out: Path | None = typer.Option(None, "--out", "-o", help="명세 YAML 저장 경로(생략하면 stdout)"),
+    config: Path | None = ConfigOpt,
+):
+    """
+    지적의 입력·전파·싱크 근거에서 회귀시험 후보(명세)를 제안합니다. 제안은 검증 근거가 아닙니다.
+    입력·기대 결과·가짜 sink를 직접 확인하고 `confirmed: true`로 바꾼 명세만 검증에 쓰입니다.
+    첫 지원 범위: Python의 명령 실행(IL-504)·경로 접근(IL-502)·SQL 조립(IL-501), 모듈 수준 함수.
+    """
+    from iron_laws.verify.engine import resolve_finding
+    from iron_laws.verify.regression import dump_spec, propose_spec
+
+    scanner = _build_scanner(original, config)
+    report = scanner.scan()
+    try:
+        violation = resolve_finding(report, finding)
+    except ConfigError as e:
+        err.print(f"[bold red]입력 오류: {escape(str(e))}[/bold red]")
+        raise typer.Exit(2) from e
+    proposal = propose_spec(original.resolve(), violation)
+    if proposal.spec is None:
+        err.print(f"[bold yellow]회귀시험 후보를 만들 수 없습니다: {escape(proposal.reason)}[/bold yellow]")
+        raise typer.Exit(2)
+    _write_or_print(dump_spec(proposal.spec), out, "회귀시험 명세(확정 전)")
+    err.print("[yellow]검토할 것: 입력(payload)·정상 대조군(benign)·기대 결과(expect)·가짜 sink(fake_sink). 확인한 뒤 confirmed: true로 바꾸십시오.[/yellow]")
+    for note in proposal.spec.review_notes:
+        err.print(f"  - {escape(note)}")
+
+
+@regression_app.command("check")
+def regression_check_command(
+    original: Path = typer.Argument(..., help="원본 프로젝트 폴더"),
+    patch: Path = typer.Option(..., "--patch", help="후보 patch(unified diff)"),
+    spec: Path = typer.Option(..., "--spec", help="확정된 회귀시험 명세"),
+    runner: str = typer.Option("auto", "--runner", help="격리 실행기: auto, docker, bwrap, none"),
+    image: str | None = typer.Option(None, "--image", help="격리 실행에 쓸 docker 이미지(로컬에 미리 받아 둠)"),
+    timeout: int = typer.Option(60, "--timeout", min=1, help="실행 한 번의 시간 상한(초)"),
+):
+    """
+    확정된 명세로 원본에서 결함이 재현되는지, 후보에서 통과하는지, 수정을 되돌린 mutant에서 다시 실패하는지를 격리 환경에서 확인합니다.
+    종료코드: 0 통과, 1 실패, 2 판정 불가.
+    """
+    from iron_laws.verify.engine import regression_only
+    from iron_laws.verify.receipt import STATE_LABEL
+    from iron_laws.verify.runner import RunLimits
+
+    try:
+        result = regression_only(original, patch, spec, runner, image, RunLimits(timeout_s=timeout))
+    except ConfigError as e:
+        err.print(f"[bold red]입력 오류: {escape(str(e))}[/bold red]")
+        raise typer.Exit(2) from e
+    sys.stdout.write(json.dumps({"result": result.result, "label": STATE_LABEL[result.result], "reason": result.reason, "evidence": result.evidence}, ensure_ascii=False, indent=2) + "\n")
+    raise typer.Exit({"pass": 0, "fail": 1}.get(result.result, 2))
+
+
+@app.command("verify-patch")
+def verify_patch_command(
+    original: Path = typer.Argument(..., help="원본 프로젝트 폴더 (읽기만 합니다. 수정·커밋하지 않습니다)"),
+    patch: Path = typer.Option(..., "--patch", help="외부 AI가 만든 unified diff 파일"),
+    finding: str | None = typer.Option(None, "--finding", help="고치려는 지적: 지문 접두사, RULE@경로:줄, RULE@경로"),
+    config: Path | None = ConfigOpt,
+    contract: Path | None = typer.Option(None, "--contract", help="근거 계약 파일(신뢰 정책)"),
+    test_cmd: list[str] = typer.Option([], "--test-cmd", help="기존 시험 명령의 각 인자(여러 번 지정). 예: --test-cmd python --test-cmd -m --test-cmd pytest"),
+    runner: str = typer.Option("auto", "--runner", help="격리 실행기: auto, docker, bwrap, none. 격리를 얻지 못하면 시험을 실행하지 않고 판정 불가로 남깁니다"),
+    image: str | None = typer.Option(None, "--image", help="격리 실행에 쓸 docker 이미지(로컬에 미리 받아 두어야 함). 기본은 실행 정책 또는 python:3.13-slim"),
+    timeout: int = typer.Option(180, "--timeout", min=1, help="후보당 시험 시간 상한(초)"),
+    max_files: int = typer.Option(5, "--max-files", min=1, help="patch가 바꿀 수 있는 파일 수 상한"),
+    allow_path: list[str] = typer.Option([], "--allow-path", help="patch가 바꿀 수 있는 경로 패턴(여러 번 지정). 지정하면 그 밖은 범위 위반"),
+    no_require_tests: bool = typer.Option(False, "--no-require-tests", help="시험 미실행을 판정 불가로 보지 않습니다(기본은 시험이 필수)"),
+    regression: Path | None = typer.Option(None, "--regression", help="결함을 구별하는 회귀시험 명세(검토·확정된 것)"),
+    out: Path | None = typer.Option(None, "--out", "-o", help="검증 기록(Receipt) JSON 저장 경로"),
+    replay: Path | None = typer.Option(None, "--replay", help="이전 Receipt를 같은 입력·조건으로 깨끗한 작업영역에서 다시 실행해 결과가 재현되는지 확인"),
+):
+    """
+    AI가 만든 patch를 원본과 같은 정책·조건으로 검증하고 승인 근거(Receipt)를 남깁니다.
+    종료코드: 0 검증 항목 통과, 1 검증 실패, 2 판정 불가 또는 입력 오류.
+    통과는 지정된 검사 계약을 충족했다는 뜻이며 안전성이나 완전한 기능 동등성을 증명하지 않습니다.
+    """
+    from iron_laws.verify.engine import VerifyOptions, verify_patch
+    from iron_laws.verify.receipt import STATE_LABEL, Receipt
+    from iron_laws.verify.replay import replay_receipt
+    from iron_laws.verify.runner import RunLimits
+
+    options = VerifyOptions(
+        finding=finding,
+        config_path=config,
+        contract_path=contract,
+        test_cmd=list(test_cmd) or None,
+        runner=runner,
+        image=image,
+        limits=RunLimits(timeout_s=timeout),
+        require_tests=not no_require_tests,
+        max_files=max_files,
+        allow_paths=tuple(allow_path),
+        regression_spec=regression,
+    )
+    try:
+        if replay is not None:
+            recorded = Receipt.model_validate_json(replay.read_text(encoding="utf-8"))
+            outcome = replay_receipt(recorded, original, patch)
+            err.print(f"[bold]재실행: {'재현됨' if outcome.reproduced else '재현되지 않음'}[/bold]")
+            for line in outcome.differences:
+                err.print(f"  - {escape(line)}")
+            _write_or_print(outcome.receipt.model_dump_json(indent=2), out, "재실행 기록")
+            raise typer.Exit(0 if outcome.reproduced else 1)
+        receipt = verify_patch(original, patch, options)
+    except ConfigError as e:
+        err.print(f"[bold red]입력 오류: {escape(str(e))}[/bold red]")
+        raise typer.Exit(2) from e
+    table = Table(title="[패치 검증 결과]", expand=True)
+    table.add_column("항목")
+    table.add_column("결과", width=12)
+    table.add_column("근거·사유")
+    for c in receipt.checks:
+        style = {"pass": "green", "fail": "red", "not_run": "yellow", "unknown": "yellow"}[c.result]
+        table.add_row(c.title, f"[{style}]{STATE_LABEL[c.result]}[/{style}]", escape(c.reason)[:160])
+    console.print(table)
+    if receipt.bypass_changes:
+        console.print("[bold yellow]우회 변경 (경고가 사라졌더라도 수정으로 인정하지 않음)[/bold yellow]")
+        for b in receipt.bypass_changes:
+            console.print(f"  - {escape(b['kind'])} {escape(b['path'])}: {escape(b['detail'])}")
+    console.print(f"[bold]종합: {receipt.verdict.label}[/bold]  (기록 해시 {receipt.receipt_digest})")
+    console.print(f"[dim]{receipt.verdict.caveat}[/dim]")
+    if out:
+        out.write_text(receipt.model_dump_json(indent=2) + "\n", encoding="utf-8")
+        err.print(f"[green]검증 기록 저장: {out}[/green]")
+    raise typer.Exit({"verified": 0, "failed": 1, "undeterminable": 2}[receipt.verdict.overall])
+
+
+# ---------------------------------------------------------------------------
+# 승인 기록
+# ---------------------------------------------------------------------------
+
+
+def _store(path: Path | None) -> ApprovalStore:
+    try:
+        return ApprovalStore(path or Path(DEFAULT_APPROVALS_FILE))
+    except ConfigError as e:
+        err.print(f"[bold red]입력 오류: {escape(str(e))}[/bold red]")
+        raise typer.Exit(2) from e
+
+
+@approvals_app.command("add")
+def approvals_add_command(
+    path: Path = PathArg,
+    finding: str = typer.Option(..., "--finding", help="승인할 지적: 지문 접두사, RULE@경로:줄, RULE@경로"),
+    reason: str = typer.Option(..., "--reason", help="승인 사유(3자 이상). 무엇을 확인했고 왜 받아들이는지"),
+    reviewer: str = typer.Option("", "--reviewer", help="검토자 표기. 인증되지 않은 이름표이며 누가 승인했는지 증명하지 않습니다"),
+    expires: str | None = typer.Option(None, "--expires", help="승인 유효기간(YYYY-MM-DD). 지나면 다시 검토 대상이 됩니다"),
+    receipt: Path | None = typer.Option(None, "--receipt", help="이 승인의 근거가 된 패치 검증 기록(Receipt) 파일"),
+    minutes: int = typer.Option(0, "--minutes", min=0, help="검토에 든 시간(분). 검토 계측용"),
+    store: Path | None = typer.Option(None, "--store", help=f"승인 기록 파일(기본 {DEFAULT_APPROVALS_FILE}). 후보 변경이 쓸 수 없는 위치를 권장합니다"),
+    config: Path | None = ConfigOpt,
+    contract: Path | None = ContractOpt,
+):
+    """
+    지적 하나를 사람의 검토 결과로 승인하고, 승인 당시의 전제(흐름·호출자·정제 함수·접근 범위·정책)를 함께 기록합니다.
+    기록은 추가 전용이며 해시로 이어집니다. 해시는 변조 탐지용이고 승인자의 진위를 증명하지 않습니다.
+    """
+    from datetime import date as _date
+
+    from iron_laws.verify.engine import resolve_finding
+    from iron_laws.verify.receipt import Receipt
+
+    approvals_store = _store(store)
+    scanner = _build_scanner(path, config, False, None, None, False, contract, None, None, True)
+    report = scanner.scan()
+    if report.summary.scan_status != "complete":
+        err.print("[bold red]점검이 끝까지 이루어지지 않아 승인을 기록하지 않습니다(불완전한 분석 위에 승인을 쌓지 않습니다).[/bold red]")
+        raise typer.Exit(2)
+    try:
+        violation = resolve_finding(report, finding)
+        expiry = _date.fromisoformat(expires) if expires else None
+        receipt_digest = None
+        if receipt is not None:
+            loaded = Receipt.model_validate_json(receipt.read_text(encoding="utf-8"))
+            if not loaded.verify_seal():
+                raise ConfigError("검증 기록(Receipt)의 내용 해시가 맞지 않습니다")
+            receipt_digest = loaded.receipt_digest
+        existing = [a for a in approvals_store.approvals() if not a.revoked and a.record.finding and a.record.finding.fingerprint == violation.fingerprint]
+        if existing:
+            raise ConfigError(f"이미 같은 지적에 대한 승인이 있습니다: {existing[0].id}")
+        record = approve_record(violation, reason, reviewer, scanner._approval_policy(), expiry, receipt_digest, minutes)
+        approvals_store.append(record)
+    except (ConfigError, ValueError) as e:
+        err.print(f"[bold red]입력 오류: {escape(str(e))}[/bold red]")
+        raise typer.Exit(2) from e
+    err.print(f"[green]승인 기록 추가: {record.id} ({violation.rule_id} {violation.file_path.as_posix()}:{violation.line_number})[/green]")
+    err.print("[dim]이 승인은 기록된 전제가 유지되는 동안만 유효합니다. 승인 기록 파일은 후보 변경이 바꿀 수 없는 곳에 두십시오.[/dim]")
+    sys.stdout.write(record.id + "\n")
+
+
+@approvals_app.command("list")
+def approvals_list_command(store: Path | None = typer.Option(None, "--store", help="승인 기록 파일")):
+    """
+    기록된 승인을 보여 줍니다(점검 없이 기록만 읽습니다. 현재 유효성은 `approvals status`).
+    """
+    items = _store(store).approvals()
+    table = Table(title="[승인 기록]", expand=True)
+    for column in ("ID", "규칙", "위치", "사유", "검토자", "만료", "상태"):
+        table.add_column(column, no_wrap=(column == "ID"))
+    for a in items:
+        f = a.record.finding
+        table.add_row(a.id, f.rule_id if f else "", f"{f.path}::{f.scope_name}" if f else "", escape(a.record.reason)[:40], escape(a.record.reviewer), a.record.expires or "-", "철회됨" if a.revoked else "기록됨")
+    console.print(table)
+
+
+@approvals_app.command("status")
+def approvals_status_command(
+    path: Path = PathArg,
+    store: Path | None = typer.Option(None, "--store", help="승인 기록 파일"),
+    config: Path | None = ConfigOpt,
+    contract: Path | None = ContractOpt,
+    json_output: bool = typer.Option(False, "--json", help="JSON으로 출력"),
+):
+    """
+    현재 코드에서 각 승인이 아직 유효한지 확인합니다. 종료코드: 0 모두 유효, 1 다시 검토할 승인이 있음, 2 점검 불가.
+    """
+    approvals_store = _store(store)
+    scanner = _build_scanner(path, config, False, None, None, False, contract, None, store or Path(DEFAULT_APPROVALS_FILE))
+    report = scanner.scan()
+    if report.summary.scan_status != "complete":
+        err.print("[bold red]점검이 끝까지 이루어지지 않아 승인 유효성을 판단할 수 없습니다.[/bold red]")
+        raise typer.Exit(2)
+    rows = scanner.approval_rows
+    label = {"valid": "유효", "needs_review": "재검토 필요", "revoked": "철회됨", "resolved": "해소됨", "unobserved": "미확인"}
+    if json_output:
+        payload = [{"id": r.approval.id, "status": r.status, "reasons": r.reasons, "finding": r.approval.record.finding.model_dump() if r.approval.record.finding else None} for r in rows]
+        sys.stdout.write(json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
+    else:
+        table = Table(title="[승인 유효성]", expand=True)
+        for column in ("ID", "지적", "상태", "이유"):
+            table.add_column(column, no_wrap=(column == "ID"))
+        for r in rows:
+            f = r.approval.record.finding
+            style = {"valid": "green", "needs_review": "yellow", "unobserved": "yellow"}.get(r.status, "white")
+            table.add_row(r.approval.id, f"{f.rule_id} {f.path}::{f.scope_name}" if f else "", f"[{style}]{label.get(r.status, r.status)}[/{style}]", escape("; ".join(r.reasons))[:100])
+        console.print(table)
+    problems = approvals_store.verify_chain()
+    for p in problems:
+        err.print(f"[bold red]기록 무결성: {escape(p)}[/bold red]")
+    raise typer.Exit(1 if problems or any(r.status in ("needs_review", "unobserved") for r in rows) else 0)
+
+
+@approvals_app.command("revoke")
+def approvals_revoke_command(
+    approval_id: str = typer.Argument(..., help="철회할 승인 ID"),
+    reason: str = typer.Option(..., "--reason", help="철회 사유"),
+    store: Path | None = typer.Option(None, "--store", help="승인 기록 파일"),
+):
+    """
+    승인을 철회합니다(철회 기록을 추가하며 이전 기록은 지우지 않습니다).
+    """
+    approvals_store = _store(store)
+    if approval_id not in {a.id for a in approvals_store.approvals()}:
+        err.print(f"[bold red]승인을 찾을 수 없습니다: {escape(approval_id)}[/bold red]")
+        raise typer.Exit(2)
+    created = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    try:
+        approvals_store.append(Record(seq=0, kind="revoke", id=f"RV-{approval_id[3:]}", created=created, target=approval_id, reason=reason.strip()))
+    except ConfigError as e:
+        err.print(f"[bold red]입력 오류: {escape(str(e))}[/bold red]")
+        raise typer.Exit(2) from e
+    err.print(f"[green]철회 기록 추가: {approval_id}[/green]")
+
+
+@approvals_app.command("verify")
+def approvals_verify_command(store: Path | None = typer.Option(None, "--store", help="승인 기록 파일")):
+    """
+    기록의 해시 연결(삭제·재배열·내용 변경 의심)을 확인합니다. 변조 탐지용이며 진위 인증이 아닙니다.
+    """
+    problems = _store(store).verify_chain()
+    for p in problems:
+        err.print(f"[bold red]{escape(p)}[/bold red]")
+    if problems:
+        raise typer.Exit(1)
+    err.print("[green]기록 해시 연결 이상 없음 (변조 탐지 근거일 뿐 진위·안전성의 증명이 아닙니다)[/green]")
+
+
+@approvals_app.command("forget")
+def approvals_forget_command(
+    approval_id: str = typer.Argument(..., help="삭제 표시할 승인 ID"),
+    yes: bool = typer.Option(False, "--yes", help="확인했습니다"),
+    store: Path | None = typer.Option(None, "--store", help="승인 기록 파일"),
+):
+    """
+    승인을 현재 목록에서 지우는 삭제 표시를 추가합니다. 원본 줄은 `approvals prune`을 해야 파일에서 사라집니다.
+    """
+    if not yes:
+        err.print("[bold red]삭제 표시는 --yes로 확인해야 합니다.[/bold red]")
+        raise typer.Exit(2)
+    approvals_store = _store(store)
+    if approval_id not in {a.id for a in approvals_store.approvals()}:
+        err.print(f"[bold red]승인을 찾을 수 없습니다: {escape(approval_id)}[/bold red]")
+        raise typer.Exit(2)
+    created = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    approvals_store.append(Record(seq=0, kind="forget", id=f"FG-{approval_id[3:]}", created=created, target=approval_id))
+    err.print(f"[green]삭제 표시 추가: {approval_id}[/green]")
+
+
+@approvals_app.command("prune")
+def approvals_prune_command(
+    before: str = typer.Option(..., "--before", help="이 날짜(YYYY-MM-DD) 이전에 만들어진 만료·철회·삭제 표시된 승인을 파일에서 지웁니다"),
+    yes: bool = typer.Option(False, "--yes", help="되돌릴 수 없는 작업임을 확인했습니다"),
+    store: Path | None = typer.Option(None, "--store", help="승인 기록 파일"),
+):
+    """
+    보존기간이 지난 기록을 지우고 해시 연결을 새로 만듭니다. 추가 전용 이력을 깨는 되돌릴 수 없는 작업입니다.
+    """
+    from datetime import date as _date
+
+    if not yes:
+        err.print("[bold red]이 작업은 되돌릴 수 없습니다. --yes로 확인하십시오.[/bold red]")
+        raise typer.Exit(2)
+    try:
+        cutoff = _date.fromisoformat(before)
+    except ValueError as e:
+        err.print("[bold red]--before는 YYYY-MM-DD 형식이어야 합니다.[/bold red]")
+        raise typer.Exit(2) from e
+    removed = _store(store).prune(cutoff)
+    err.print(f"[green]지운 기록 {removed}건[/green]")
+
+
+@approvals_app.command("queue")
+def approvals_queue_command(
+    path: Path = PathArg,
+    store: Path | None = typer.Option(None, "--store", help="승인 기록 파일"),
+    config: Path | None = ConfigOpt,
+    json_output: bool = typer.Option(False, "--json", help="JSON으로 출력"),
+):
+    """
+    검토 대기열: 사람이 판단해야 하는 항목(승인 전제가 바뀐 승인, 승인 없는 '확인 필요' 지적)을 심각도 순으로 보여 줍니다.
+    """
+    scanner = _build_scanner(path, config, False, None, None, False, None, None, store or Path(DEFAULT_APPROVALS_FILE))
+    report = scanner.scan()
+    if report.summary.scan_status != "complete":
+        err.print("[bold red]점검이 끝까지 이루어지지 않아 대기열이 불완전할 수 있습니다.[/bold red]")
+    order = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3}
+    items: list[dict] = []
+    for r in scanner.approval_rows:
+        if r.status in ("needs_review", "unobserved") and r.violation is not None:
+            items.append({"kind": "재검토 필요한 승인", "id": r.approval.id, "rule": r.violation.rule_id, "location": f"{r.violation.file_path.as_posix()}:{r.violation.line_number}", "severity": r.violation.severity.value, "why": "; ".join(r.reasons)})
+    for v in report.violations:
+        if v.confidence.value == "REVIEW" and v.approval_status in (None, "none", "expired", "revoked"):
+            items.append({"kind": "승인 없는 확인 필요 지적", "id": v.fingerprint[:10], "rule": v.rule_id, "location": f"{v.file_path.as_posix()}:{v.line_number}", "severity": v.severity.value, "why": v.message[:80]})
+    items.sort(key=lambda i: (order[i["severity"]], i["location"]))
+    if json_output:
+        sys.stdout.write(json.dumps(items, ensure_ascii=False, indent=2) + "\n")
+        return
+    table = Table(title=f"[검토 대기열 {len(items)}건]", expand=True)
+    for column in ("종류", "ID", "규칙", "위치", "심각도", "사유"):
+        table.add_column(column)
+    for i in items[:50]:
+        table.add_row(i["kind"], i["id"], i["rule"], escape(i["location"]), i["severity"], escape(i["why"]))
+    console.print(table)
+
+
+@approvals_app.command("stats")
+def approvals_stats_command(store: Path | None = typer.Option(None, "--store", help="승인 기록 파일")):
+    """
+    검토 계측: 승인·철회 건수, 규칙별 건수, 검토 시간(평균·중앙값). 기록에 든 식별자만 집계하며 외부로 보내지 않습니다.
+    """
+    from statistics import mean, median
+
+    items = _store(store).approvals()
+    minutes = [a.record.minutes for a in items if a.record.minutes]
+    by_rule: dict[str, int] = {}
+    for a in items:
+        if a.record.finding:
+            by_rule[a.record.finding.rule_id] = by_rule.get(a.record.finding.rule_id, 0) + 1
+    table = Table(title="[검토 계측]")
+    table.add_column("항목")
+    table.add_column("값", justify="right")
+    table.add_row("승인 기록", str(len(items)))
+    table.add_row("철회됨", str(sum(1 for a in items if a.revoked)))
+    table.add_row("검토 시간 기록이 있는 승인", str(len(minutes)))
+    table.add_row("검토 시간 평균(분)", f"{mean(minutes):.1f}" if minutes else "-")
+    table.add_row("검토 시간 중앙값(분)", f"{median(minutes):.1f}" if minutes else "-")
+    for rule_id, count in sorted(by_rule.items()):
+        table.add_row(f"규칙 {rule_id}", str(count))
     console.print(table)
 
 
@@ -434,7 +914,7 @@ def support_command(
     """
     matrix = build_support_matrix(get_active_rules())
     if rule_id is not None and rule_id.upper() not in {row.rule_id.upper() for row in matrix}:
-        console.print(f"[bold red]규칙을 찾을 수 없습니다: {escape(rule_id)}[/bold red]")
+        err.print(f"[bold red]규칙을 찾을 수 없습니다: {escape(rule_id)}[/bold red]")
         raise typer.Exit(2)
     sys.stdout.write(render_support_matrix(matrix, rule_id) + "\n")
 
@@ -471,7 +951,7 @@ def coverage_command():
     console.print(
         f"탑재 {loaded}개 · 수동 확인 필요 {counts['수동 확인 필요']}개 · 미탑재 {counts['미탑재']}개 (전체 {len(statuses)}개)"
     )
-    console.print(f"[dim]규칙 {len(rules)}개 중 행안부 항목에 매핑된 규칙은 {sum(1 for r in rules if rule_item_ids(r))}개입니다.[/dim]")
+    err.print(f"[dim]규칙 {len(rules)}개 중 행안부 항목에 매핑된 규칙은 {sum(1 for r in rules if rule_item_ids(r))}개입니다.[/dim]")
     design = build_design_status(empty, rules)
     covered = sum(1 for d in design if d.rule_ids)
     console.print(
@@ -500,7 +980,7 @@ def explain_command(rule_id: str = typer.Argument(..., help="규칙 ID (예: IL-
             ]
             console.print(Panel("\n".join(lines)))
             return
-    console.print(f"[bold red]규칙을 찾을 수 없습니다: {escape(rule_id)}[/bold red]")
+    err.print(f"[bold red]규칙을 찾을 수 없습니다: {escape(rule_id)}[/bold red]")
     raise typer.Exit(2)
 
 
@@ -511,7 +991,7 @@ def init_command(target_dir: Path = typer.Argument(Path("."), help="설정 파�
     """
     config_path = target_dir / ".iron-laws.yml"
     if config_path.exists():
-        console.print(f"[bold yellow]이미 설정 파일이 존재합니다: {config_path}[/bold yellow]")
+        err.print(f"[bold yellow]이미 설정 파일이 존재합니다: {config_path}[/bold yellow]")
         return
 
     body = yaml.safe_dump(
@@ -519,7 +999,7 @@ def init_command(target_dir: Path = typer.Argument(Path("."), help="설정 파�
     )
     content = f"# 오철칙 (Iron Laws) 프로젝트 설정 파일\n{body}"
     config_path.write_text(content, encoding="utf-8")
-    console.print(f"[bold green]기본 설정 파일이 생성되었습니다: {config_path}[/bold green]")
+    err.print(f"[bold green]기본 설정 파일이 생성되었습니다: {config_path}[/bold green]")
 
 
 def _ensure_utf8_output() -> None:

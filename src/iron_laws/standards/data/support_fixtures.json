@@ -577,8 +577,8 @@
    "positive": 1
   },
   "python": {
-   "negative": 4,
-   "positive": 3
+   "negative": 8,
+   "positive": 8
   },
   "rust": {
    "negative": 1,
@@ -607,8 +607,8 @@
    "positive": 1
   },
   "python": {
-   "negative": 5,
-   "positive": 5
+   "negative": 6,
+   "positive": 6
   }
  },
  "IL-503": {
@@ -643,7 +643,7 @@
    "positive": 1
   },
   "python": {
-   "negative": 3,
+   "negative": 4,
    "positive": 5
   }
  },

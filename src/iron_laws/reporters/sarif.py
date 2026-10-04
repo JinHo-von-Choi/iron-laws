@@ -56,6 +56,66 @@ def _baseline_state(v: Violation) -> dict:
     return {"baselineState": "unchanged" if v.baseline_status is BaselineStatus.EXISTING else "new"}
 
 
+def _ledger_properties(report: AuditReport) -> dict:
+    ledger = report.coverage_ledger
+    if ledger is None:
+        return {}
+    return {
+        "status": ledger.status,
+        "contractMode": ledger.contract_mode,
+        "contractScope": ledger.contract_scope,
+        "contractDigest": ledger.contract_digest,
+        "digests": ledger.digests,
+        "families": [t.model_dump() for t in ledger.families],
+        "unclassifiedFiles": sum(1 for f in ledger.files if f.classification == "unclassified"),
+        "unclassifiedChangedFiles": ledger.unclassified_changed_files,
+        "limitations": ledger.limitations,
+    }
+
+
+def _invocation(report: AuditReport) -> dict:
+    """점검이 끝까지 이루어졌는지와 검사 공백을 SARIF invocation에 남긴다. 소비 도구가 결과 0건을 '문제 없음'으로 오해하지 않게 한다."""
+    notifications = []
+    for d in report.diagnostics:
+        if d.severity in ("error", "warning"):
+            notifications.append(
+                {
+                    "level": "error" if d.severity == "error" else "warning",
+                    "message": {"text": d.message},
+                    "descriptor": {"id": f"diagnostic/{d.kind}"},
+                    **({"locations": [{"physicalLocation": {"artifactLocation": {"uri": _uri(report, d.file_path), "uriBaseId": "%SRCROOT%"}}}]} if d.file_path else {}),
+                }
+            )
+    ledger = report.coverage_ledger
+    if ledger is not None:
+        for p in ledger.points:
+            if p.in_scope and p.state in ("unsupported", "unresolved", "budget_exceeded"):
+                notifications.append(
+                    {
+                        "level": "warning",
+                        "message": {"text": f"[{p.family}] {p.callee}() — {p.state}: {p.reason}"},
+                        "descriptor": {"id": f"coverage/{p.state}"},
+                        "locations": [
+                            {
+                                "physicalLocation": {
+                                    "artifactLocation": {"uri": _uri(report, p.path), "uriBaseId": "%SRCROOT%"},
+                                    "region": {"startLine": max(p.line, 1)},
+                                }
+                            }
+                        ],
+                    }
+                )
+    scan_ok = report.summary.scan_status == "complete"
+    return {
+        "executionSuccessful": scan_ok,
+        "toolExecutionNotifications": notifications,
+        "properties": {
+            "scanStatus": report.summary.scan_status,
+            "contractStatus": report.summary.contract_status,
+        },
+    }
+
+
 def generate_sarif_report(report: AuditReport, rules: list[BaseRule], version: str = "0.1.0") -> str:
     used = {v.rule_id for v in report.violations}
     rule_entries = []
@@ -97,6 +157,7 @@ def generate_sarif_report(report: AuditReport, rules: list[BaseRule], version: s
                 **_baseline_state(v),
                 "partialFingerprints": {"ironLaws/v1": v.fingerprint} if v.fingerprint else {},
                 "properties": {
+                    "approvalStatus": v.approval_status,
                     "confidence": v.confidence.value,
                     "layer": v.layer.value,
                     "severity": v.severity.value,
@@ -117,6 +178,8 @@ def generate_sarif_report(report: AuditReport, rules: list[BaseRule], version: s
                     }
                 },
                 "results": results,
+                "invocations": [_invocation(report)],
+                "properties": {"coverageLedger": _ledger_properties(report)},
             }
         ],
     }

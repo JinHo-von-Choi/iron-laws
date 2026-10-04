@@ -11,13 +11,19 @@ import os
 import re
 import sys
 from collections import Counter
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from concurrent.futures import ProcessPoolExecutor
 from concurrent.futures.process import BrokenProcessPool
 from datetime import UTC, datetime
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
+from iron_laws.core.approvals import (
+    ApprovalPolicy,
+    ApprovalStatusRow,
+    ApprovalStore,
+    evaluate_approvals,
+)
 from iron_laws.core.baseline import Baseline, apply_baseline, make_fingerprint
 from iron_laws.core.config import (
     SPECIAL_FILE_PATTERNS,
@@ -25,6 +31,10 @@ from iron_laws.core.config import (
     IronLawsConfig,
     load_config,
 )
+from iron_laws.core.contract import Contract, contract_digest, default_contract
+from iron_laws.core.dependencies import build_callers_index, dependency_snapshot
+from iron_laws.core.ledger import FAMILY_RULES, build_ledger
+from iron_laws.core.masking import mask_secrets
 from iron_laws.core.models import (
     AuditReport,
     AuditSummary,
@@ -34,7 +44,8 @@ from iron_laws.core.models import (
     Violation,
 )
 from iron_laws.core.paths import is_test_path, looks_vendored_js
-from iron_laws.core.suppress import FileSuppressions, parse_suppressions
+from iron_laws.core.redaction import MAX_MESSAGE_LENGTH, collect_secret_values, limit, redact_text
+from iron_laws.core.suppress import Directive, FileSuppressions, parse_suppressions
 from iron_laws.engine import xfile
 from iron_laws.engine.ast_tools import iter_functions
 from iron_laws.engine.project import ProjectContext, matches_gitignore
@@ -64,6 +75,11 @@ def tool_version() -> str:
         return "0.0.0"
 
 
+def _safe_error_text(error: Exception) -> str:
+    """예외 메시지에는 소스 줄이 섞일 수 있어 비밀 후보(따옴표 값·대입 값·긴 토큰)를 가리고 길이를 제한한다."""
+    return limit(mask_secrets(redact_text(f"{type(error).__name__}: {error}")), 200)
+
+
 def _check_file(src: SourceFile, rules: list[BaseRule]) -> tuple[list[Violation], list[Diagnostic]]:
     """한 파일에 파일 단위 규칙을 적용한다. 규칙 하나가 실패해도 나머지는 계속하고, 실패는 진단으로 남긴다."""
     violations: list[Violation] = []
@@ -82,14 +98,14 @@ def _check_file(src: SourceFile, rules: list[BaseRule]) -> tuple[list[Violation]
                     kind="rule_error",
                     severity="error",
                     file_path=path,
-                    message=f"{rule.rule_id} 규칙 실행 중 오류로 이 파일의 해당 점검이 이루어지지 않았습니다: {type(e).__name__}: {e}",
+                    message=f"{rule.rule_id} 규칙 실행 중 오류로 이 파일의 해당 점검이 이루어지지 않았습니다: {_safe_error_text(e)}",
                 )
             )
     try:
         has_error = src.root is not None and src.root.has_error
     except Exception as e:  # 파서 오류도 점검 불완전으로 기록한다
         has_error = False
-        diagnostics.append(Diagnostic(kind="parse", severity="error", file_path=path, message=f"구문 분석 실패: {type(e).__name__}: {e}"))
+        diagnostics.append(Diagnostic(kind="parse", severity="error", file_path=path, message=f"구문 분석 실패: {_safe_error_text(e)}"))
     if has_error:
         diagnostics.append(
             Diagnostic(kind="parse", severity="warning", file_path=path, message="구문 오류가 있어 이 파일의 분석이 부정확할 수 있습니다")
@@ -123,6 +139,17 @@ def looks_minified(content: str) -> bool:
     return longest > 4_000 or len(content) / len(lines) > 400
 
 
+def self_shape(src: SourceFile | None, v: Violation, sensitive: set[str]) -> str:
+    """지적 줄에서 주석을 빼고 공백을 정리한 코드 모양. 주석만 바뀐 변경은 같은 지적으로 보게 하고, 비밀 후보는 가린 뒤에 쓴다."""
+    line = v.snippet
+    if src is not None and 1 <= v.line_number <= len(src.code_lines):
+        line = src.code_lines[v.line_number - 1]
+        line = redact_text(line)
+        if v.rule_id in sensitive:
+            line = mask_secrets(line)
+    return re.sub(r"\s+", " ", line).strip()
+
+
 def _decode(raw: bytes) -> tuple[str, str | None]:
     """바이트를 문자열로 바꾼다. UTF-8이 아니면 CP949를 시도하고, 어느 쪽도 아니면 깨진 글자를 대체하며 사유를 돌려준다."""
     try:
@@ -146,6 +173,12 @@ class AuditScanner:
         changed_files: set[str] | None = None,
         changed_since: str | None = None,
         respect_gitignore: bool = False,
+        contract: Contract | None = None,
+        contract_source: str = "기본값",
+        contract_path: Path | None = None,
+        directive_filter: Callable[[str, Directive], bool] | None = None,
+        approvals: ApprovalStore | None = None,
+        collect_dependencies: bool = False,
     ):
         if not root_path.exists():
             raise InputPathError(f"점검 대상 경로가 없습니다: {root_path}")
@@ -157,6 +190,13 @@ class AuditScanner:
         if respect_gitignore:
             self.config.respect_gitignore = True
         self.fail_on_source = "설정 파일" if self.config_source not in ("기본값", "코드에서 전달") else "기본값"
+        self.contract = contract or default_contract()
+        self.contract_source = contract_source if contract is not None else "기본값"
+        self.contract_path = contract_path
+        self.directive_filter = directive_filter  # 지정하면 이 함수가 True를 돌려준 억제 주석만 인정한다(패치 검증에서 후보가 새로 단 억제를 무시)
+        self.approvals = approvals
+        self.collect_dependencies = collect_dependencies or approvals is not None
+        self.approval_rows: list[ApprovalStatusRow] = []
         self.baseline = baseline
         self.changed_files = changed_files
         self.changed_since = changed_since
@@ -168,6 +208,9 @@ class AuditScanner:
         self._excluded_dirs: Counter[str] = Counter()
         self._unscanned_ext: Counter[str] = Counter()
         self._cross_file: dict[str, int] = {"resolved_calls": 0, "limit_hits": 0}
+        self._secrets: set[str] = set()
+        self._suppressed_lines: set[tuple[str, int]] = set()
+        self.directives_seen: set[tuple[str, frozenset[str], str]] = set()  # 이번 점검에서 본 억제 주석(경로, 규칙, 사유)
         self.rules = get_active_rules(
             enabled=self.config.enabled_rules,
             disabled=self.config.disabled_rules,
@@ -271,6 +314,18 @@ class AuditScanner:
             if SUPPRESS_MARKER not in src.text:
                 continue  # 억제 주석이 있을 수 없는 파일은 구문 분석을 다시 하지 않는다
             sup = parse_suppressions(src)
+            for d in sup.directives:
+                self.directives_seen.add((path, frozenset(d.ids), d.reason))
+            if self.directive_filter is not None:
+                trusted = []
+                for d in sup.directives:
+                    if self.directive_filter(path, d):
+                        trusted.append(d)
+                    else:
+                        self._diagnostics.append(
+                            Diagnostic(kind="suppression", severity="warning", file_path=path, line=d.line, message="신뢰된 정책에 없던 억제 주석이라 적용하지 않았습니다.")
+                        )
+                sup.directives = trusted
             table[path] = sup
             for line, problem in sup.problems:
                 self._diagnostics.append(Diagnostic(kind="suppression", severity="warning", file_path=path, line=line, message=problem))
@@ -286,10 +341,12 @@ class AuditScanner:
             src.release()
         kept = []
         suppressed = 0
+        self._suppressed_lines = set()
         for v in violations:
             rules = table.get(v.file_path.as_posix())
             if rules is not None and rules.covers(v):
                 suppressed += 1
+                self._suppressed_lines.add((v.file_path.as_posix(), v.line_number))
             else:
                 kept.append(v)
         for path, sup in table.items():
@@ -371,25 +428,9 @@ class AuditScanner:
         return violations
 
     def _run_rules(self, sources: list[SourceFile]) -> list[Violation]:
+        # 파일 간 색인은 장부 작성까지 유지한다. scan()이 끝나기 전에 지우지 않는다
         xfile.set_index(xfile.ProjectIndex.build(sources, self.config.limits.max_cross_file_lookups))
-        try:
-            violations = self._run_file_rules(sources)
-        finally:
-            index = xfile.get_index()
-            self._cross_file = {
-                "resolved_calls": index.resolved if index else 0,
-                "limit_hits": index.limit_hits if index else 0,
-            }
-            xfile.set_index(None)
-        if self._cross_file["limit_hits"]:
-            self._diagnostics.append(
-                Diagnostic(
-                    kind="analysis_limit",
-                    severity="info",
-                    message=f"파일 간·함수 간 분석 한도를 넘어 {self._cross_file['limit_hits']}건은 해석하지 않았습니다. 해당 흐름은 미확인 상태입니다 (limits.max_cross_file_lookups로 조정).",
-                )
-            )
-
+        violations = self._run_file_rules(sources)
         project = ProjectContext(
             root=self.root_path,
             files=sources,
@@ -402,17 +443,125 @@ class AuditScanner:
                 violations.extend(rule.check_project(project))
             except Exception as e:  # 프로젝트 규칙 오류도 점검 불완전으로 기록한다
                 self._diagnostics.append(
-                    Diagnostic(kind="rule_error", severity="error", message=f"{rule.rule_id} 프로젝트 단위 점검 중 오류: {type(e).__name__}: {e}")
+                    Diagnostic(kind="rule_error", severity="error", message=f"{rule.rule_id} 프로젝트 단위 점검 중 오류: {_safe_error_text(e)}")
                 )
         for src in sources:
             src.release()
         return violations
 
+    # -- 가림 --
+    def _redact(self, violations: list[Violation], sources: list[SourceFile]) -> None:
+        """비밀로 판정된 줄의 값을 뽑아, 같은 줄의 다른 규칙 지적과 진단을 포함한 모든 출력에서 지운다."""
+        sensitive_ids = {rule.rule_id for rule in self.rules if rule.sensitive_snippet}
+        by_path = {s.path.as_posix(): s for s in sources}
+        secrets: set[str] = set()
+        for v in violations:
+            src = by_path.get(v.file_path.as_posix())
+            if v.rule_id in sensitive_ids and src is not None and 1 <= v.line_number <= len(src.lines):
+                secrets |= collect_secret_values(src.lines[v.line_number - 1])
+        for v in violations:
+            v.snippet = redact_text(v.snippet, secrets)
+            v.message = limit(redact_text(v.message, secrets), MAX_MESSAGE_LENGTH)
+            for step in v.evidence:
+                step.note = redact_text(step.note, secrets)
+        self._secrets = secrets
+
+    # -- 검사 공백 장부 --
+    def _code_digest(self, sources: list[SourceFile]) -> str:
+        h = hashlib.sha256()
+        for src in sorted(sources, key=lambda s: s.path.as_posix()):
+            h.update(src.path.as_posix().encode())
+            h.update(hashlib.sha256(src.text.encode()).digest())
+        return h.hexdigest()[:16]
+
+    def _contract_changed(self) -> bool:
+        """계약 파일이 점검 대상 폴더 안에 있고 이번 변경에 포함되어 있으면 후보 변경이 정책을 바꾼 것이다."""
+        if self.contract_path is None or self.changed_files is None:
+            return False
+        base = self.root_path if self.root_path.is_dir() else self.root_path.parent
+        contract = self.contract_path.resolve()
+        if not contract.is_relative_to(base):
+            return False  # 점검 폴더 밖의 계약 파일은 이번 변경에 포함될 수 없다
+        return contract.relative_to(base).as_posix() in self.changed_files
+
+    def _build_ledger(self, sources: list[SourceFile], violations: list[Violation]):
+        family_rules = {cls.rule_id for cls in FAMILY_RULES.values()}
+        findings = {
+            (v.file_path.as_posix(), v.line_number)
+            for v in violations
+            if v.rule_id in family_rules and v.confidence.value == "CONFIRMED"  # '확인 필요'는 근거가 확정된 지적이 아니다
+        }
+        digests = {
+            "code": self._code_digest(sources),
+            "tool": f"{tool_version()}+{self._ruleset_info()['hash']}",
+            "config": hashlib.sha256(self.config.model_dump_json().encode()).hexdigest()[:16],
+            "contract": contract_digest(self.contract),
+        }
+        return build_ledger(
+            sources,
+            self._skipped,
+            self.contract,
+            self.contract_source,
+            self.config,
+            findings,
+            {(p, ln) for p, ln in self._suppressed_lines},
+            self.changed_files,
+            digests,
+            policy_changed=self._contract_changed(),
+            lookup_budget=self.config.limits.max_cross_file_lookups,
+        )
+
+    # -- 승인 --
+    def _attach_dependencies(self, sources: list[SourceFile], violations: list[Violation]) -> None:
+        """지적마다 승인 전제(흐름의 함수·호출자·정제 함수·접근 범위)의 지문을 붙인다. 파일 간 색인이 켜진 상태에서 호출한다."""
+        by_path = {s.path.as_posix(): s for s in sources}
+        callers = build_callers_index(sources)
+        for v in violations:
+            v.dependencies = dependency_snapshot(by_path, v, callers)
+        for src in sources:
+            src.release()
+
+    def _approval_policy(self) -> ApprovalPolicy:
+        return ApprovalPolicy(
+            contract_digest=contract_digest(self.contract),
+            config_hash=hashlib.sha256(self.config.model_dump_json().encode()).hexdigest()[:16],
+            ruleset_hash=self._ruleset_info()["hash"],
+            tool_version=tool_version(),
+        )
+
+    def _apply_approvals(self, violations: list[Violation], sources: list[SourceFile]) -> None:
+        assert self.approvals is not None
+        self.approval_rows = evaluate_approvals(
+            self.approvals,
+            violations,
+            self._approval_policy(),
+            {r.rule_id: r.version for r in self.rules},
+            {s.path.as_posix() for s in sources},
+            set(self._all_paths),
+        )
+        by_fp = {v.fingerprint: v for v in violations}
+        label = {"valid": "approved", "needs_review": "needs_review", "revoked": "revoked"}
+        for row in self.approval_rows:
+            if row.violation is None:
+                continue
+            target = by_fp.get(row.violation.fingerprint)
+            if target is None:
+                continue
+            if row.status == "valid":
+                target.approval_status = "approved"
+            else:
+                target.approval_status = "expired" if any("유효기간" in r for r in row.reasons) else label.get(row.status, "needs_review")
+            target.approval_id = row.approval.id
+            target.approval_reasons = row.reasons
+        for v in violations:
+            if v.approval_status is None:
+                v.approval_status = "none"
+
     # -- 지문 --
-    @staticmethod
-    def _fingerprint(violations: list[Violation], sources: list[SourceFile]) -> None:
+    def _fingerprint(self, violations: list[Violation], sources: list[SourceFile]) -> None:
         """위치(줄 번호)가 아니라 규칙·파일·함수·코드 모양으로 지적을 식별한다. 줄이 밀려도 같은 지적으로 인식된다."""
         by_path = {s.path.as_posix(): s for s in sources}
+        sensitive = {rule.rule_id for rule in self.rules if rule.sensitive_snippet}
         occurrences: Counter[tuple[str, str, str, str]] = Counter()
         function_cache: dict[str, list] = {}
         for v in sorted(violations, key=lambda x: (x.file_path.as_posix(), x.line_number, x.rule_id)):
@@ -424,10 +573,11 @@ class AuditScanner:
                     function_cache[path] = [(f.start_line, f.end_line, f.name) for f in iter_functions(src)]
                 spans = [(e - s, name) for s, e, name in function_cache[path] if s <= v.line_number <= e]
                 scope = min(spans)[1] if spans else ""
-            shape = re.sub(r"\s+", " ", v.snippet).strip()
+            shape = self_shape(src, v, sensitive)
             key = (v.rule_id, path, scope, shape)
             occurrences[key] += 1
             v.scope_name = scope
+            v.shape = shape
             v.fingerprint = make_fingerprint(v.rule_id, v.rule_version, path, scope, shape, occurrences[key])
         for src in sources:
             src.release()
@@ -462,18 +612,55 @@ class AuditScanner:
         self._unscanned_ext = Counter()
         sources = self._read_sources()
         files_by_language = Counter((s.lang.value if s.lang else s.kind) for s in sources)
-        violations = self._run_rules(sources)
-        violations = self._dedupe(violations)
-        violations, suppressed = self._apply_suppressions(violations, sources)
-        self._fingerprint(violations, sources)
+        try:
+            violations = self._run_rules(sources)
+            violations = self._dedupe(violations)
+            violations, suppressed = self._apply_suppressions(violations, sources)
+            self._redact(violations, sources)
+            self._fingerprint(violations, sources)
+            ledger = self._build_ledger(sources, violations)
+            if self.collect_dependencies:
+                self._attach_dependencies(sources, violations)
+        finally:
+            index = xfile.get_index()
+            self._cross_file = {
+                "resolved_calls": index.resolved if index else 0,
+                "limit_hits": index.limit_hits if index else 0,
+            }
+            xfile.set_index(None)
+        if self._cross_file["limit_hits"]:
+            self._diagnostics.append(
+                Diagnostic(
+                    kind="analysis_limit",
+                    severity="info",
+                    message=f"파일 간·함수 간 분석 한도를 넘어 {self._cross_file['limit_hits']}건은 해석하지 않았습니다. 해당 흐름은 미확인 상태입니다 (limits.max_cross_file_lookups로 조정).",
+                )
+            )
+
+        # 기준선 대응은 전체 지적 집합에서 먼저 확정하고, 표시 범위(변경 파일)는 그 뒤에 줄인다
+        outcome = None
+        if self.baseline is not None:
+            outcome = apply_baseline(
+                violations,
+                self.baseline,
+                {r.rule_id: r.version for r in self.rules},
+                {s.path.as_posix() for s in sources},
+                set(self._all_paths),
+            )
+            self._diagnostics.extend(outcome.diagnostics)
+
+        if self.approvals is not None:
+            self._apply_approvals(violations, sources)
 
         scope_note: dict | None = None
+        full_count = len(violations)
         if self.changed_files is not None:
             violations = [v for v in violations if v.file_path.as_posix() in self.changed_files]
             scope_note = {
                 "mode": "changed-since",
                 "ref": self.changed_since,
                 "changed_files": len(self.changed_files),
+                "full_findings": full_count,
                 "note": "변경된 파일의 지적만 표시했습니다. 프로젝트 전체 규칙과 파일 간 영향은 전체 점검으로 정기적으로 대조하십시오.",
             }
         violations.sort(key=lambda v: (str(v.file_path), v.line_number, v.rule_id))
@@ -486,19 +673,42 @@ class AuditScanner:
         summary.medium_count = sum(1 for v in violations if v.severity == Severity.MEDIUM)
         summary.low_count = sum(1 for v in violations if v.severity == Severity.LOW)
         summary.grade = self._grade(summary.critical_count, summary.high_count, summary.medium_count, summary.low_count)
+        if outcome is not None:
+            summary.new_count = sum(1 for v in violations if v.baseline_status in (BaselineStatus.NEW, BaselineStatus.REVIEW))
+            summary.existing_count = sum(1 for v in violations if v.baseline_status is BaselineStatus.EXISTING)
+            summary.resolved_count = len(outcome.resolved)
+            summary.unobserved_count = len(outcome.unobserved)
 
-        if self.baseline is not None:
-            self._diagnostics.extend(
-                apply_baseline(violations, self.baseline, summary, {r.rule_id: r.version for r in self.rules})
+        if self.approvals is not None:
+            summary.approvals_valid = sum(1 for v in violations if v.approval_status == "approved")
+            summary.approvals_review = sum(1 for r in self.approval_rows if r.status in ("needs_review",)) + sum(
+                1 for v in violations if v.approval_status in ("expired", "revoked")
             )
-
+            summary.approvals_unobserved = sum(1 for r in self.approval_rows if r.status == "unobserved")
+            for row in self.approval_rows:
+                if row.status in ("needs_review", "unobserved", "resolved") and row.reasons:
+                    where = row.approval.record.finding.path if row.approval.record.finding else ""
+                    self._diagnostics.append(
+                        Diagnostic(
+                            kind="approval",
+                            severity="warning" if row.status != "resolved" else "info",
+                            file_path=where,
+                            message=f"승인 {row.approval.id}: {row.status} — {'; '.join(row.reasons[:3])}",
+                        )
+                    )
         threshold = SEVERITY_ORDER[self.config.fail_on]
         counted = [
             v
             for v in violations
-            if self.baseline is None or v.baseline_status in (BaselineStatus.NEW, BaselineStatus.REVIEW)
+            if (self.baseline is None or v.baseline_status in (BaselineStatus.NEW, BaselineStatus.REVIEW))
+            and v.approval_status != "approved"  # 전제가 유지되는 유효한 승인은 받아들인 지적이다. 전제가 바뀐 승인은 다시 센다
         ]
         summary.is_passed = not any(SEVERITY_ORDER[v.severity] >= threshold for v in counted)
+
+        summary.contract_mode = ledger.contract_mode
+        summary.contract_status = ledger.status
+        if self.contract.mode == "block" and ledger.status in ("unmet", "policy_change_review"):
+            summary.is_passed = False  # 근거 계약을 충족하지 못했다. 경고 0건이 자동 승인으로 이어지지 않는다
 
         if files_scanned == 0:
             summary.scan_status = "empty"
@@ -508,6 +718,9 @@ class AuditScanner:
             summary.scan_status = "incomplete"
             summary.grade = INCOMPLETE_GRADE  # 일부를 점검하지 못했으면 등급과 통과를 확정하지 않는다
             summary.is_passed = False
+
+        for d in self._diagnostics:
+            d.message = limit(redact_text(d.message, self._secrets), MAX_MESSAGE_LENGTH)
 
         now_utc = datetime.now(UTC)
         doc_id = f"AUDIT-{now_utc.strftime('%Y%m%d-%H%M%S')}"
@@ -540,5 +753,6 @@ class AuditScanner:
             summary=summary,
             violations=violations,
             diagnostics=self._diagnostics,
+            coverage_ledger=ledger,
             metadata=metadata,
         )

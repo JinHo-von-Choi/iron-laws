@@ -11,7 +11,7 @@ from pathlib import PurePosixPath
 from iron_laws.engine.languages import Lang
 from iron_laws.engine.source import SourceFile
 
-DEFAULT_LOOKUP_BUDGET = 2000
+DEFAULT_LOOKUP_BUDGET = 20000
 
 
 @dataclass

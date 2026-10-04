@@ -110,7 +110,7 @@ class Limits(BaseModel):
     duplicate_min_nodes: int = Field(default=40, gt=0)
     duplicate_similarity: float = Field(default=0.9, gt=0, le=1)
     max_file_bytes: int = Field(default=1_000_000, gt=0)
-    max_cross_file_lookups: int = Field(default=2000, ge=0)
+    max_cross_file_lookups: int = Field(default=20000, ge=0)
 
 
 class Policies(BaseModel):

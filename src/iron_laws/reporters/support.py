@@ -34,7 +34,7 @@ PUBLIC_BENCHMARKS: dict[str, dict[str, str]] = {
 @dataclass
 class LangCell:
     lang: str
-    status: str  # 미지원 / 패턴 / 싱크 모델
+    status: str  # 미지원 / 적용(패턴) / 적용(싱크 정의)
     positives: int = 0
     negatives: int = 0
     benchmark: str = ""
@@ -85,9 +85,9 @@ def build_support_matrix(rules: list[BaseRule]) -> list[SupportRow]:
             if not applicable:
                 status = "미지원"
             elif lang in sink_langs:
-                status = "싱크 모델"
+                status = "적용(싱크 정의)"
             else:
-                status = "패턴"
+                status = "적용(패턴)"
             counts = fixtures.get(lang.value, {})
             row.cells[lang.value] = LangCell(
                 lang.value,
@@ -117,7 +117,7 @@ def render_support_matrix(rows: list[SupportRow], rule_id: str | None = None) ->
     header = ["규칙", *[lang.value for lang in LANG_ORDER], "설정·문서 파일 시험(양성/음성)"]
     lines.append("| " + " | ".join(header) + " |")
     lines.append("|" + "|".join(["---"] * len(header)) + "|")
-    symbol = {"미지원": "-", "패턴": "패턴", "싱크 모델": "모델"}
+    symbol = {"미지원": "-", "적용(패턴)": "적용·패턴", "적용(싱크 정의)": "적용·싱크"}
     for row in rows:
         cells = []
         for lang in LANG_ORDER:
@@ -135,8 +135,11 @@ def render_support_matrix(rows: list[SupportRow], rule_id: str | None = None) ->
     verified_cells = sum(1 for r in rows for c in r.cells.values() if c.status != "미지원" and c.verified)
     lines.append("")
     lines.append(
-        f"적용 가능한 (규칙, 언어) {total_cells}칸 중 양성·음성 시험이 모두 있는 칸은 {verified_cells}칸입니다. "
-        "나머지는 미검증이며, 파서가 있다는 사실이 그 규칙의 정확도를 뜻하지 않습니다."
+        f"규칙이 적용되도록 선언된 (규칙, 언어) {total_cells}칸 중 양성·음성 시험이 모두 있는 칸은 {verified_cells}칸입니다. "
+        "'적용'은 그 언어에 규칙이 걸린다는 선언일 뿐 그 언어에서의 분석 정확도나 탐지 보증이 아닙니다. 시험이 없는 칸은 미검증입니다."
     )
-    lines.append("범례: 모델=언어별 싱크 정의가 있음, 패턴=정규식·구문 패턴으로 점검, 벤치=공개 벤치마크 측정이 있음(Java만).")
+    lines.append(
+        "범례: 적용·싱크=언어별 싱크 정의가 있음, 적용·패턴=정규식·구문 패턴으로 점검, 검증=양성·음성 시험이 모두 있음, "
+        "벤치=공개 벤치마크 측정이 있음(Java만). 파일 간 추적은 Python만 시범 지원한다."
+    )
     return "\n".join(lines)

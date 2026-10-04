@@ -4,7 +4,7 @@
 작성일: 2026-10-04
 """
 
-from iron_laws.core.config import IronLawsConfig
+from iron_laws.core.config import ConfigError, IronLawsConfig
 from iron_laws.rules.ai_code import AI_RULES
 from iron_laws.rules.architecture import ARCH_RULES
 from iron_laws.rules.base import BaseRule
@@ -38,10 +38,21 @@ def get_active_rules(
         for rule in instances:
             rule.configure(config)
 
+    known = {r.rule_id for r in instances} | {r.name for r in instances}
+    unknown = sorted({*(enabled or []), *(disabled or [])} - known)
+    if unknown:
+        raise ConfigError(
+            f"등록되지 않은 규칙입니다: {', '.join(unknown)} (규칙 목록은 `iron-laws rules`로 확인하세요)"
+        )
+    if enabled is not None and not enabled:
+        raise ConfigError("enabled_rules가 비어 있습니다. 모든 규칙을 쓰려면 항목 자체를 지우세요")
+
     if enabled:
         instances = [r for r in instances if r.rule_id in enabled or r.name in enabled]
 
     if disabled:
         instances = [r for r in instances if r.rule_id not in disabled and r.name not in disabled]
 
+    if not instances:
+        raise ConfigError("활성화된 규칙이 없습니다. enabled_rules와 disabled_rules를 확인하세요")
     return instances

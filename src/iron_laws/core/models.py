@@ -55,6 +55,21 @@ class CodeFix(BaseModel):
     rationale: str = Field(..., description="수정 근거 및 이유")
 
 
+class EvidenceStep(BaseModel):
+    """판단 근거의 한 단계. 입력 유입 → 전파 → 싱크 순서로 위치와 변수 이름만 담는다 (코드 원문과 비밀값은 담지 않는다)"""
+
+    role: str = Field(..., description="source(입력 유입) / propagation(전파) / sink(위험 지점)")
+    file_path: str
+    line: int
+    note: str = ""
+
+
+class BaselineStatus(StrEnum):
+    NEW = "new"  # 기준선에 없던 지적
+    EXISTING = "existing"  # 기준선에 있던 지적 (승인된 부채)
+    REVIEW = "review"  # 규칙 의미가 바뀌어 다시 검토해야 하는 지적
+
+
 class Violation(BaseModel):
     """감리 및 린트 지적 사항"""
 
@@ -73,6 +88,21 @@ class Violation(BaseModel):
     confidence: Confidence = Confidence.CONFIRMED
     plain: str = ""
     how_to_fix: str = ""
+    rule_version: int = 1
+    fingerprint: str = ""
+    scope_name: str = ""  # 지적이 속한 함수 이름 (구문 분석 언어에서만)
+    evidence: list[EvidenceStep] = Field(default_factory=list)
+    baseline_status: BaselineStatus | None = None
+
+
+class Diagnostic(BaseModel):
+    """점검 과정에서 생긴 문제. 오류가 하나라도 있으면 점검이 끝까지 되지 않은 것이다."""
+
+    kind: str = Field(..., description="read / encoding / parse / rule_error / worker / analysis_limit / suppression / baseline / config")
+    severity: str = Field(..., description="info / warning / error")
+    message: str
+    file_path: str = ""
+    line: int = 0
 
 
 class AuditSummary(BaseModel):
@@ -87,11 +117,19 @@ class AuditSummary(BaseModel):
     suppressed_count: int = 0
     is_passed: bool = True
     grade: str = "A"  # A, B, C, D, F
+    scan_status: str = "complete"  # complete / incomplete / empty
+    new_count: int | None = None  # 기준선과 비교했을 때의 신규·재검토 건수
+    existing_count: int | None = None
+    resolved_count: int | None = None
+
+
+REPORT_SCHEMA_VERSION = "1.1"
 
 
 class AuditReport(BaseModel):
     """점검 보고서 데이터 모델"""
 
+    schema_version: str = REPORT_SCHEMA_VERSION
     document_id: str
     title: str = "SW 개발보안 점검 보고서"
     auditor: str = "오철칙 자동 점검"
@@ -99,4 +137,5 @@ class AuditReport(BaseModel):
     target_path: str
     summary: AuditSummary
     violations: list[Violation] = Field(default_factory=list)
+    diagnostics: list[Diagnostic] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)

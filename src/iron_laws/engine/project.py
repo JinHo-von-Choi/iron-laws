@@ -13,6 +13,24 @@ from iron_laws.engine.languages import Lang
 from iron_laws.engine.source import SourceFile
 
 
+def matches_gitignore(patterns: list[str], rel_path: str) -> bool:
+    """단순화한 .gitignore 일치 판정. 부정(!) 패턴과 중첩 규칙은 지원하지 않는다."""
+    name = Path(rel_path).name
+    for raw in patterns:
+        pattern = raw.strip().rstrip("/")
+        if not pattern or pattern.startswith(("#", "!")):
+            continue
+        pattern = pattern.lstrip("/")
+        if (
+            fnmatch.fnmatch(rel_path, pattern)
+            or fnmatch.fnmatch(name, pattern)
+            or fnmatch.fnmatch(rel_path, f"{pattern}/*")
+            or fnmatch.fnmatch(rel_path, f"*/{pattern}")
+        ):
+            return True
+    return False
+
+
 @dataclass
 class ProjectContext:
     root: Path
@@ -35,17 +53,4 @@ class ProjectContext:
         return any(p in wanted or Path(p).name in wanted for p in self.all_paths)
 
     def is_gitignored(self, rel_path: str) -> bool:
-        name = Path(rel_path).name
-        for raw in self.gitignore_patterns:
-            pattern = raw.strip().rstrip("/")
-            if not pattern or pattern.startswith(("#", "!")):
-                continue
-            pattern = pattern.lstrip("/")
-            if (
-                fnmatch.fnmatch(rel_path, pattern)
-                or fnmatch.fnmatch(name, pattern)
-                or fnmatch.fnmatch(rel_path, f"{pattern}/*")
-                or fnmatch.fnmatch(rel_path, f"*/{pattern}")
-            ):
-                return True
-        return False
+        return matches_gitignore(self.gitignore_patterns, rel_path)

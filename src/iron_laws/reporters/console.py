@@ -9,7 +9,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from iron_laws.core.models import AuditReport, Confidence, Severity
+from iron_laws.core.models import AuditReport, BaselineStatus, Confidence, Severity
 
 console = Console()
 
@@ -22,6 +22,23 @@ SEVERITY_COLORS = {
 SEVERITY_ORDER = {Severity.CRITICAL: 0, Severity.HIGH: 1, Severity.MEDIUM: 2, Severity.LOW: 3}
 BASIS_NONE = "오철칙 자체 품질 규칙 (참고 가이드 항목 외)"
 DEFAULT_LIMIT = 50
+
+
+_ROLE = {"source": "입력", "propagation": "전파", "sink": "싱크"}
+
+
+def _print_diagnostics(report: AuditReport) -> None:
+    """점검 과정의 문제는 숨기지 않는다. 오류는 점검이 불완전했다는 뜻이다."""
+    shown = [d for d in report.diagnostics if d.severity in ("error", "warning")]
+    if not shown:
+        return
+    errors = sum(1 for d in shown if d.severity == "error")
+    console.print(Text(f"점검 진단: 오류 {errors}건 · 경고 {len(shown) - errors}건 (전체는 --format json의 diagnostics)", style="bold yellow" if not errors else "bold red"))
+    for d in shown[:8]:
+        where = f"{d.file_path}:{d.line}: " if d.file_path and d.line else (f"{d.file_path}: " if d.file_path else "")
+        console.print(Text(f"  [{d.severity}] {where}{d.message}", style="red" if d.severity == "error" else "yellow"))
+    if len(shown) > 8:
+        console.print(Text(f"  … 외 {len(shown) - 8}건", style="dim"))
 
 
 def print_console_report(report: AuditReport, limit: int = DEFAULT_LIMIT) -> None:
@@ -41,11 +58,12 @@ def print_console_report(report: AuditReport, limit: int = DEFAULT_LIMIT) -> Non
     summary_table.add_column("종합 판정 등급", justify="center", style="bold white")
     summary_table.add_column("검수 결과", justify="center")
 
-    result_text = (
-        Text("합격 (PASS)", style="bold green")
-        if s.is_passed
-        else Text("불합격 (FAIL - 시정조치 필수)", style="bold red")
-    )
+    if s.total_files_scanned == 0:
+        result_text = Text("점검 없음 (파일 0개)", style="bold yellow")
+    elif s.is_passed:
+        result_text = Text("합격 (PASS)", style="bold green")
+    else:
+        result_text = Text("불합격 (FAIL - 시정조치 필수)", style="bold red")
     summary_table.add_row(
         str(s.total_files_scanned),
         str(s.total_violations),
@@ -57,6 +75,17 @@ def print_console_report(report: AuditReport, limit: int = DEFAULT_LIMIT) -> Non
         result_text,
     )
     console.print(summary_table)
+    meta = report.metadata
+    if meta.get("config_source"):
+        console.print(Text(f"설정: {meta['config_source']} (fail_on={meta.get('config', {}).get('fail_on', '?')}, 출처: {meta.get('fail_on_source', '기본값')})", style="dim"))
+    scope = meta.get("scope")
+    if scope:
+        console.print(Text(f"범위 제한: {scope['ref']} 이후 바뀐 파일 {scope['changed_files']}개의 지적만 표시했습니다. {scope['note']}", style="yellow"))
+    if s.new_count is not None:
+        console.print(
+            Text(f"기준선 대비: 신규·재검토 {s.new_count}건 · 기존(승인) {s.existing_count}건 · 해소 {s.resolved_count}건", style="bold")
+        )
+    _print_diagnostics(report)
     if s.suppressed_count:
         console.print(f"[dim]사유와 함께 억제된 지적 {s.suppressed_count}건은 제외되었습니다.[/dim]")
     console.print()
@@ -69,8 +98,14 @@ def print_console_report(report: AuditReport, limit: int = DEFAULT_LIMIT) -> Non
         )
         return
 
+    visible = report.violations
+    if s.new_count is not None:
+        visible = [v for v in report.violations if v.baseline_status in (BaselineStatus.NEW, BaselineStatus.REVIEW)]
+        if not visible:
+            console.print(Panel("[bold green]기준선에 없던 새 지적이 없습니다.[/bold green]"))
+            return
     ordered = sorted(
-        report.violations,
+        visible,
         key=lambda v: (SEVERITY_ORDER[v.severity], str(v.file_path), v.line_number),
     )
     shown = ordered if limit <= 0 else ordered[:limit]
@@ -81,18 +116,25 @@ def print_console_report(report: AuditReport, limit: int = DEFAULT_LIMIT) -> Non
         grid.add_column("key", style="bold white", width=14)
         grid.add_column("val")
         label = "확인 필요" if v.confidence is Confidence.REVIEW else "확정"
-        grid.add_row("지적 항목", f"[{color}][{v.rule_id}] {v.rule_name} ({v.severity.value} · {label})[/{color}]")
-        grid.add_row("위치", f"{v.file_path}:{v.line_number}")
+        if v.baseline_status is BaselineStatus.REVIEW:
+            label += " · 규칙 의미 변경으로 재검토"
+        grid.add_row(
+            "지적 항목", Text(f"[{v.rule_id}] {v.rule_name} ({v.severity.value} · {label})", style=color)
+        )
+        grid.add_row("위치", Text(f"{v.file_path}:{v.line_number}"))
         grid.add_row(
             "적용 기준",
-            f"{v.gov_standard.standard_name} ({v.gov_standard.clause_id})" if v.gov_standard else BASIS_NONE,
+            Text(f"{v.gov_standard.standard_name} ({v.gov_standard.clause_id})" if v.gov_standard else BASIS_NONE),
         )
-        grid.add_row("코드", f"[dim red]{v.snippet}[/dim red]")
-        grid.add_row("진단", v.message)
+        # 소스 코드와 경로는 데이터다. Rich 마크업으로 해석되지 않도록 Text로 넘긴다
+        grid.add_row("코드", Text(v.snippet, style="dim red"))
+        grid.add_row("진단", Text(v.message))
+        if v.evidence:
+            grid.add_row("판단 근거", Text(" → ".join(f"{_ROLE.get(e.role, e.role)} {e.file_path}:{e.line}" for e in v.evidence)))
         if v.plain:
-            grid.add_row("왜 문제인가", v.plain)
+            grid.add_row("왜 문제인가", Text(v.plain))
         if v.how_to_fix:
-            grid.add_row("고치는 방법", f"[green]{v.how_to_fix}[/green]")
+            grid.add_row("고치는 방법", Text(v.how_to_fix, style="green"))
         console.print(Panel(grid, title=f"지적 #{idx}", border_style=color.split()[-1]))
     if len(ordered) > len(shown):
         console.print(

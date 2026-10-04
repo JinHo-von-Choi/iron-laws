@@ -78,4 +78,4 @@ def test_cli_init_generates_config_that_matches_defaults(tmp_path: Path):
     runner.invoke(app, ["init", str(tmp_path)])
     from iron_laws.core.config import IronLawsConfig, load_config
 
-    assert load_config(tmp_path) == IronLawsConfig()
+    assert load_config(tmp_path)[0] == IronLawsConfig()

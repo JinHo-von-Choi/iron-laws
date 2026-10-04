@@ -10,6 +10,7 @@ from pathlib import Path
 from tree_sitter import Node
 
 from iron_laws.core.config import IronLawsConfig
+from iron_laws.core.masking import mask_secrets
 from iron_laws.core.models import (
     CodeFix,
     Confidence,
@@ -39,6 +40,8 @@ class BaseRule(ABC):
     gov_standard: GovStandard | None
     layer: RuleLayer = RuleLayer.STANDARD
     include_tests: bool = False
+    version: int = 1  # 규칙의 판정 의미가 바뀌면 올린다. 기준선(baseline)의 기존 지적을 다시 검토하게 만든다
+    sensitive_snippet: bool = False  # 코드 줄에 비밀값이 들어 있을 수 있어 출력 전에 가린다
     languages: frozenset[Lang] | None = None
     plain: str = ""
     how_to_fix: str = ""
@@ -73,6 +76,7 @@ class BaseRule(ABC):
         how_to_fix: str | None = None,
         column: int = 1,
     ) -> Violation:
+        shown = snippet.strip()[:300]
         return Violation(
             rule_id=self.rule_id,
             rule_name=self.name,
@@ -81,7 +85,8 @@ class BaseRule(ABC):
             file_path=file_path,
             line_number=line_number,
             column=column,
-            snippet=snippet.strip()[:300],
+            snippet=mask_secrets(shown) if self.sensitive_snippet else shown,
+            rule_version=self.version,
             message=message,
             gov_standard=self.gov_standard,
             fix=fix,

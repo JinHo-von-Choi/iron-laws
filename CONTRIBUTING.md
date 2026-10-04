@@ -25,7 +25,7 @@ uv run ruff check .
 
 1. Issue를 생성하여 개선 사항 또는 신규 규칙 제안
 2. 기능 브랜치 생성 (`feat/rule-name` 또는 `fix/issue-description`)
-3. 코드 작성. 새 규칙은 양성·음성 사례를 `tests/`에 추가
+3. 코드 작성. 새 규칙은 양성·음성 사례를 `tests/`에 추가하고, `uv run python benchmarks/build_support_manifest.py`로 지원 행렬 자료를 갱신한 뒤 `docs/SUPPORT_MATRIX.md`를 다시 생성합니다(`iron-laws support > ...`). 규칙의 판정 의미를 바꾸면 규칙의 `version`을 올립니다
 4. 오철칙 자체 진단 통과 확인:
    ```bash
    uv run iron-laws check .

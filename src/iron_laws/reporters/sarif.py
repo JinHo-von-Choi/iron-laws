@@ -5,8 +5,9 @@
 """
 
 import json
+from urllib.parse import quote
 
-from iron_laws.core.models import AuditReport, Severity
+from iron_laws.core.models import AuditReport, BaselineStatus, Severity, Violation
 from iron_laws.rules.base import BaseRule
 
 LEVELS = {
@@ -21,6 +22,38 @@ SECURITY_SEVERITY = {
     Severity.MEDIUM: "5.5",
     Severity.LOW: "2.5",
 }
+
+
+def _uri(report: AuditReport, path: str) -> str:
+    """결과 위치는 저장소 루트 기준 상대 경로로 쓴다. 하위 폴더만 점검해도 위치가 어긋나지 않게 접두 경로를 붙이고 각 구간을 인코딩한다."""
+    prefix = str(report.metadata.get("repo_relative_prefix", "")).strip("/")
+    full = f"{prefix}/{path}" if prefix else path
+    return quote(full, safe="/")
+
+
+def _code_flows(report: AuditReport, v: Violation) -> dict:
+    """입력 유입 → 전파 → 싱크의 흐름을 SARIF codeFlows로 내보낸다. 위치와 변수 이름만 담는다."""
+    if len(v.evidence) < 2:
+        return {}
+    locations = [
+        {
+            "location": {
+                "physicalLocation": {
+                    "artifactLocation": {"uri": _uri(report, e.file_path), "uriBaseId": "%SRCROOT%"},
+                    "region": {"startLine": max(e.line, 1)},
+                },
+                "message": {"text": e.note},
+            }
+        }
+        for e in v.evidence
+    ]
+    return {"codeFlows": [{"threadFlows": [{"locations": locations}]}]}
+
+
+def _baseline_state(v: Violation) -> dict:
+    if v.baseline_status is None:
+        return {}
+    return {"baselineState": "unchanged" if v.baseline_status is BaselineStatus.EXISTING else "new"}
 
 
 def generate_sarif_report(report: AuditReport, rules: list[BaseRule], version: str = "0.1.0") -> str:
@@ -55,11 +88,14 @@ def generate_sarif_report(report: AuditReport, rules: list[BaseRule], version: s
                 "locations": [
                     {
                         "physicalLocation": {
-                            "artifactLocation": {"uri": v.file_path.as_posix()},
+                            "artifactLocation": {"uri": _uri(report, v.file_path.as_posix()), "uriBaseId": "%SRCROOT%"},
                             "region": {"startLine": v.line_number, "startColumn": v.column},
                         }
                     }
                 ],
+                **_code_flows(report, v),
+                **_baseline_state(v),
+                "partialFingerprints": {"ironLaws/v1": v.fingerprint} if v.fingerprint else {},
                 "properties": {
                     "confidence": v.confidence.value,
                     "layer": v.layer.value,

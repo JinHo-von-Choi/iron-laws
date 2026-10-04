@@ -9,17 +9,26 @@ import re
 
 from tree_sitter import Node
 
-from iron_laws.core.models import Confidence, IronLaw, Severity, Violation
+from iron_laws.core.models import Confidence, EvidenceStep, IronLaw, Severity, Violation
 from iron_laws.engine.ast_tools import (
     Call,
     enclosing_function,
+    identifiers_in,
     is_literal,
     iter_calls,
 )
 from iron_laws.engine.languages import JS_FAMILY, Lang
 from iron_laws.engine.project import ProjectContext
 from iron_laws.engine.source import SourceFile
-from iron_laws.engine.taint import definitions, expr_has_source, is_tainted
+from iron_laws.engine.taint import (
+    CLI_SOURCE_RE,
+    WEB_SOURCE_RE,
+    Ctx,
+    definitions,
+    expr_has_source,
+    is_tainted,
+    taint_state,
+)
 from iron_laws.rules.base import BaseRule
 from iron_laws.rules.sinks import (
     CFAM,
@@ -44,9 +53,13 @@ SQL_TEXT_RE = re.compile(
 DDL_TEXT_RE = re.compile(r"(?is)\s*(drop|alter|create|truncate|comment\s+on|grant|revoke|set\s+search_path|vacuum|analyze|reindex)\b")
 LDAP_TEXT_RE = re.compile(r"\([&|!]?\w+\s*[=~<>]")
 SANITIZER_RE = re.compile(
-    r"(?i)secure_filename|basename|GetFileName|filepath\.Base|\.getName\(\)|normalize|getCanonical|"
-    r"realpath|is_relative_to|startswith|startsWith|sanitize|uuid|Path\.GetRandomFileName|allowlist|whitelist|"
-    r"abspath|resolve\("
+    r"(?i)secure_filename|basename|GetFileName|filepath\.Base|\.getName\(\)|"
+    r"is_relative_to|sanitize|uuid|Path\.GetRandomFileName|allowlist|whitelist"
+)
+# 경로를 절대·정규 경로로 바꾸는 것만으로는 허용 폴더 안이라는 보장이 없다. 아래 범위 검증이 함께 있어야 안전으로 본다.
+NORMALIZE_RE = re.compile(r"(?i)normalize|getCanonical|realpath|abspath|resolve\(|GetFullPath|filepath\.Clean")
+CONFINEMENT_RE = re.compile(
+    r"(?i)is_relative_to|relative_to\(|commonpath|commonprefix|startswith|startsWith|StartsWith|HasPrefix|\.relative\(|isSubPath|within_base|inside_base"
 )
 FILENAME_RE = re.compile(
     r"\.filename\b|getOriginalFilename|originalname|\.FileName\b|\$_FILES\s*\[[^\]]+\]\s*\[\s*['\"]name['\"]\s*\]|header\.Filename|\bfile\.name\b"
@@ -76,21 +89,55 @@ class SinkRule(BaseRule):
     iron_law = IronLaw.LAW_5
     dynamic_is_finding: bool = True
     include_cli_sources: bool = False
+    taint_ctx: Ctx = Ctx.ANY  # 오염된 값이 도달하는 곳. 그 문맥에 유효한 정제만 인정한다
     tainted_message: str = ""
     dynamic_message: str = ""
 
     def skip_hit(self, src: SourceFile, call: Call, arg: Node, flow: Flow) -> bool:
         return False
 
+    def select_args(self, src: SourceFile, call: Call, sink: Sink) -> list[Node]:
+        """싱크 호출에서 검사할 인자. 기본은 Sink에 지정한 위치(None이면 전부)"""
+        if sink.arg is None:
+            return list(call.args)
+        return [call.args[sink.arg]] if sink.arg < len(call.args) else []
+
+    def _evidence(self, src: SourceFile, call: Call, arg: Node, via: str | None) -> list[EvidenceStep]:
+        """입력 유입 → 전파 → 싱크의 위치와 변수 이름만 남긴다. 코드 원문과 값은 담지 않는다."""
+        path = src.path.as_posix()
+        scope = enclosing_function(call.node, src.lang)
+        first = scope.start_point[0] + 1 if scope is not None else 1
+        source_re = WEB_SOURCE_RE
+        steps: list[EvidenceStep] = []
+        for line_no in range(first, call.line + 1):
+            text = src.lines[line_no - 1] if line_no - 1 < len(src.lines) else ""
+            if source_re.search(text) or (self.include_cli_sources and CLI_SOURCE_RE.search(text)):
+                steps.append(EvidenceStep(role="source", file_path=path, line=line_no, note="외부 입력이 들어오는 지점"))
+                break
+        names = sorted(identifiers_in(src, arg) & set(taint_state(src, call.node, self.include_cli_sources, ctx=self.taint_ctx)))
+        if names:
+            steps.append(EvidenceStep(role="propagation", file_path=path, line=call.line, note=f"오염된 변수: {', '.join(names)}"))
+        steps.append(EvidenceStep(role="sink", file_path=path, line=call.line, note=f"{call.callee}에 전달"))
+        if via:
+            via_path, _, via_line = via.rpartition(":")
+            steps.append(EvidenceStep(role="sink", file_path=via_path, line=int(via_line) if via_line.isdigit() else 0, note="호출한 함수 안에서 실제로 사용되는 지점"))
+        return steps
+
     def check(self, src: SourceFile) -> list[Violation]:
         found: list[Violation] = []
-        for call, arg, flow in sink_hits(src, self.sinks, self.include_cli_sources):
-            if self.skip_hit(src, call, arg, flow):
+        hits = sink_hits(
+            src, self.sinks, self.include_cli_sources, self.select_args, self.taint_ctx, self.skip_hit
+        )
+        for call, arg, flow, via in hits:
+            if via is None and self.skip_hit(src, call, arg, flow):
                 continue
             if flow is Flow.TAINTED:
-                found.append(
-                    self.at_node(src, call.node, self.tainted_message.format(callee=call.callee))
-                )
+                message = self.tainted_message.format(callee=call.callee)
+                if via:
+                    message += f" (호출한 함수 안의 {via}에서 사용됩니다)"
+                violation = self.at_node(src, call.node, message)
+                violation.evidence = self._evidence(src, call, arg, via)
+                found.append(violation)
             elif self.dynamic_is_finding:
                 found.append(
                     self.at_node(
@@ -116,6 +163,7 @@ STRONG_SQL_CALLEES = re.compile(
 
 class SqlInjectionRule(SinkRule):
     rule_id = "IL-501"
+    taint_ctx = Ctx.SQL
     name = "SQL Injection 취약점 탐지"
     severity = Severity.CRITICAL
     gov_standard = mois_ref("1-1")
@@ -133,7 +181,9 @@ class SqlInjectionRule(SinkRule):
         Sink.of(JAVA, r"(^|\.)(executeQuery|executeUpdate|execute|executeLargeUpdate|createQuery|createNativeQuery|prepareStatement|prepareCall|queryForObject|queryForList|queryForMap|update|batchUpdate|query)$"),
         Sink.of(CS, r"(^|\.)(ExecuteReader|ExecuteNonQuery|ExecuteScalar|FromSqlRaw|ExecuteSqlRaw|ExecuteSqlRawAsync|SqlQuery|QueryAsync|ExecuteAsync|QueryFirst|QuerySingle)$"),
         Sink.of(CS, r"^new(SqlCommand|MySqlCommand|NpgsqlCommand|OleDbCommand|OdbcCommand|SqliteCommand|OracleCommand|SqlDataAdapter)$"),
-        Sink.of(GO, r"(^|\.)(Query|QueryRow|Exec|QueryContext|QueryRowContext|ExecContext|Prepare|PrepareContext|Raw|Select|Get)$"),
+        Sink.of(GO, r"(^|\.)(Query|QueryRow|Exec|Prepare|Raw)$"),
+        Sink.of(GO, r"(^|\.)(QueryContext|QueryRowContext|ExecContext|PrepareContext)$", 1),  # 첫 인자는 context
+        Sink.of(GO, r"(^|\.)(Select|Get)$", None),  # sqlx는 (대상, 쿼리, 인자...) 순서
         Sink.of(PHP, r"^(mysqli_query|mysql_query|pg_query|sqlite_query|odbc_exec)$", 1),
         Sink.of(PHP, r"(->|::)(query|exec|prepare|real_query|multi_query)$"),
         Sink.of(CFAM, r"^(mysql_query|mysql_real_query|sqlite3_exec|PQexec|SQLExecDirect)$", 1),
@@ -197,6 +247,7 @@ class SqlInjectionRule(SinkRule):
 
 class CodeInjectionRule(SinkRule):
     rule_id = "IL-503"
+    taint_ctx = Ctx.CODE
     name = "코드 삽입 (동적 코드 실행) 탐지"
     severity = Severity.CRITICAL
     gov_standard = mois_ref("1-2")
@@ -217,6 +268,7 @@ class CodeInjectionRule(SinkRule):
 
 class CommandInjectionRule(SinkRule):
     rule_id = "IL-504"
+    taint_ctx = Ctx.SHELL
     name = "운영체제 명령어 삽입 탐지"
     severity = Severity.CRITICAL
     gov_standard = mois_ref("1-5")
@@ -228,11 +280,14 @@ class CommandInjectionRule(SinkRule):
     tainted_message = "외부 입력이 {callee}를 통해 운영체제 명령으로 실행됩니다. 인자 배열 방식으로 바꾸십시오."
     dynamic_message = "명령 문자열을 변수와 결합해 {callee}로 실행합니다. 셸을 거치지 않는 호출로 바꾸십시오."
     shell_word_re = re.compile(r"""["'](sh|bash|zsh|cmd(\.exe)?|powershell(\.exe)?|/bin/(ba)?sh|-c|/c)["']""")
+    explicit_shell_re = re.compile(
+        r"""["'](?:sh|bash|zsh|dash|ksh|/bin/(?:ba)?sh|/usr/bin/env|cmd(?:\.exe)?|powershell(?:\.exe)?|pwsh)["']\s*,\s*(?:\[\s*)?["'](?:-c|/c|/k|-Command|-lc)["']"""
+    )
     sinks = [
         Sink.of(PY, r"^(os\.system|os\.popen|commands\.getoutput|pty\.spawn)$"),
         Sink.of(PY, r"^subprocess\.(call|run|Popen|check_output|check_call|getoutput)$"),
         Sink.of(JS, r"(^|\.)(exec|execSync)$"),
-        Sink.of(JS, r"(^|\.)(spawn|spawnSync)$"),
+        Sink.of(JS, r"(^|\.)(spawn|spawnSync|execFile|execFileSync)$", None),
         Sink.of(JAVA, r"(^|\.)exec$"),
         Sink.of(JAVA, r"^newProcessBuilder$", None),
         Sink.of(CS, r"^Process\.Start$", None),
@@ -245,9 +300,11 @@ class CommandInjectionRule(SinkRule):
         call_text = src.text_of(call.node)
         callee = call.callee
         if callee.startswith("subprocess.") and callee != "subprocess.getoutput":
+            if self.explicit_shell_re.search(call_text):
+                return False  # ["sh", "-c", 입력]은 인자 배열이어도 셸이 문자열을 다시 해석한다
             return arg.type in ("list", "tuple") and not re.search(r"shell\s*=\s*True", call_text)
-        if re.search(r"(^|\.)(spawn|spawnSync)$", callee):
-            return not re.search(r"shell\s*:\s*true", call_text)
+        if re.search(r"(^|\.)(spawn|spawnSync|execFile|execFileSync)$", callee):
+            return not (re.search(r"shell\s*:\s*true", call_text) or self.explicit_shell_re.search(call_text))
         if callee.endswith("exec") and src.lang is Lang.JAVA:
             return arg.type == "array_creation_expression" and not self.shell_word_re.search(call_text)
         if callee in ("newProcessBuilder", "Process.Start") or callee.startswith("exec.Command"):
@@ -259,6 +316,7 @@ class CommandInjectionRule(SinkRule):
 
 class PathTraversalRule(SinkRule):
     rule_id = "IL-502"
+    taint_ctx = Ctx.PATH
     name = "경로 조작 및 자원 삽입 (Path Traversal) 탐지"
     severity = Severity.HIGH
     gov_standard = mois_ref("1-3")
@@ -287,6 +345,10 @@ class PathTraversalRule(SinkRule):
         text = _context_text(src, arg)
         if SANITIZER_RE.search(text) or re.search(r"\.(Body|InputStream|OutputStream|BaseStream)\b", text):
             return True
+        scope = enclosing_function(call.node, src.lang)
+        scope_text = src.code_of(scope) if scope is not None else src.code_text
+        if NORMALIZE_RE.search(scope_text) and CONFINEMENT_RE.search(scope_text):
+            return True  # 정규화한 뒤 허용 폴더 안인지 확인하는 검사가 같은 함수에 있다
         # 파일명 입력은 업로드 규칙(IL-513)이 담당한다.
         return bool(FILENAME_RE.search(src.text_of(call.node)))
 
@@ -303,6 +365,7 @@ class PathTraversalRule(SinkRule):
 
 class UploadFilenameRule(SinkRule):
     rule_id = "IL-513"
+    taint_ctx = Ctx.PATH
     name = "위험한 형식 파일 업로드 (클라이언트 파일명 사용)"
     severity = Severity.HIGH
     gov_standard = mois_ref("1-6")
@@ -365,7 +428,7 @@ class XssRule(BaseRule):
         context = _context_text(src, arg)
         if ESCAPER_RE.search(context):
             return Flow.SAFE
-        flow = assess(src, arg)
+        flow = assess(src, arg, ctx=Ctx.HTML)
         if flow is Flow.TAINTED:
             return flow
         return Flow.SAFE
@@ -386,7 +449,7 @@ class XssRule(BaseRule):
                 if arg is not None and not is_literal(arg) and not ESCAPER_RE.search(_context_text(src, arg)):
                     if call.callee.endswith((".html", ".append", ".prepend", ".after", ".before")) and not re.match(r"(\$|jQuery)", call.callee):
                         continue
-                    flow = assess(src, arg)
+                    flow = assess(src, arg, ctx=Ctx.HTML)
                     if flow is Flow.TAINTED:
                         found.append(self.at_node(src, call.node, f"외부 입력이 {call.callee}로 HTML에 그대로 삽입됩니다."))
                     elif call.callee.endswith(("insertAdjacentHTML", "document.write", "document.writeln")):
@@ -426,7 +489,7 @@ class XssRule(BaseRule):
                 continue
             if is_literal(right) or ESCAPER_RE.search(_context_text(src, right)):
                 continue
-            if assess(src, right) is Flow.TAINTED:
+            if assess(src, right, ctx=Ctx.HTML) is Flow.TAINTED:
                 found.append(self.at_node(src, node, f"외부 입력이 {src.text_of(left)}에 대입되어 DOM XSS가 발생할 수 있습니다."))
             else:
                 found.append(self.at_node(src, node, f"{src.text_of(left)}에 동적 값을 대입합니다. textContent로 바꾸거나 정제 후 사용하십시오.", severity=Severity.MEDIUM, confidence=Confidence.REVIEW))
@@ -454,7 +517,7 @@ class XssRule(BaseRule):
                 if ESCAPER_RE.search(text):
                     continue
                 if expr_has_source(src, node) or any(
-                    is_tainted(src, c) for c in node.named_children if c.type != "echo"
+                    is_tainted(src, c, ctx=Ctx.HTML) for c in node.named_children if c.type != "echo"
                 ):
                     found.append(self.at_node(src, node, "외부 입력을 이스케이프 없이 echo 합니다. htmlspecialchars()를 사용하십시오."))
         return found
@@ -471,13 +534,16 @@ class XssRule(BaseRule):
                 value.type == "call" and ".format" in src.text_of(value)
             ):
                 text = src.text_of(value)
-                if re.search(r"<\s*[a-zA-Z/]", text) and not ESCAPER_RE.search(text) and is_tainted(src, value):
+                if re.search(r"<\s*[a-zA-Z/]", text) and not ESCAPER_RE.search(text) and is_tainted(src, value, ctx=Ctx.HTML):
                     found.append(self.at_node(src, node, "외부 입력이 이스케이프 없이 HTML 문자열에 결합되어 반환됩니다."))
         return found
 
     def _check_template(self, src: SourceFile) -> list[Violation]:
         found = []
-        pattern = re.compile(r"\|\s*safe\b|th:utext|v-html|@Html\.Raw|\{!!|dangerouslySetInnerHTML|autoescape\s+false|\{%\s*autoescape\s+off")
+        pattern = re.compile(
+            r"(?i)\|\s*safe\b|th:utext|v-html|@Html\.Raw|Html\.Raw\s*\(|\{!!|dangerouslySetInnerHTML|"
+            r"\{%-?\s*autoescape\s+(?:false|off)|\|\s*raw\b|<%-|@\(Html\.Raw|MarkupString|\{@html"
+        )
         for idx, line in enumerate(src.code_lines, start=1):
             if pattern.search(line):
                 found.append(self.at_line(src, idx, "템플릿에서 이스케이프를 끄는 구문(|safe, th:utext, v-html, Html.Raw 등)을 사용합니다. 값이 정제되었는지 확인하십시오.", severity=Severity.MEDIUM, confidence=Confidence.REVIEW))
@@ -486,6 +552,7 @@ class XssRule(BaseRule):
 
 class SsrfRule(SinkRule):
     rule_id = "IL-506"
+    taint_ctx = Ctx.URL
     name = "서버사이드 요청 위조(SSRF) 탐지"
     severity = Severity.HIGH
     gov_standard = mois_ref("1-12")
@@ -504,6 +571,47 @@ class SsrfRule(SinkRule):
         Sink.of(RUST, r"^reqwest::\w+$|(^|\.)(get|post)$", None),
     ]
 
+    URL_KEYS = frozenset({"url", "uri", "baseURL", "baseUrl", "base_url", "endpoint", "host", "hostname"})
+
+    def select_args(self, src: SourceFile, call: Call, sink: Sink) -> list[Node]:
+        """요청 본문·헤더가 아니라 접속 대상이 되는 인자(위치 인자와 url 키워드)만 고른다."""
+        callee = call.callee
+        index = 0
+        if src.lang is Lang.PYTHON and callee.endswith(".request"):
+            index = 1  # requests.request(method, url)
+        elif src.lang in JS_FAMILY and re.search(r"(^|\.)request$", callee) and len(call.args) >= 2 and call.args[0].type == "string":
+            index = 1  # needle.request(method, url)
+        elif src.lang is Lang.GO:
+            index = {"http.NewRequest": 1, "http.NewRequestWithContext": 2}.get(callee, 0)
+        elif src.lang is Lang.PHP and callee == "curl_setopt":
+            if len(call.args) >= 3 and "CURLOPT_URL" in src.text_of(call.args[1]):
+                return [call.args[2]]
+            return []
+        chosen: list[Node] = []
+        if index < len(call.args):
+            first = call.args[index]
+            if first.type == "keyword_argument":
+                chosen.extend(self._named(src, [first]))
+            elif first.type in ("object", "dictionary"):
+                chosen.extend(self._named(src, list(first.named_children)))
+            else:
+                chosen.append(first)
+        chosen.extend(self._named(src, [a for a in call.args if a.type == "keyword_argument"]))
+        return chosen
+
+    def _named(self, src: SourceFile, nodes: list[Node]) -> list[Node]:
+        values: list[Node] = []
+        for node in nodes:
+            if node.type == "keyword_argument":
+                key, value = node.child_by_field_name("name"), node.child_by_field_name("value")
+            elif node.type == "pair":
+                key, value = node.child_by_field_name("key"), node.child_by_field_name("value")
+            else:
+                continue
+            if key is not None and value is not None and src.text_of(key).strip("'\"") in self.URL_KEYS:
+                values.append(value)
+        return values
+
     def skip_hit(self, src: SourceFile, call: Call, arg: Node, flow: Flow) -> bool:
         if src.lang in JS_FAMILY and looks_like_browser_script(src):
             return True
@@ -516,6 +624,7 @@ class SsrfRule(SinkRule):
 
 class OpenRedirectRule(SinkRule):
     rule_id = "IL-507"
+    taint_ctx = Ctx.URL
     name = "신뢰되지 않는 URL로 자동접속(오픈 리다이렉트) 탐지"
     severity = Severity.MEDIUM
     gov_standard = mois_ref("1-7")
@@ -552,6 +661,7 @@ class OpenRedirectRule(SinkRule):
 
 class LdapInjectionRule(SinkRule):
     rule_id = "IL-508"
+    taint_ctx = Ctx.LDAP
     name = "LDAP 삽입 탐지"
     severity = Severity.HIGH
     gov_standard = mois_ref("1-10")
@@ -592,19 +702,62 @@ class XxeRule(BaseRule):
         Lang.PHP: re.compile(r"LIBXML_NOENT|libxml_disable_entity_loader\(\s*false"),
     }
     java_factory = re.compile(
-        r"(DocumentBuilderFactory|SAXParserFactory|XMLInputFactory|TransformerFactory|SchemaFactory)\.newInstance\(|new\s+SAXBuilder\(|XMLReaderFactory\.createXMLReader\("
+        r"(?:(?P<var>\w+)\s*=\s*)?(?:(?:DocumentBuilderFactory|SAXParserFactory|XMLInputFactory|TransformerFactory|SchemaFactory)\.newInstance\(|new\s+SAXBuilder\(|XMLReaderFactory\.createXMLReader\()"
     )
-    java_hardening = re.compile(
-        r"disallow-doctype-decl|FEATURE_SECURE_PROCESSING|IS_SUPPORTING_EXTERNAL_ENTITIES|SUPPORT_DTD|ACCESS_EXTERNAL_DTD|external-general-entities|setExpandEntityReferences\(\s*false"
+    java_setting = re.compile(r"(?P<var>\w+)\.(?P<method>setFeature|setProperty|setAttribute|setExpandEntityReferences)\((?P<args>[^;]*?)\)\s*;")
+    java_use = re.compile(
+        r"(?P<var>\w+)\.(?:newDocumentBuilder|newSAXParser|createXMLStreamReader|createXMLEventReader|newTransformer|newSchema|parse|build)\("
     )
+    # 이 설정이 "차단" 값일 때만 인정한다. (이름, 차단 값) 형태
+    java_safe_settings = (
+        (re.compile(r"disallow-doctype-decl|FEATURE_SECURE_PROCESSING"), re.compile(r"\btrue\b")),
+        (re.compile(r"external-(general|parameter)-entities|load-external-dtd"), re.compile(r"\bfalse\b")),
+        (re.compile(r"IS_SUPPORTING_EXTERNAL_ENTITIES|SUPPORT_DTD"), re.compile(r"\bfalse\b")),
+        (re.compile(r"ACCESS_EXTERNAL_(DTD|SCHEMA|STYLESHEET)"), re.compile(r"\"\"")),
+        (re.compile(r"^$"), re.compile(r"^false$")),  # setExpandEntityReferences(false)
+    )
+
+    def _java_hardened(self, text: str, var: str, before: int) -> bool:
+        for m in self.java_setting.finditer(text):
+            if m.group("var") != var or m.start() >= before:
+                continue
+            args = m.group("args")
+            if m.group("method") == "setExpandEntityReferences":
+                if re.fullmatch(r"\s*false\s*", args):
+                    return True
+                continue
+            name_part, _, value_part = args.rpartition(",")
+            for name_re, value_re in self.java_safe_settings[:-1]:
+                if name_re.search(name_part) and value_re.search(value_part):
+                    return True
+        return False
+
+    def _check_java(self, src: SourceFile) -> list[Violation]:
+        found = []
+        text = src.code_text
+        uses: dict[str, int] = {}
+        for m in self.java_use.finditer(text):
+            uses.setdefault(m.group("var"), m.start())
+        for m in self.java_factory.finditer(text):
+            var = m.group("var")
+            line = text.count("\n", 0, m.start()) + 1
+            first_use = uses.get(var, len(text)) if var else len(text)
+            if var and self._java_hardened(text, var, first_use):
+                continue
+            found.append(
+                self.at_line(
+                    src,
+                    line,
+                    "XML 파서 팩토리를 만들면서 DTD·외부 개체를 막는 설정이 없습니다. "
+                    "(차단 값이 true/false인지, 설정한 객체가 실제로 파싱에 쓰는 객체인지 확인하십시오.)",
+                )
+            )
+        return found
 
     def check(self, src: SourceFile) -> list[Violation]:
         found = []
-        text = src.code_text
-        if src.lang is Lang.JAVA and self.java_factory.search(text) and not self.java_hardening.search(text):
-            for idx, line in enumerate(src.code_lines, start=1):
-                if self.java_factory.search(line):
-                    found.append(self.at_line(src, idx, "XML 파서 팩토리를 만들면서 DTD·외부 개체 차단 설정이 없습니다."))
+        if src.lang is Lang.JAVA:
+            found.extend(self._check_java(src))
         elif src.lang in self.insecure:
             for idx, line in enumerate(src.code_lines, start=1):
                 if self.insecure[src.lang].search(line):
@@ -668,6 +821,7 @@ def _csrf_missing(self: BaseRule, project: ProjectContext) -> list[Violation]:
 
 class HeaderInjectionRule(SinkRule):
     rule_id = "IL-511"
+    taint_ctx = Ctx.HEADER
     name = "HTTP 응답분할(헤더 삽입) 탐지"
     severity = Severity.MEDIUM
     gov_standard = mois_ref("1-13")
@@ -722,6 +876,7 @@ XPATH_TEXT_RE = re.compile(r"(?:/{1,2}[A-Za-z_*][\w:*-]*(?:\[|/|\s|$|['\"])|\[@|
 
 class XPathInjectionRule(SinkRule):
     rule_id = "IL-527"
+    taint_ctx = Ctx.XPATH
     name = "XML(XPath) 삽입 탐지"
     severity = Severity.HIGH
     gov_standard = mois_ref("1-9")

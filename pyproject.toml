@@ -1,6 +1,6 @@
 [project]
 name = "iron-laws"
-version = "1.0.0"
+version = "1.1.0"
 description = "오철칙 (五鐵則) - SI 감리에서 자주 지적되는 항목을 정리한 소스코드 보안·품질 점검 CLI, AI가 만든 코드의 보정용"
 readme = "README.md"
 license = { text = "MIT" }

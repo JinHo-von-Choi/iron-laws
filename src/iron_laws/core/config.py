@@ -10,6 +10,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from iron_laws.core.models import Severity
+from iron_laws.engine.languages import EXTENSION_TO_LANG
 
 DEFAULT_EXCLUDES = [
     ".git",
@@ -62,27 +63,7 @@ DEFAULT_EXCLUDES = [
     "*.lock",
 ]
 
-DEFAULT_EXTENSIONS = [
-    ".py",
-    ".js",
-    ".jsx",
-    ".mjs",
-    ".cjs",
-    ".ts",
-    ".tsx",
-    ".mts",
-    ".java",
-    ".cs",
-    ".go",
-    ".rs",
-    ".php",
-    ".c",
-    ".h",
-    ".cpp",
-    ".cc",
-    ".cxx",
-    ".hpp",
-    ".hh",
+CONFIG_AND_TEMPLATE_EXTENSIONS = [
     ".sql",
     ".sh",
     ".xml",
@@ -100,6 +81,8 @@ DEFAULT_EXTENSIONS = [
     ".gradle",
     ".md",
 ]
+# 언어 정의에 있는 확장자는 모두 기본 점검 대상이다. 두 목록이 어긋나 파일이 조용히 빠지는 일을 막는다.
+DEFAULT_EXTENSIONS = [*EXTENSION_TO_LANG, *CONFIG_AND_TEMPLATE_EXTENSIONS]
 
 SPECIAL_FILE_PATTERNS = [
     "Dockerfile",
@@ -120,13 +103,14 @@ SPECIAL_FILE_PATTERNS = [
 class Limits(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    max_function_lines: int = 80
-    max_file_lines: int = 600
-    max_parameters: int = 7
-    max_nesting: int = 5
-    duplicate_min_nodes: int = 40
-    duplicate_similarity: float = 0.9
-    max_file_bytes: int = 1_000_000
+    max_function_lines: int = Field(default=80, gt=0)
+    max_file_lines: int = Field(default=600, gt=0)
+    max_parameters: int = Field(default=7, gt=0)
+    max_nesting: int = Field(default=5, gt=0)
+    duplicate_min_nodes: int = Field(default=40, gt=0)
+    duplicate_similarity: float = Field(default=0.9, gt=0, le=1)
+    max_file_bytes: int = Field(default=1_000_000, gt=0)
+    max_cross_file_lookups: int = Field(default=2000, ge=0)
 
 
 class Policies(BaseModel):
@@ -144,6 +128,10 @@ class ConfigError(Exception):
     """설정 파일을 읽거나 검증할 수 없을 때 발생"""
 
 
+class InputPathError(ConfigError):
+    """점검 대상 경로가 없을 때 발생"""
+
+
 class IronLawsConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -154,27 +142,49 @@ class IronLawsConfig(BaseModel):
     include_extensions: list[str] = Field(default_factory=lambda: list(DEFAULT_EXTENSIONS))
     limits: Limits = Field(default_factory=Limits)
     policies: Policies = Field(default_factory=Policies)
+    respect_gitignore: bool = Field(default=False, description="true면 .gitignore에 걸리는 파일과 폴더를 점검하지 않는다 (기본은 점검)")
     enabled_rules: list[str] | None = None
     disabled_rules: list[str] = Field(default_factory=list)
 
 
-def load_config(root_path: Path) -> IronLawsConfig:
-    base = root_path if root_path.is_dir() else root_path.parent
-    config_file = base / ".iron-laws.yml"
-    if not config_file.exists():
-        config_file = base / ".iron-laws.yaml"
-    if not config_file.exists():
-        return IronLawsConfig()
+CONFIG_NAMES = (".iron-laws.yml", ".iron-laws.yaml")
+
+
+def find_config_file(root_path: Path, explicit: Path | None = None, search_parents: bool = False) -> Path | None:
+    """설정 파일 위치를 정한다. 우선순위: --config > 점검 폴더 > (선택) 상위 폴더 탐색"""
+    if explicit is not None:
+        if not explicit.is_file():
+            raise ConfigError(f"설정 파일이 없습니다: {explicit}")
+        return explicit
+    base = (root_path if root_path.is_dir() else root_path.parent).resolve()
+    folders = [base, *base.parents] if search_parents else [base]
+    for folder in folders:
+        for name in CONFIG_NAMES:
+            candidate = folder / name
+            if candidate.exists():
+                return candidate
+    return None
+
+
+def load_config(
+    root_path: Path, config_path: Path | None = None, search_parents: bool = False
+) -> tuple[IronLawsConfig, str]:
+    """(설정, 출처)를 돌려준다. 출처는 '기본값' 또는 사용한 설정 파일 경로"""
+    config_file = find_config_file(root_path, config_path, search_parents)
+    if config_file is None:
+        return IronLawsConfig(), "기본값"
 
     try:
-        data = yaml.safe_load(config_file.read_text(encoding="utf-8")) or {}
-    except (yaml.YAMLError, OSError) as e:
+        data = yaml.safe_load(config_file.read_text(encoding="utf-8"))
+    except (yaml.YAMLError, OSError, UnicodeDecodeError) as e:
         raise ConfigError(f"설정 파일을 읽을 수 없습니다: {config_file} ({e})") from e
 
+    if data is None:
+        data = {}  # 비어 있는 파일은 기본 설정이다. false, 0, 빈 배열 같은 값은 아래에서 오류가 된다
     if not isinstance(data, dict):
         raise ConfigError(f"설정 파일의 최상위 구조는 매핑이어야 합니다: {config_file}")
 
     try:
-        return IronLawsConfig(**data)
+        return IronLawsConfig(**data), str(config_file)
     except ValidationError as e:
         raise ConfigError(f"설정 파일 검증 실패: {config_file}\n{e}") from e

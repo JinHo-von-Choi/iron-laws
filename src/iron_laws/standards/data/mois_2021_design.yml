@@ -1,0 +1,65 @@
+edition: 2021-11
+standard_name: 행정안전부 소프트웨어 개발보안 가이드(2021.11 개정)
+legal_basis: 행정기관 및 공공기관 정보시스템 구축·운영 지침 별표 3 설계단계 보안설계 기준
+source: 소프트웨어_개발보안_가이드(2021)_수정배포.pdf 제5장 제1절 설계단계 보안설계 기준
+items:
+- id: SR1-1
+  category_name: 입력데이터 검증 및 표현
+  name: DBMS 조회 및 결과 검증
+- id: SR1-2
+  category_name: 입력데이터 검증 및 표현
+  name: XML 조회 및 결과 검증
+- id: SR1-3
+  category_name: 입력데이터 검증 및 표현
+  name: 디렉토리 서비스 조회 및 결과 검증
+- id: SR1-4
+  category_name: 입력데이터 검증 및 표현
+  name: 시스템 자원 접근 및 명령어 수행 입력값 검증
+- id: SR1-5
+  category_name: 입력데이터 검증 및 표현
+  name: 웹 서비스 요청 및 결과 검증
+- id: SR1-6
+  category_name: 입력데이터 검증 및 표현
+  name: 웹 기반 중요 기능 수행 요청 유효성 검증
+- id: SR1-7
+  category_name: 입력데이터 검증 및 표현
+  name: HTTP 프로토콜 유효성 검증
+- id: SR1-8
+  category_name: 입력데이터 검증 및 표현
+  name: 허용된 범위내 메모리 접근
+- id: SR1-9
+  category_name: 입력데이터 검증 및 표현
+  name: 보안기능 입력값 검증
+- id: SR1-10
+  category_name: 입력데이터 검증 및 표현
+  name: 업로드·다운로드 파일 검증
+- id: SR2-1
+  category_name: 보안기능
+  name: 인증 대상 및 방식
+- id: SR2-2
+  category_name: 보안기능
+  name: 인증 수행 제한
+- id: SR2-3
+  category_name: 보안기능
+  name: 비밀번호 관리
+- id: SR2-4
+  category_name: 보안기능
+  name: 중요자원 접근통제
+- id: SR2-5
+  category_name: 보안기능
+  name: 암호키 관리
+- id: SR2-6
+  category_name: 보안기능
+  name: 암호연산
+- id: SR2-7
+  category_name: 보안기능
+  name: 중요정보 저장
+- id: SR2-8
+  category_name: 보안기능
+  name: 중요정보 전송
+- id: SR3-1
+  category_name: 에러처리
+  name: 예외처리
+- id: SR4-1
+  category_name: 세션통제
+  name: 세션통제

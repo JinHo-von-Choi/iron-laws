@@ -1,0 +1,117 @@
+# Python & Virtual Environments
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Testing & Linting
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.ruff_cache/
+.mypy_cache/
+
+# IDE & Editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Audit outputs & temporary reports
+audit_report.md
+audit_report.json
+*.log
+
+# 도구 작업 디렉터리
+.serena/
+
+# 비밀 값과 인증 파일 (예시 파일은 허용)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa*
+credentials.json
+serviceAccount*.json
+
+# AI 코딩 도구의 로컬 설정과 작업 기록 (비밀 값이 들어갈 수 있음)
+.claude/
+.agents/
+.codex/
+.cursor/
+.aider*
+CLAUDE.local.md
+
+# 점검 결과물과 외부 벤치마크 사본
+*.sarif
+iron-laws-report*
+BenchmarkJava/
+
+# 내부 계획·결정·작업 기록 문서 (공개 저장소에 올리지 않는다)
+plan/
+plans/
+PLAN*.md
+plan*.md
+*-plan.md
+*_plan.md
+roadmap*.md
+ROADMAP*.md
+decisions/
+decision*.md
+DECISION*.md
+adr/
+ADR*.md
+notes/
+NOTES*.md
+memo/
+todo/
+TODO*.md
+TASKS*.md
+worklog*.md
+WORKLOG*.md
+journal*.md
+retro*.md
+internal/
+.internal/
+.plans/
+.notes/
+scratch/
+drafts/

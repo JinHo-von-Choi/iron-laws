@@ -1,0 +1,523 @@
+edition: 2021-11
+standard_name: 행정안전부 소프트웨어 개발보안 가이드(2021.11 개정)
+legal_basis: 행정기관 및 공공기관 정보시스템 구축·운영 지침 제52조 [별표 3] 소프트웨어 보안약점 기준
+source: 행정안전부 정보화 표준·지침 자료실 게시글(2021.11.30) 첨부 소프트웨어_개발보안_가이드(2021)_수정배포.pdf 제4장 목차 및 각 항목 참고자료
+items:
+- id: 1-1
+  category_no: 1
+  category_name: 입력데이터 검증 및 표현
+  name: SQL 삽입
+  cwe:
+  - 89
+  guide_example_languages:
+  - C#
+  - Java
+  static_detectability: A
+- id: 1-2
+  category_no: 1
+  category_name: 입력데이터 검증 및 표현
+  name: 코드 삽입
+  cwe:
+  - 94
+  - 95
+  guide_example_languages:
+  - Java
+  static_detectability: A
+- id: 1-3
+  category_no: 1
+  category_name: 입력데이터 검증 및 표현
+  name: 경로 조작 및 자원 삽입
+  cwe:
+  - 22
+  - 99
+  guide_example_languages:
+  - C
+  - C#
+  - Java
+  static_detectability: A
+- id: 1-4
+  category_no: 1
+  category_name: 입력데이터 검증 및 표현
+  name: 크로스사이트 스크립트
+  cwe:
+  - 79
+  guide_example_languages:
+  - C
+  - C#
+  - Java
+  static_detectability: B
+- id: 1-5
+  category_no: 1
+  category_name: 입력데이터 검증 및 표현
+  name: 운영체제 명령어 삽입
+  cwe:
+  - 78
+  guide_example_languages:
+  - C
+  - C#
+  - Java
+  static_detectability: A
+- id: 1-6
+  category_no: 1
+  category_name: 입력데이터 검증 및 표현
+  name: 위험한 형식 파일 업로드
+  cwe:
+  - 434
+  guide_example_languages:
+  - C#
+  - Java
+  static_detectability: B
+- id: 1-7
+  category_no: 1
+  category_name: 입력데이터 검증 및 표현
+  name: 신뢰되지 않는 URL 주소로 자동접속 연결
+  cwe:
+  - 601
+  guide_example_languages:
+  - C#
+  - Java
+  static_detectability: B
+- id: 1-8
+  category_no: 1
+  category_name: 입력데이터 검증 및 표현
+  name: 부적절한 XML 외부 개체 참조
+  cwe:
+  - 611
+  guide_example_languages:
+  - Java
+  static_detectability: A
+- id: 1-9
+  category_no: 1
+  category_name: 입력데이터 검증 및 표현
+  name: XML 삽입
+  cwe:
+  - 643
+  - 652
+  guide_example_languages:
+  - C#
+  - Java
+  static_detectability: B
+- id: 1-10
+  category_no: 1
+  category_name: 입력데이터 검증 및 표현
+  name: LDAP 삽입
+  cwe:
+  - 90
+  guide_example_languages:
+  - C
+  - C#
+  - Java
+  static_detectability: B
+- id: 1-11
+  category_no: 1
+  category_name: 입력데이터 검증 및 표현
+  name: 크로스사이트 요청 위조
+  cwe:
+  - 352
+  guide_example_languages:
+  - C#
+  - Java
+  static_detectability: B
+- id: 1-12
+  category_no: 1
+  category_name: 입력데이터 검증 및 표현
+  name: 서버사이드 요청 위조
+  cwe:
+  - 918
+  guide_example_languages:
+  - Java
+  static_detectability: B
+- id: 1-13
+  category_no: 1
+  category_name: 입력데이터 검증 및 표현
+  name: HTTP 응답분할
+  cwe:
+  - 113
+  guide_example_languages:
+  - C#
+  - Java
+  static_detectability: B
+- id: 1-14
+  category_no: 1
+  category_name: 입력데이터 검증 및 표현
+  name: 정수형 오버플로우
+  cwe:
+  - 190
+  guide_example_languages:
+  - C
+  - C#
+  - Java
+  static_detectability: C
+- id: 1-15
+  category_no: 1
+  category_name: 입력데이터 검증 및 표현
+  name: 보안기능 결정에 사용되는 부적절한 입력값
+  cwe:
+  - 807
+  guide_example_languages:
+  - C
+  - C#
+  - Java
+  static_detectability: B
+- id: 1-16
+  category_no: 1
+  category_name: 입력데이터 검증 및 표현
+  name: 메모리 버퍼 오버플로우
+  cwe:
+  - 119
+  guide_example_languages:
+  - C
+  static_detectability: A
+- id: 1-17
+  category_no: 1
+  category_name: 입력데이터 검증 및 표현
+  name: 포맷 스트링 삽입
+  cwe:
+  - 134
+  guide_example_languages:
+  - C
+  - C#
+  - Java
+  static_detectability: A
+- id: 2-1
+  category_no: 2
+  category_name: 보안기능
+  name: 적절한 인증 없는 중요기능 허용
+  cwe:
+  - 306
+  guide_example_languages:
+  - C#
+  - Java
+  static_detectability: B
+- id: 2-2
+  category_no: 2
+  category_name: 보안기능
+  name: 부적절한 인가
+  cwe:
+  - 285
+  guide_example_languages:
+  - C
+  - C#
+  - Java
+  static_detectability: B
+- id: 2-3
+  category_no: 2
+  category_name: 보안기능
+  name: 중요한 자원에 대한 잘못된 권한 설정
+  cwe:
+  - 732
+  guide_example_languages:
+  - C
+  - C#
+  - Java
+  static_detectability: A
+- id: 2-4
+  category_no: 2
+  category_name: 보안기능
+  name: 취약한 암호화 알고리즘 사용
+  cwe:
+  - 327
+  guide_example_languages:
+  - C
+  - C#
+  - Java
+  static_detectability: A
+- id: 2-5
+  category_no: 2
+  category_name: 보안기능
+  name: 암호화되지 않은 중요정보
+  cwe:
+  - 312
+  - 319
+  guide_example_languages:
+  - C
+  - C#
+  - Java
+  static_detectability: B
+- id: 2-6
+  category_no: 2
+  category_name: 보안기능
+  name: 하드코드된 중요정보
+  cwe:
+  - 259
+  - 321
+  guide_example_languages:
+  - C
+  - C#
+  - Java
+  static_detectability: A
+- id: 2-7
+  category_no: 2
+  category_name: 보안기능
+  name: 충분하지 않은 키 길이 사용
+  cwe:
+  - 326
+  guide_example_languages:
+  - C
+  - C#
+  - Java
+  static_detectability: A
+- id: 2-8
+  category_no: 2
+  category_name: 보안기능
+  name: 적절하지 않은 난수값 사용
+  cwe:
+  - 330
+  guide_example_languages:
+  - C
+  - C#
+  - Java
+  static_detectability: A
+- id: 2-9
+  category_no: 2
+  category_name: 보안기능
+  name: 취약한 비밀번호 허용
+  cwe:
+  - 521
+  guide_example_languages:
+  - C
+  - C#
+  - Java
+  static_detectability: B
+- id: 2-10
+  category_no: 2
+  category_name: 보안기능
+  name: 부적절한 전자서명 확인
+  cwe:
+  - 347
+  guide_example_languages:
+  - Java
+  static_detectability: B
+- id: 2-11
+  category_no: 2
+  category_name: 보안기능
+  name: 부적절한 인증서 유효성 검증
+  cwe:
+  - 295
+  guide_example_languages:
+  - C
+  - Java
+  static_detectability: A
+- id: 2-12
+  category_no: 2
+  category_name: 보안기능
+  name: 사용자 하드디스크에 저장되는 쿠키를 통한 정보노출
+  cwe:
+  - 539
+  guide_example_languages:
+  - C#
+  - Java
+  static_detectability: B
+- id: 2-13
+  category_no: 2
+  category_name: 보안기능
+  name: 주석문 안에 포함된 시스템 주요정보
+  cwe:
+  - 615
+  guide_example_languages:
+  - C
+  - C#
+  - Java
+  static_detectability: A
+- id: 2-14
+  category_no: 2
+  category_name: 보안기능
+  name: 솔트 없이 일방향 해쉬함수 사용
+  cwe:
+  - 759
+  guide_example_languages:
+  - C
+  - C#
+  - Java
+  static_detectability: B
+- id: 2-15
+  category_no: 2
+  category_name: 보안기능
+  name: 무결성 검사 없는 코드 다운로드
+  cwe:
+  - 494
+  guide_example_languages:
+  - C
+  - C#
+  - Java
+  static_detectability: B
+- id: 2-16
+  category_no: 2
+  category_name: 보안기능
+  name: 반복된 인증시도 제한 기능 부재
+  cwe:
+  - 307
+  guide_example_languages:
+  - C
+  - C#
+  - Java
+  static_detectability: C
+- id: 3-1
+  category_no: 3
+  category_name: 시간 및 상태
+  name: '경쟁조건: 검사시점과 사용시점(TOCTOU)'
+  cwe:
+  - 367
+  guide_example_languages:
+  - C
+  - C#
+  - Java
+  static_detectability: B
+- id: 3-2
+  category_no: 3
+  category_name: 시간 및 상태
+  name: 종료되지 않는 반복문 또는 재귀함수
+  cwe:
+  - 674
+  - 835
+  guide_example_languages:
+  - C
+  static_detectability: B
+- id: 4-1
+  category_no: 4
+  category_name: 에러처리
+  name: 오류 메시지 정보노출
+  cwe:
+  - 209
+  - 497
+  guide_example_languages:
+  - C#
+  - Java
+  static_detectability: B
+- id: 4-2
+  category_no: 4
+  category_name: 에러처리
+  name: 오류 상황 대응 부재
+  cwe:
+  - 390
+  guide_example_languages:
+  - C#
+  - Java
+  static_detectability: A
+- id: 4-3
+  category_no: 4
+  category_name: 에러처리
+  name: 부적절한 예외 처리
+  cwe:
+  - 754
+  guide_example_languages:
+  - C#
+  - Java
+  static_detectability: A
+- id: 5-1
+  category_no: 5
+  category_name: 코드오류
+  name: Null Pointer 역참조
+  cwe:
+  - 476
+  guide_example_languages:
+  - C
+  - C#
+  - Java
+  static_detectability: B
+- id: 5-2
+  category_no: 5
+  category_name: 코드오류
+  name: 부적절한 자원 해제
+  cwe:
+  - 404
+  guide_example_languages:
+  - C
+  - C#
+  - Java
+  static_detectability: B
+- id: 5-3
+  category_no: 5
+  category_name: 코드오류
+  name: 해제된 자원 사용
+  cwe:
+  - 416
+  guide_example_languages:
+  - C
+  static_detectability: B
+- id: 5-4
+  category_no: 5
+  category_name: 코드오류
+  name: 초기화되지 않은 변수 사용
+  cwe:
+  - 457
+  guide_example_languages:
+  - C
+  static_detectability: B
+- id: 5-5
+  category_no: 5
+  category_name: 코드오류
+  name: 신뢰할 수 없는 데이터의 역직렬화
+  cwe:
+  - 502
+  guide_example_languages:
+  - Java
+  static_detectability: A
+- id: 6-1
+  category_no: 6
+  category_name: 캡슐화
+  name: 잘못된 세션에 의한 데이터 정보노출
+  cwe:
+  - 488
+  - 543
+  guide_example_languages:
+  - C#
+  - Java
+  static_detectability: B
+- id: 6-2
+  category_no: 6
+  category_name: 캡슐화
+  name: 제거되지 않고 남은 디버그 코드
+  cwe:
+  - 489
+  guide_example_languages:
+  - C
+  - C#
+  - Java
+  static_detectability: A
+- id: 6-3
+  category_no: 6
+  category_name: 캡슐화
+  name: Public 메소드부터 반환된 Private 배열
+  cwe:
+  - 495
+  guide_example_languages:
+  - C#
+  - Java
+  static_detectability: B
+- id: 6-4
+  category_no: 6
+  category_name: 캡슐화
+  name: Private 배열에 Public 데이터 할당
+  cwe:
+  - 496
+  guide_example_languages:
+  - C#
+  - Java
+  static_detectability: B
+- id: 7-1
+  category_no: 7
+  category_name: API 오용
+  name: DNS lookup에 의존한 보안결정
+  cwe:
+  - 247
+  - 350
+  guide_example_languages:
+  - C
+  - C#
+  - Java
+  static_detectability: B
+- id: 7-2
+  category_no: 7
+  category_name: API 오용
+  name: 취약한 API 사용
+  cwe:
+  - 242
+  - 246
+  - 382
+  - 676
+  guide_example_languages:
+  - C
+  - C#
+  - Java
+  static_detectability: A

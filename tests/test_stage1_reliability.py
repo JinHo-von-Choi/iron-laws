@@ -78,7 +78,10 @@ def test_changed_since_staged_unstaged_untracked_and_subfolder(tmp_path: Path):
 def test_changed_since_rejects_option_like_ref(tmp_path: Path):
     git(tmp_path, "init", "-q")
     (tmp_path / "a.py").write_text("x = 1\n")
-    assert runner.invoke(app, ["check", str(tmp_path), "--changed-since", "--output=/tmp/x"]).exit_code != 0
+    target = tmp_path / "injected.txt"
+    result = runner.invoke(app, ["check", str(tmp_path), "--changed-since", f"--output={target}"])
+    assert result.exit_code != 0
+    assert not target.exists()  # git이 옵션으로 해석해 파일을 쓰면 안 된다
 
 
 # ---------------------------------------------------------------------------

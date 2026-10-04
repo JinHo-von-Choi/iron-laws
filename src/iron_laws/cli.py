@@ -126,6 +126,8 @@ def _nul_paths(raw: bytes) -> list[str]:
 
 def _changed_files(root: Path, ref: str) -> set[str]:
     """ref 이후 바뀐 파일(추적 중인 변경, 스테이징된 파일, 새 파일)을 점검 루트 기준 상대 경로로 돌려준다."""
+    if ref.startswith("-"):
+        raise ConfigError(f"--changed-since 값이 옵션처럼 보입니다: {ref!r} (브랜치·커밋 이름을 지정하십시오)")
     folder = root if root.is_dir() else root.parent
     top = Path(_git(["rev-parse", "--show-toplevel"], folder).decode("utf-8", errors="surrogateescape").strip())
     names = _nul_paths(_git(["diff", "--name-only", "-z", "--diff-filter=ACMRT", ref, "--"], folder))

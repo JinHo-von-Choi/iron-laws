@@ -98,7 +98,7 @@ iron-laws feedback add IL-501 src/a.py:3 --verdict false-positive --minutes 10  
 
 | 수준 | 언어 | 내용 |
 |---|---|---|
-| 깊게 | Python, JavaScript/TypeScript, Java, C# | 구문 분석, 외부 입력 추적(같은 파일 안), 전체 규칙 |
+| 깊게 | Python, JavaScript/TypeScript, Java, C# | 구문 분석, 외부 입력 추적(함수 안 분기 합류·같은 파일 도우미 함수, Python은 파일 간), 전체 규칙 |
 | 기본 | Go, PHP | 구문 분석, 주요 주입·오류 처리·암호 규칙 |
 | 제한 | Rust, C/C++ | 오류 처리, 메모리·포맷 문자열·API, 타입 우회 |
 | 설정·정의 파일 | SQL, YAML, JSON, `.env`, Dockerfile, Compose, GitHub Actions, XML(MyBatis), HTML 템플릿 | 비밀, 접근 규칙(RLS·Firebase), 배포 설정, 템플릿 이스케이프 |

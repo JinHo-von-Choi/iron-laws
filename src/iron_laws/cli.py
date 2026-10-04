@@ -522,7 +522,16 @@ def init_command(target_dir: Path = typer.Argument(Path("."), help="설정 파�
     console.print(f"[bold green]기본 설정 파일이 생성되었습니다: {config_path}[/bold green]")
 
 
+def _ensure_utf8_output() -> None:
+    """Windows 등 UTF-8이 아닌 출력 인코딩(cp1252·cp949)에서 한글 출력이 UnicodeEncodeError로 죽지 않게 한다."""
+    for stream in (sys.stdout, sys.stderr):
+        encoding = (getattr(stream, "encoding", None) or "").lower().replace("-", "")
+        if encoding != "utf8" and hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
+
+
 def main():
+    _ensure_utf8_output()
     app()
 
 

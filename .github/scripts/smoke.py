@@ -13,6 +13,10 @@ from pathlib import Path
 SECRET_LINE = 'password = "ActualHardcodedPassword123!"\n'
 
 
+for _stream in (sys.stdout, sys.stderr):
+    _stream.reconfigure(encoding="utf-8", errors="replace")  # 이 스크립트의 한글 출력이 cp1252에서 죽지 않게 한다
+
+
 def run(*args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run([sys.executable, "-m", "iron_laws.cli", *args], capture_output=True, text=True, encoding="utf-8")
 

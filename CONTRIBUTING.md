@@ -37,13 +37,14 @@ uv run ruff check .
 
 ```bash
 uv run pytest -q                       # 전체(격리 실행 시험은 docker 이미지가 없으면 skip)
-uv run python benchmarks/plan_experiments.py   # 패치 검증·회귀시험·승인 추적 표본 측정(1.2)
-uv run python benchmarks/plan_experiments_v13.py   # 근거 일치·변형 사례집·변형 입력·승인 승계 측정(1.3)
+uv run python benchmarks/plan_experiments.py       # 패치 검증·회귀시험·승인 추적 표본 측정
+uv run python benchmarks/plan_experiments_v13.py   # 근거 일치·변형 사례집·변형 입력·승인 승계 측정
+uv run python benchmarks/plan_experiments_v14.py out.json --baseline <이전 버전 소스 폴더>   # 이전 버전과 같은 표본 비교
 ```
 
 격리 실행 시험은 준비 단계에서 만든 이미지가 있어야 돌아갑니다(시험 중에는 네트워크를 쓰지 않으므로 미리 받아 둡니다).
 `tests/runner_doubles.py`의 `LocalTestRunner`는 호스트에서 명령을 실행하는 **시험 전용 대역**입니다. 우리가 만든 입력(위험한 호출을 기록만 하는 harness 등)을 돌리는 데만 쓰고, 제품 코드에 넣지 않으며, 호스트 실행 금지 정책을 검증하는 시험에는 쓰지 않습니다.
-표본(`tests/regression_corpus.py`, 장부·승인 시험의 표본)은 구현자가 직접 분류한 것이므로 효과 주장의 근거로 쓰지 않습니다.
+표본(`tests/regression_corpus.py`, 장부·승인 시험의 표본)은 개발팀이 직접 분류한 것이라 효과 주장의 근거로 쓰지 않습니다.
 
 ## 코딩 원칙 (오철칙 준수)
 - 빈 catch 블록이나 에러를 삼키는 코드는 절대로 머지되지 않습니다.

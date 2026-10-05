@@ -302,6 +302,9 @@ SUPPRESSION_CASES = [
     ("yaml-escaped-quote", "a.yml", 'key: "a \\" ' + DIRECTIVE + '"\n', 0),
     ("yaml-multiline-double-quoted", "a.yml", 'key: "line one\n' + DIRECTIVE + '\n  end"\nother: 1\n', 0),
     ("yaml-single-quoted-inner", "a.yml", "key: 'a " + DIRECTIVE + "'\n", 0),
+    ("yaml-escaped-single-quote", "a.yml", "key: 'it''s " + DIRECTIVE + "'\n", 0),
+    ("yaml-escaped-single-quote-then-comment", "a.yml", "key: 'it''s' " + DIRECTIVE + "\n", 1),
+    ("yaml-escaped-single-quote-at-end", "a.yml", "key: 'a''' " + DIRECTIVE + "\n", 1),
     ("yaml-real-comment", "a.yml", 'key: "value" ' + DIRECTIVE + "\n", 1),
     ("yaml-apostrophe-in-plain-scalar", "a.yml", "desc: it's fine " + DIRECTIVE + "\n", 1),
     ("yaml-hash-inside-quotes-then-comment", "a.yml", "key: 'a # b ' " + DIRECTIVE + "\n", 1),
@@ -309,6 +312,12 @@ SUPPRESSION_CASES = [
     ("shell-multiline-double-quoted", "a.sh", 'echo "first\n' + DIRECTIVE + '"\n', 0),
     ("shell-multiline-single-quoted", "a.sh", "echo 'one\n" + DIRECTIVE + "'\n", 0),
     ("shell-heredoc-body", "a.sh", "cat <<EOF\n" + DIRECTIVE + "\nEOF\n", 0),
+    ("shell-two-heredocs", "a.sh", "cat <<A <<B\n" + DIRECTIVE + "\nA\n" + DIRECTIVE + "\nB\n", 0),
+    ("shell-comment-after-two-heredocs", "a.sh", "cat <<A <<B\nx\nA\ny\nB\necho ok " + DIRECTIVE + "\n", 1),
+    ("shell-heredoc-quoted-tag", "a.sh", "cat <<'EOF'\n" + DIRECTIVE + "\nEOF\n", 0),
+    ("shell-heredoc-hyphen-tag", "a.sh", "cat <<'END-X'\n" + DIRECTIVE + "\nEND-X\n", 0),
+    ("shell-heredoc-dotted-tag", "a.sh", "cat <<EOT.1\n" + DIRECTIVE + "\nEOT.1\n", 0),
+    ("yaml-sequence-quoted", "a.yml", "- '값 " + DIRECTIVE + "'\n", 0),
     ("shell-real-comment", "a.sh", 'echo "x" ' + DIRECTIVE + "\n", 1),
     ("shell-escaped-quote-then-comment", "a.sh", "echo \\\" " + DIRECTIVE + "\n", 1),
     ("env-quoted-value", "a.env", 'KEY="v ' + DIRECTIVE + '"\n', 0),
@@ -401,3 +410,161 @@ def test_violation_paths_are_serialized_with_forward_slashes_on_every_platform(t
     violation = report.violations[0]
     # Windows의 역슬래시 경로도 같은 값으로 나가야 지문·finding_id·독립 검증기가 운영체제와 무관하게 같다
     assert type(violation)._serialize_path(violation, PureWindowsPath("pkg\\한글 폴더\\a.py")) == "pkg/한글 폴더/a.py"
+
+
+# ---------------------------------------------------------------------------
+# 동일 줄 근거 대여: 같은 줄의 다른 호출은 한 호출의 지적을 근거로 쓰지 못한다
+# ---------------------------------------------------------------------------
+
+SAME_LINE_HEAD = "import os\nimport subprocess\nfrom flask import request\n\ndef f():\n    a = request.args['a']\n"
+
+
+@pytest.mark.parametrize(
+    ("name", "line", "expected"),
+    [
+        ("risky-then-closed", "    os.system('echo ' + a); os.system('ok')\n", [("evidence_met", True), ("evidence_met", False)]),
+        ("closed-then-risky", "    os.system('ok'); os.system('echo ' + a)\n", [("evidence_met", False), ("evidence_met", True)]),
+        ("two-risky-calls", "    os.system('echo ' + a); os.system('x ' + a)\n", [("evidence_met", True), ("unresolved", False)]),
+        ("risky-between-closed", "    os.system('a'); os.system('echo ' + a); os.system('b')\n", [("evidence_met", False), ("evidence_met", True), ("evidence_met", False)]),
+        ("mixed-families-on-one-line", "    open(a); os.system('echo ' + a)\n", None),
+    ],
+)
+def test_finding_is_not_lent_to_another_call_on_the_same_line(tmp_path: Path, name, line, expected):
+    report = _scan(tmp_path, {"a.py": SAME_LINE_HEAD + line})
+    points = sorted((p for p in report.coverage_ledger.points if p.family == "command"), key=lambda p: p.column)
+    if expected is None:
+        assert all(p.finding_ids == [] or p.callee == "os.system" for p in points)
+        return
+    assert [(p.state, bool(p.finding_ids)) for p in points] == expected
+    assert len({fid for p in points for fid in p.finding_ids}) == sum(1 for _, has in expected if has)
+    from iron_laws.evidence.verifier import verify_report
+
+    assert verify_report(report.model_dump(mode="json")).ok
+
+
+def test_a_second_sibling_risky_call_on_a_line_stays_unresolved_and_blocks_the_contract(tmp_path: Path):
+    """한 줄의 두 위험 호출은 규칙이 한 지적으로 합쳐 보고한다. 나란한 두 번째 호출은 자기 지적이 없으므로 사람이 따로 확인할 대상으로 남는다."""
+    report = _scan(tmp_path, {"a.py": SAME_LINE_HEAD + "    os.system('echo ' + a); os.system('x ' + a)\n"})
+    states = sorted(p.state for p in report.coverage_ledger.points if p.family == "command")
+    assert "unresolved" in states and report.coverage_ledger.status == "unmet"
+
+
+def test_nested_calls_in_one_flow_share_one_finding(tmp_path: Path):
+    report = _scan(tmp_path, {"a.py": "import os\nfrom flask import request\n\ndef h():\n    n = request.args.get('n')\n    return open(os.path.join('/srv', n)).read()\n"})
+    path_points = [p for p in report.coverage_ledger.points if p.family == "path"]
+    assert len(report.violations) == 1 and path_points
+    assert all(report.violations[0].finding_id in p.finding_ids for p in path_points if p.state == "evidence_met")
+
+
+
+
+# ---------------------------------------------------------------------------
+# 타입 지정이 붙은 비밀 이름 대입: 다른 규칙이 같은 줄을 지적해도 값 조각이 어떤 출력에도 남지 않는다
+# ---------------------------------------------------------------------------
+
+TYPED_SECRET_LINES = [
+    ("ts-typed-const", "a.ts", 'const token: string = "{s}"; console.log(eval(req.query.x));\n'),
+    ("py-annotation", "a.py", 'api_token: str = "{s}"; exec(input())\n'),
+    ("py-generic-annotation", "a.py", 'secret_key: Optional[str] = "{s}"; exec(input())\n'),
+    ("py-annotated-with-quoted-metadata", "a.py", 'api_token: Annotated[str, "credential"] = "{s}"; exec(input())\n'),
+    ("rust-typed-let", "a.rs", 'let password: &str = "{s}"; unsafe { std::ptr::null::<u8>().read(); }\n'),
+    ("js-quoted-key", "a.js", 'const cfg = { "token": "{s}", mode: eval(userInput) };\n'),
+]
+
+
+@pytest.mark.parametrize(("name", "filename", "template"), TYPED_SECRET_LINES, ids=[c[0] for c in TYPED_SECRET_LINES])
+@pytest.mark.parametrize("fmt", ["console", "markdown", "json", "sarif", "prompt", "review"])
+def test_typed_secret_assignment_leaves_no_fragment_in_any_output(tmp_path: Path, name, filename, template, fmt):
+    secret = "Zq9xKm2LpQw8RtYuVn4B"  # 시험용 무효 합성 값
+    project = tmp_path / "proj"
+    project.mkdir()
+    (project / filename).write_text(template.replace("{s}", secret), encoding="utf-8")
+    result = cli.invoke(app, ["audit", str(project), "--format", fmt, "--limit", "0"])
+    text = result.stdout + result.stderr
+    assert result.exit_code in (0, 1)
+    assert [f for f in (secret[:8], secret[6:14], secret[-8:]) if f in text] == []
+
+
+# ---------------------------------------------------------------------------
+# 승인된 파일 이동과 변경 범위: 전체 점검·변경 점검·검토 묶음이 같은 판정을 낸다
+# ---------------------------------------------------------------------------
+
+
+def _git_project(root: Path):
+    import os
+    import subprocess
+
+    from tests.test_stage5_approvals import BASE, make
+
+    root.mkdir(parents=True)
+    make(root, BASE)
+    env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
+
+    def git(*args: str) -> None:
+        subprocess.run(["git", *args], cwd=root, check=True, capture_output=True, text=True, env=env)
+
+    git("init", "-q")
+    git("add", "-A")
+    git("commit", "-qm", "init")
+    return git
+
+
+def _verdicts(project: Path, store: Path) -> dict[str, tuple[int, dict | None]]:
+    out: dict[str, tuple[int, dict | None]] = {}
+    for label, args in [
+        ("full", ["check", str(project), "--approvals", str(store)]),
+        ("changed", ["check", str(project), "--approvals", str(store), "--changed-since", "HEAD~1"]),
+        ("bundle-full", ["review-bundle", str(project), "--approvals", str(store), "--format", "json"]),
+        ("bundle-changed", ["review-bundle", str(project), "--approvals", str(store), "--changed-since", "HEAD~1", "--format", "json"]),
+    ]:
+        result = cli.invoke(app, args)
+        out[label] = (result.exit_code, json.loads(result.stdout) if label.startswith("bundle") and result.exit_code in (0, 1) else None)
+    return out
+
+
+def test_an_approved_file_move_is_judged_the_same_by_every_command(tmp_path: Path):
+    from tests.test_stage5_approvals import approve
+
+    project = tmp_path / "proj"
+    git = _git_project(project)
+    store = tmp_path / "ap.jsonl"
+    approve(project, store)
+    git("mv", "app.py", "tools.py")
+    git("commit", "-qam", "move")
+    verdicts = _verdicts(project, store)
+    assert {k: v[0] for k, v in verdicts.items()} == {"full": 0, "changed": 0, "bundle-full": 0, "bundle-changed": 0}
+    assert verdicts["bundle-full"][1]["counts"]["keep"] == verdicts["bundle-changed"][1]["counts"]["keep"] == 1
+    report = json.loads(cli.invoke(app, ["audit", str(project), "--approvals", str(store), "--changed-since", "HEAD~1", "--format", "json"]).stdout)
+    assert report["metadata"]["scope"]["renames"] == [{"from": "app.py", "to": "tools.py"}]
+
+
+def test_a_move_that_also_changes_the_approved_premise_is_not_inherited_by_any_command(tmp_path: Path):
+    from tests.test_stage5_approvals import approve
+
+    project = tmp_path / "proj"
+    git = _git_project(project)
+    store = tmp_path / "ap.jsonl"
+    approve(project, store)
+    git("mv", "app.py", "tools.py")
+    (project / "tools.py").write_text((project / "tools.py").read_text().replace('os.system("ls " + d)', 'os.system("rm -rf " + d)'))
+    git("commit", "-qam", "move and change")
+    verdicts = _verdicts(project, store)
+    assert verdicts["full"][0] == verdicts["changed"][0] == 1
+    assert verdicts["bundle-full"][0] == verdicts["bundle-changed"][0] == 1
+
+
+def test_a_copy_of_an_approved_file_does_not_inherit_the_approval_in_any_scope(tmp_path: Path):
+    from tests.test_stage5_approvals import approve
+
+    project = tmp_path / "proj"
+    git = _git_project(project)
+    store = tmp_path / "ap.jsonl"
+    approve(project, store)
+    (project / "copy.py").write_text((project / "app.py").read_text())
+    git("add", "-A")
+    git("commit", "-qm", "copy")
+    verdicts = _verdicts(project, store)
+    assert verdicts["full"][0] == verdicts["changed"][0] == 1
+    # 검토 묶음은 기존 승인의 전제만 판정한다. 복제본은 승인을 물려받지 않아 점검이 실패하고, 원본의 승인은 두 범위에서 똑같이 유지된다
+    assert verdicts["bundle-full"][0] == verdicts["bundle-changed"][0]
+    assert verdicts["bundle-full"][1]["counts"] == verdicts["bundle-changed"][1]["counts"]

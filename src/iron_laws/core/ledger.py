@@ -319,6 +319,42 @@ def _build_callers(sources: list[SourceFile]) -> dict[tuple[str, int], list[tupl
     return callers
 
 
+def _findings_of(src: SourceFile, call: Call, rule_id: str, findings: dict[tuple[str, str, int, int], list[str]]) -> list[str]:
+    """이 호출의 지적. 열까지 같은 호출의 지적이 기본이다. 같은 줄의 다른 호출이 낸 지적은 근거로 쓰지 않되,
+    그 호출과 이 호출이 서로 안에 들어 있는(`open(os.path.join(...))`) 같은 흐름이면 한 지적으로 함께 본다. 나란히 있는 호출(`a(); b()`)은 따로 본다."""
+    path = src.path.as_posix()
+    column = call.node.start_point[1] + 1
+    exact = findings.get((rule_id, path, call.line, column))
+    if exact:
+        return list(exact)
+    linked: list[str] = []
+    for (r, p, line, col), ids in findings.items():
+        if r != rule_id or p != path or line != call.line or col == column:
+            continue
+        for other in _calls_on_line(src, call.line):
+            if other.node.start_point[1] + 1 == col and _nested(call.node, other.node):
+                linked.extend(ids)
+                break
+    return linked
+
+
+def _nested(a, b) -> bool:
+    """두 호출 노드 중 하나가 다른 하나를 포함한다."""
+    return (a.start_byte <= b.start_byte and b.end_byte <= a.end_byte) or (b.start_byte <= a.start_byte and a.end_byte <= b.end_byte)
+
+
+def _calls_on_line(src: SourceFile, line: int) -> list[Call]:
+    by_line = src.memo("calls_by_line", lambda: _group_calls(src))
+    return by_line.get(line, [])
+
+
+def _group_calls(src: SourceFile) -> dict[int, list[Call]]:
+    grouped: dict[int, list[Call]] = {}
+    for c in iter_calls(src):
+        grouped.setdefault(c.line, []).append(c)
+    return grouped
+
+
 @dataclass
 class _Verdict:
     state: str
@@ -332,7 +368,7 @@ def _classify(
     call: Call,
     family: str,
     ctx: _Context,
-    findings: dict[tuple[str, str, int], list[str]],
+    findings: dict[tuple[str, str, int, int], list[str]],
 ) -> _Verdict:
     """한 관심 지점의 상태. 지적은 규칙이 실제로 낸 확정 지적(finding_id)에서만 가져온다.
     장부가 흐름을 따로 평가해 지적이 있다고 추정하지 않는다: 지적 없이 '근거 충족'이 되려면 닫힌 값이거나 규칙이 인정한 안전 조건이 있어야 한다."""
@@ -343,7 +379,7 @@ def _classify(
     index = xfile.get_index()
     before = index.limit_hits if index else 0
     args = rule.select_args(src, call, sink)
-    finding_ids = list(findings.get((rule.rule_id, src.path.as_posix(), call.line), []))
+    finding_ids = _findings_of(src, call, rule.rule_id, findings)
     unresolved: str | None = None
     guarded = False
     for arg in args:
@@ -392,7 +428,7 @@ def build_ledger(
     contract: Contract,
     contract_source: str,
     config: IronLawsConfig,
-    findings: dict[tuple[str, str, int], list[str]],
+    findings: dict[tuple[str, str, int, int], list[str]],
     suppressed_lines: set[tuple[str, int, str]],
     changed_files: set[str] | None,
     digests: dict[str, str],

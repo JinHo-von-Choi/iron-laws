@@ -40,7 +40,7 @@ def _looks_secret(value: str) -> bool:
 
 NAMED_SECRET_RE = re.compile(
     r"""(?ix)\b[\w.\-]*(?:pass(?:word|wd|phrase)?|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|credential|auth[_-]?key)[\w.\-]*
-    \s*[:=]\s*(?P<q>["'`])(?P<value>[^"'`\n]{8,}?)(?P=q)"""
+    (?:\s*:\s*[^\n=]+?)?\s*(?::=|=|:)\s*(?P<q>["'`])(?P<value>[^"'`\n]{8,}?)(?P=q)"""
 )
 PARTIAL_MIN = 8
 PARTIAL_SECRET_MIN = 12

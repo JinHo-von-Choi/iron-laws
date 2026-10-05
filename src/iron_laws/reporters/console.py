@@ -92,8 +92,12 @@ def print_console_report(report: AuditReport, limit: int = DEFAULT_LIMIT) -> Non
 
     if s.total_files_scanned == 0:
         result_text = Text("점검 없음 (파일 0개)", style="bold yellow")
+    elif s.is_passed and s.unverified_rule_language_pairs:
+        result_text = Text("합격 (PASS) · 단, 미검증 조합 포함", style="bold yellow")  # 시험이 없는 조합의 지적 없음은 통과 근거가 아니다
     elif s.is_passed:
         result_text = Text("합격 (PASS)", style="bold green")
+    elif s.gate_exceeded and s.gate_only_failure:
+        result_text = Text("재검토 (신뢰 지표 상한 초과)", style="bold red")
     else:
         result_text = Text("불합격 (FAIL - 시정조치 필수)", style="bold red")
     summary_table.add_row(
@@ -110,6 +114,12 @@ def print_console_report(report: AuditReport, limit: int = DEFAULT_LIMIT) -> Non
     meta = report.metadata
     if meta.get("config_source"):
         console.print(Text(f"설정: {meta['config_source']} (fail_on={meta.get('config', {}).get('fail_on', '?')}, 출처: {meta.get('fail_on_source', '기본값')})", style="dim"))
+    if s.evaluated_rule_language_pairs:
+        rate = f"{s.unverified_rule_language_rate:.0%}" if s.unverified_rule_language_rate is not None else "-"
+        unknown = f"{s.analysis_unknown_rate:.0%}" if s.analysis_unknown_rate is not None else "-"
+        console.print(Text(f"신뢰 지표: 이번 점검에 적용된 (규칙, 언어) {s.evaluated_rule_language_pairs}개 중 미검증 {s.unverified_rule_language_pairs}개({rate}) · 분석 unknown 비율 {unknown}. 미검증 조합의 '지적 없음'은 통과 근거가 아닙니다.", style="dim"))
+    for item in s.gate_exceeded:
+        console.print(Text(f"신뢰 지표 상한 초과: {item}", style="bold red"))
     scope = meta.get("scope")
     if scope:
         console.print(Text(f"범위 제한: {scope['ref']} 이후 바뀐 파일 {scope['changed_files']}개의 지적만 표시했습니다. {scope['note']}", style="yellow"))

@@ -16,7 +16,7 @@ from datetime import date
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-SUPPORTED_REPORT_VERSIONS = ("1.3",)
+SUPPORTED_REPORT_VERSIONS = ("1.3", "1.4")
 SUPPORTED_RECEIPT_VERSIONS = ("1",)
 
 # 검사 계열 → 그 계열의 지적을 내는 규칙. 보고서가 다른 계열의 지적을 연결하면 모순이다.
@@ -125,6 +125,7 @@ def verify_report(data: dict[str, Any], *, as_of: date | None = None, checkout: 
     _check_execution(c, data, execution, ledger, summary)
     _check_ledger(c, ledger, findings, hidden_paths)
     _check_passed(c, data, summary, ledger, violations, execution)
+    _check_trust(c, data, summary, ledger, violations)
     _check_approvals(c, data, ledger, execution, findings, violations, as_of)
     if checkout is not None:
         _check_checkout(c, ledger, execution, checkout)
@@ -194,6 +195,8 @@ def _check_ledger(c: _Collector, ledger: dict[str, Any], findings: dict[str, dic
             if not c.check(target is not None, "point.finding_missing", f"존재하지 않는 지적을 가리킨다: {fid}", where):
                 continue
             c.check(target.get("file_path") == p.get("path") and target.get("line_number") == p.get("line"), "point.finding_elsewhere", "다른 파일·다른 줄의 지적을 연결했다", where)
+            if p.get("column") is not None and target.get("column") is not None:
+                c.check(target.get("column") == p.get("column"), "point.finding_other_call", "같은 줄의 다른 호출(다른 열)의 지적을 연결했다", where)
             c.check(target.get("rule_id") == rule, "point.finding_wrong_rule", f"{p.get('family')} 계열 지점에 다른 규칙({target.get('rule_id')})의 지적을 연결했다", where)
             c.check(target.get("confidence") in (None, "CONFIRMED"), "point.finding_not_confirmed", "확정되지 않은 지적을 근거로 삼았다", where)
         if state == "evidence_met":
@@ -253,14 +256,50 @@ def _check_passed(c: _Collector, data: dict[str, Any], summary: dict[str, Any], 
     if status != "complete":
         c.check(not passed, "pass.incomplete_passed", "점검이 끝까지 이루어지지 않았는데 통과로 표시되었다")
         return
-    if summary.get("contract_mode") == "block" and ledger.get("status") in ("unmet", "policy_change_review"):
-        c.check(not passed, "pass.contract_unmet_passed", "차단 모드의 근거 계약이 미충족인데 통과로 표시되었다")
-        return
-    c.check(passed == (not blocked_by_findings), "pass.unexplained", "통과 표시가 실패 기준 이상의 지적 유무와 맞지 않는다(설명할 수 없는 통과 또는 실패)")
     counts = {sev: sum(1 for v in violations if v.get("severity") == sev) for sev in SEVERITY_RANK}
     c.check(summary.get("total_violations") == len(violations), "summary.total_mismatch", "지적 총수가 목록과 다르다")
     for sev, key in (("CRITICAL", "critical_count"), ("HIGH", "high_count"), ("MEDIUM", "medium_count"), ("LOW", "low_count")):
         c.check(summary.get(key) == counts[sev], "summary.severity_mismatch", f"{sev} 지적 수가 목록과 다르다")
+    if summary.get("contract_mode") == "block" and ledger.get("status") in ("unmet", "policy_change_review"):
+        c.check(not passed, "pass.contract_unmet_passed", "차단 모드의 근거 계약이 미충족인데 통과로 표시되었다")
+        return
+    if summary.get("gate_exceeded"):
+        c.check(not passed, "pass.gate_exceeded_passed", "상한을 넘은 점검이 통과로 표시되었다")
+        return
+    c.check(passed == (not blocked_by_findings), "pass.unexplained", "통과 표시가 실패 기준 이상의 지적 유무와 맞지 않는다(설명할 수 없는 통과 또는 실패)")
+
+
+GAP_STATES = ("unsupported", "unresolved", "budget_exceeded")
+CODE_LANGUAGES = frozenset({"python", "javascript", "typescript", "tsx", "java", "csharp", "go", "rust", "php", "c", "cpp"})
+GATE_FIELDS = {"max_analysis_unknown_rate": "analysis_unknown_rate", "max_unverified_rule_language_rate": "unverified_rule_language_rate"}
+
+
+def _check_trust(c: _Collector, data: dict[str, Any], summary: dict[str, Any], ledger: dict[str, Any], violations: list[dict[str, Any]]) -> None:
+    """신뢰 지표(1.4 이후): 분석 unknown 비율을 장부에서 다시 계산해 대조하고, 상한 초과가 통과로 표시되지 않았는지 본다."""
+    if data.get("schema_version") != "1.4":
+        return
+    for index, v in enumerate(violations):
+        c.check(v.get("verification_grade", "") in ("", "verified", "unverified"), "trust.grade_unknown", f"알 수 없는 검증 등급: {v.get('verification_grade')!r}", f"violations[{index}]")
+    points = [p for p in ledger.get("points") or [] if p.get("in_scope", True)]
+    expected = round(sum(1 for p in points if p.get("state") in GAP_STATES) / len(points), 4) if points else None
+    c.check(summary.get("analysis_unknown_rate") == expected, "trust.unknown_rate_mismatch", f"analysis_unknown_rate가 장부에서 다시 계산한 값({expected})과 다르다")
+    evaluated, unverified = summary.get("evaluated_rule_language_pairs"), summary.get("unverified_rule_language_pairs")
+    code_files = sum(n for lang, n in ((data.get("metadata") or {}).get("files_by_language") or {}).items() if lang in CODE_LANGUAGES)
+    if code_files and summary.get("scan_status") == "complete":
+        c.check(bool(evaluated), "trust.pairs_missing", "구문 분석 언어의 파일을 점검했는데 평가한 (규칙, 언어) 조합이 0이다(신뢰 지표를 0으로 만든 보고서)")
+    if evaluated is not None and unverified is not None:
+        c.check(0 <= unverified <= evaluated, "trust.pairs_invalid", "미검증 조합 수가 평가한 조합 수보다 크다")
+        rate = summary.get("unverified_rule_language_rate")
+        c.check(rate == (round(unverified / evaluated, 4) if evaluated else None), "trust.unverified_rate_mismatch", "unverified_rule_language_rate가 조합 수와 맞지 않는다")
+    gates = summary.get("gates") or {}
+    exceeded = summary.get("gate_exceeded") or []
+    for key, limit_value in gates.items():
+        field_name = GATE_FIELDS.get(key)
+        if not c.check(field_name is not None, "trust.gate_unknown", f"알 수 없는 상한 정책: {key!r}"):
+            continue
+        rate = summary.get(field_name)
+        over = rate is not None and rate > limit_value
+        c.check(over == any(str(item).startswith(field_name) for item in exceeded), "trust.gate_mismatch", f"{field_name}={rate}과 상한 {limit_value}의 비교 결과가 gate_exceeded와 맞지 않는다")
 
 
 def _check_approvals(
@@ -276,6 +315,7 @@ def _check_approvals(
     scope = (data.get("metadata") or {}).get("scope") or {}
     scoped = scope.get("mode") == "changed-since"
     changed_paths = set(scope.get("changed_paths") or [])
+    renamed_from = {r.get("from") for r in scope.get("renames") or [] if isinstance(r, dict)}
     analyzed_paths = {f.get("path") for f in ledger.get("files") or [] if f.get("classification") != "unclassified"}
     valid_by_finding: dict[str, str] = {}
     for index, a in enumerate(checks):
@@ -286,8 +326,8 @@ def _check_approvals(
             continue
         fid = a.get("finding_id")
         target = findings.get(fid) if fid else None
-        if scoped and a.get("path") not in changed_paths:
-            continue  # 변경 범위 밖의 지적이라 보고서에 없다(경로가 변경 목록에 있으면 지적이 있어야 한다)
+        if scoped and a.get("path") not in changed_paths and a.get("path") not in renamed_from and target is None:
+            continue  # 변경 범위 밖의 지적이라 보고서에 없다(경로가 변경 목록에 있거나 옮겨진 파일이면 지적이 있어야 한다)
         if not c.check(target is not None, "approval.valid_without_finding", "유효 승인이 이번 실행의 지적을 가리키지 않는다(과거·다른 실행의 승인 재사용)", where):
             continue
         c.check(target.get("rule_id") == a.get("rule_id"), "approval.valid_other_rule", "유효 승인의 규칙이 현재 지적의 규칙과 다르다", where)

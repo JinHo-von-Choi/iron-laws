@@ -90,6 +90,7 @@ class Violation(BaseModel):
     how_to_fix: str = ""
     rule_version: int = 1
     fingerprint: str = ""
+    verification_grade: str = ""  # 이 지적의 (규칙, 언어) 조합 검증 등급: verified(양성·음성 시험 모두 있음) / unverified. 구문 분석 언어가 아니면 빈 값
     finding_id: str = ""  # 이 점검 실행의 지적 식별자(규칙·경로·위치·지문). 장부·승인·검증기가 같은 지적을 참조하는 키
     scope_name: str = ""  # 지적이 속한 함수 이름 (구문 분석 언어에서만)
     snippet_full: str = Field(default="", exclude=True)  # 길이를 제한하기 전의 코드 줄(토큰 형식만 가린 상태). 같은 줄의 비밀을 알게 된 뒤 다시 가려 제한한다
@@ -139,6 +140,13 @@ class AuditSummary(BaseModel):
     approvals_unobserved: int | None = None  # 승인 대상 파일이 없거나 읽지 못해 알 수 없는 승인 수
     contract_status: str | None = None  # 근거 계약 충족 여부: met / unmet / policy_change_review / not_applicable. scan_status와 별개
     contract_mode: str | None = None
+    analysis_unknown_rate: float | None = None  # 계약 범위 안 보안 관심 지점 중 해석 미확정·미지원·예산 초과의 비율(분모: 범위 안 관심 지점 수)
+    evaluated_rule_language_pairs: int | None = None  # 이번 점검에서 실제로 적용된 (규칙, 언어) 조합 수
+    unverified_rule_language_pairs: int | None = None  # 그중 양성·음성 시험이 모두 있지 않은 조합 수
+    unverified_rule_language_rate: float | None = None  # 위 둘의 비율. 미검증 조합에서 지적이 없는 것은 통과 근거가 아니다
+    gates: dict[str, float] | None = None  # 이번 점검에 적용한 상한 정책(--max-analysis-unknown-rate, --max-unverified-rule-language-rate)
+    gate_only_failure: bool = False  # 상한 초과만이 실패의 원인인가(지적·계약으로도 실패했다면 거짓)
+    gate_exceeded: list[str] = Field(default_factory=list)  # 상한을 넘은 지표. 비어 있지 않으면 통과가 아니라 재검토다
 
 
 class InterestPoint(BaseModel):
@@ -228,7 +236,7 @@ class CoverageLedger(BaseModel):
     limitations: list[str] = Field(default_factory=list)
 
 
-REPORT_SCHEMA_VERSION = "1.3"
+REPORT_SCHEMA_VERSION = "1.4"
 
 
 class AuditReport(BaseModel):

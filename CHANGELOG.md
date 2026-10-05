@@ -5,6 +5,32 @@
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-10-05
+
+보고서 JSON `schema_version`이 `1.3`에서 `1.4`로 올랐다. 키를 더했고 기존 키는 유지한다. 독립 검증기는 1.3과 1.4를 모두 읽는다.
+
+### Added
+- **수정이 만든 부채 표시**: `verify-patch`의 Receipt(`debt_delta`)가 수정 전후의 지적을 하드코딩·구조 붕괴·삼킨 예외·중복 헬퍼·타입 회피별로 해결·유지·신규·이동으로 나누고, 수정 지점과 같은 함수에 새로 생긴 지적을 따로 보여 준다. 통과·실패에는 쓰이지 않는다.
+- **신뢰 지표**: `summary`의 `analysis_unknown_rate`(해석을 끝내지 못한 보안 관심 지점의 비율), `unverified_rule_language_rate`(양성·음성 시험이 없는 규칙×언어 조합의 비율), 지적별 `verification_grade`. 미검증 조합이 있으면 통과 표시에 "단, 미검증 조합 포함"이 붙는다.
+- **상한 옵션**: `check`·`audit`의 `--max-analysis-unknown-rate`, `--max-unverified-rule-language-rate`. 넘으면 통과가 아니라 재검토(종료코드 1)이며 `summary.gates`·`gate_exceeded`에 남는다. 독립 검증기가 상한 초과 통과와 지표 불일치를 찾는다.
+- **정규화 보고서** `iron_laws.core.canonical`: 문서번호·일자·절대 경로를 뺀 보고서로 같은 코드의 점검 결과를 비교한다. 작업 경로·시간대·언어 설정·해시 씨앗·병렬 처리를 바꿔도 같다.
+- **파일럿**: 위험 사건 종류 `legitimate_exception`과 상태 `--status investigating`, 조사를 닫는 `pilot close`, 설치 시간 상각값 보고, `review-bundle --pilot-store`(확인된 오승인이나 조사 중인 사건이 있으면 필수 행동으로 종료코드 1).
+- `--changed-since`가 이름이 바뀐 파일의 이전·새 경로를 `metadata.scope.renames`에 남긴다.
+- `ruleset.hash`에 지원 현황 지문(`ruleset.support_manifest`)이 들어간다.
+- 이전 버전과 같은 표본을 비교하는 `benchmarks/plan_experiments_v14.py`, 결과 `docs/benchmark_results/plan_experiments_v1_4.json`.
+
+### Changed
+- 파일럿 요약의 주 지표는 총 능동시간(검토 + 추가 시간)이고 중앙값 감소 목표는 20%, 75백분위 악화 없음이다. 순수 검토 시간은 보조 지표다. 위험 수용은 분모와 함께 비율로 보고하며 확인된 오승인과 정당한 예외를 구분한다. 조사 중인 사건이 있으면 판정은 `investigation_pending`이다. 검토 기록의 결과 메모와 위험 기록은 같은 집계에 들어간다.
+- 같은 줄의 다른 호출이 낸 지적은 근거로 쓰지 않는다. 지적은 열이 같은 호출에 연결되고, `open(os.path.join(...))`처럼 서로 안에 들어 있는 호출은 한 흐름으로 보아 같은 지적을 쓴다. 나란히 있는 두 번째 위험 호출은 확정 지적이 따로 없으면 `unresolved`로 남아 사람이 확인한다.
+- 독립 검증기는 `--changed-since`에서 이름이 바뀐 파일의 승인을 현재 지적과 맺어 확인한다.
+
+### Fixed
+- YAML 작은따옴표 문자열 안의 `''` 뒤에 오는 문구, shell의 복수 here-document(`cat <<A <<B`) 두 번째 본문의 문구가 억제 주석으로 인정되던 문제.
+- 검사 뒤 `:=`로 값을 다시 대입해도 허용 목록 검사의 면제가 유지되던 문제.
+- 타입 지정이 붙은 비밀 이름 대입(`token: string = "..."`, `api_token: str = "..."`)의 값 조각이 다른 규칙의 출력에 남던 문제.
+- 승인한 파일을 옮긴 뒤 `check --changed-since`와 `review-bundle --changed-since`가 점검 불완전(종료코드 2)으로 끝나던 문제.
+- 검토 시간만 줄고 총 능동시간이 늘어도 파일럿 판정이 목표 충족으로 나오던 문제.
+
 ## [1.3.0] - 2026-10-05
 
 판정 신뢰성과 검토 비용 개선. 알려진 잘못된 통과를 고치고, 지적·장부·승인이 같은 실제 근거를 참조하는지 따로 검증하며, 변경 영향에 맞춘 검토 묶음을 더했다.

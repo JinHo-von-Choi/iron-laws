@@ -18,7 +18,8 @@ import subprocess
 import sys
 import types
 
-SPEC_PATH, MODE = sys.argv[1], sys.argv[2]
+SPEC_PATH, RAW_MODE = sys.argv[1], sys.argv[2]
+MODE, _, VARIANT = RAW_MODE.partition(":")  # `attack:2`는 명세의 변형 입력 2번으로 공격한다
 with open(SPEC_PATH, encoding="utf-8") as handle:
     SPEC = json.load(handle)
 ROOT = os.getcwd()
@@ -28,13 +29,16 @@ os.makedirs(BASE, exist_ok=True)
 sys.path.insert(0, ROOT)
 
 FAMILY = SPEC["family"]
-VALUE = SPEC["input"]["payload"] if MODE == "attack" else SPEC["input"]["benign"]
+if MODE == "attack" and VARIANT:
+    VALUE = SPEC["input"].get("variants", [])[int(VARIANT) - 1]
+else:
+    VALUE = SPEC["input"]["payload"] if MODE == "attack" else SPEC["input"]["benign"]
 CALLS = []
 real_open = builtins.open
 
 
 def emit(outcome, reason="", **extra):
-    payload = {"outcome": outcome, "reason": reason, "mode": MODE, "calls": CALLS[:20]}
+    payload = {"outcome": outcome, "reason": reason, "mode": RAW_MODE, "calls": CALLS[:20]}
     payload.update(extra)
     sys.stdout.write("\nIRON_LAWS_RESULT " + json.dumps(payload, ensure_ascii=False, default=str) + "\n")
     sys.stdout.flush()

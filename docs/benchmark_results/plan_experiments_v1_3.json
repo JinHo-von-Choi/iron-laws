@@ -1,0 +1,183 @@
+{
+  "tool_version": "1.3.0",
+  "note": "구현자가 직접 만들고 분류한 표본이다. 독립 검토자의 분류가 아니며 효과 주장의 근거가 아니다. 호스트 실행 대역 실행기로 측정했다.",
+  "experiment_1_evidence_consistency": {
+    "reports_checked": 96,
+    "reports_inconsistent": 0,
+    "unexplained_pass": 0,
+    "corruptions": 31,
+    "corruptions_caught": 31,
+    "distinct_problem_codes_exercised": 28,
+    "note": "검증기는 구조적 모순을 잡는다. 엔진이 일관되게 만든 의미 오류는 증명하지 않는다."
+  },
+  "experiment_2_discrimination": {
+    "dev": {
+      "scan": {
+        "base_cases": 30,
+        "originals": {
+          "risky": 30,
+          "benign": 30
+        },
+        "variants": {
+          "risky": 180,
+          "benign": 180
+        },
+        "risk_miss": {
+          "original": 0,
+          "variant": 0
+        },
+        "benign_blocked": {
+          "original": 0,
+          "variant": 0
+        },
+        "unknown": {
+          "risky": 0,
+          "benign": 42
+        },
+        "verdict_flips": {
+          "benign": 0,
+          "risky": 0
+        },
+        "by_operator": {
+          "rename": {
+            "variants": 60,
+            "flips": 0
+          },
+          "comments": {
+            "variants": 60,
+            "flips": 0
+          },
+          "blank_lines": {
+            "variants": 60,
+            "flips": 0
+          },
+          "unrelated_after": {
+            "variants": 60,
+            "flips": 0
+          },
+          "unrelated_first": {
+            "variants": 60,
+            "flips": 0
+          },
+          "quote_style": {
+            "variants": 60,
+            "flips": 0
+          }
+        },
+        "seconds_total": 2.73,
+        "seconds_median": 0.0062
+      },
+      "approvals": {
+        "cases": 6,
+        "unnecessary_re_review": 0,
+        "dangerous_inheritance": 0,
+        "details": []
+      },
+      "output": {
+        "cases": 4,
+        "mishandled": 0,
+        "details": []
+      },
+      "failures": []
+    },
+    "holdout": {
+      "scan": {
+        "base_cases": 15,
+        "originals": {
+          "risky": 15,
+          "benign": 15
+        },
+        "variants": {
+          "risky": 90,
+          "benign": 90
+        },
+        "risk_miss": {
+          "original": 0,
+          "variant": 0
+        },
+        "benign_blocked": {
+          "original": 0,
+          "variant": 0
+        },
+        "unknown": {
+          "risky": 0,
+          "benign": 7
+        },
+        "verdict_flips": {
+          "benign": 0,
+          "risky": 0
+        },
+        "by_operator": {
+          "rename": {
+            "variants": 30,
+            "flips": 0
+          },
+          "comments": {
+            "variants": 30,
+            "flips": 0
+          },
+          "blank_lines": {
+            "variants": 30,
+            "flips": 0
+          },
+          "unrelated_after": {
+            "variants": 30,
+            "flips": 0
+          },
+          "unrelated_first": {
+            "variants": 30,
+            "flips": 0
+          },
+          "quote_style": {
+            "variants": 30,
+            "flips": 0
+          }
+        },
+        "seconds_total": 1.39,
+        "seconds_median": 0.0061
+      },
+      "approvals": {
+        "cases": 3,
+        "unnecessary_re_review": 0,
+        "dangerous_inheritance": 0,
+        "details": []
+      },
+      "output": {
+        "cases": 3,
+        "mishandled": 0,
+        "details": []
+      },
+      "failures": []
+    },
+    "operators": [
+      "rename",
+      "comments",
+      "blank_lines",
+      "unrelated_after",
+      "unrelated_first",
+      "quote_style"
+    ],
+    "base_cases": 61,
+    "note": "위험 탐지율과 정상 유지율은 합치지 않고 따로 쓴다. 평가용에서 실패해 엔진을 고친 사례는 개발용으로 옮겼다(docs/ACCURACY.md)."
+  },
+  "experiment_3_regression_discrimination": {
+    "wrong_fixes": 27,
+    "accepted_with_variant_inputs": 0,
+    "accepted_without_variant_inputs": 19,
+    "note": "시험 입력 하나만 막는 수정(정확한 입력 차단·한 글자 필터)이다. 수집 0개·skip·timeout은 통과로 세지 않는다(기존 시험 항목)."
+  },
+  "experiment_4_approval_inheritance": {
+    "scenarios": 30,
+    "approvals_evaluated": 150,
+    "dangerous_inheritance": 0,
+    "unnecessary_re_review": 0,
+    "re_reviews_with_bundle": 75,
+    "re_reviews_with_full_review": 150,
+    "reduction_vs_full_review": 0.5,
+    "note": "위험 승계가 0건인지가 먼저이고 절감은 그다음이다. 전체 재검토 방식은 모든 승인을 다시 보는 것이다."
+  },
+  "experiment_5_team_pilot": {
+    "executed": false,
+    "reason": "파일럿 팀과 검토자가 없어 수행하지 않았다. 도구(`pilot`, `--metrics`)만 준비했다."
+  }
+}

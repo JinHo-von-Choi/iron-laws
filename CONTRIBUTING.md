@@ -37,7 +37,8 @@ uv run ruff check .
 
 ```bash
 uv run pytest -q                       # 전체(격리 실행 시험은 docker 이미지가 없으면 skip)
-uv run python benchmarks/plan_experiments.py   # 패치 검증·회귀시험·승인 추적 표본 측정
+uv run python benchmarks/plan_experiments.py   # 패치 검증·회귀시험·승인 추적 표본 측정(1.2)
+uv run python benchmarks/plan_experiments_v13.py   # 근거 일치·변형 사례집·변형 입력·승인 승계 측정(1.3)
 ```
 
 격리 실행 시험은 준비 단계에서 만든 이미지가 있어야 돌아갑니다(시험 중에는 네트워크를 쓰지 않으므로 미리 받아 둡니다).
@@ -50,3 +51,12 @@ uv run python benchmarks/plan_experiments.py   # 패치 검증·회귀시험·�
 - 오탐을 줄이는 변경은 오탐을 재현하는 회귀 사례(`tests/test_regressions.py`)와 함께 제출합니다.
 - 규칙을 숨기려고 억제 주석을 쓰려면 사유를 적어야 합니다.
 - Co-Authored-By 라인은 커밋 메시지에 포함하지 않습니다.
+
+## 사례집과 평가용(holdout) 규칙
+
+- 정상·위험 짝으로 사례를 추가합니다. 위험 사례만 추가하지 않습니다(`tests/repair_cases.py`, `tests/semantic_corpus.py`).
+- 개발용(`semantic_corpus.py`)은 엔진을 고칠 때 봐도 됩니다. 평가용(`semantic_holdout.py`)은 엔진을 조정하려고 보지 않습니다. 평가용 사례가 실패해 엔진을 고쳤다면 그 사례를 개발용으로 옮기고(`MOVED_TO_DEV`에 적고) 같은 유형의 새 평가용 사례로 바꿉니다. 평가용과 개발용은 (유형, 스타일)이 겹치면 안 됩니다(옮긴 유형은 예외로 시험에 드러납니다).
+- 사례의 정답은 사람이 정합니다. LLM의 자기평가를 정답으로 쓰지 않습니다. 구현자가 직접 정한 표본은 독립 검토가 아니므로 문서에 그렇게 적습니다.
+- 변형 수백 건을 독립 결함 수백 개로 세지 않습니다. 보고는 원본 수와 변형 수, 위험 미탐·정상 오차단·판정 변화·unknown을 따로 씁니다.
+- 고객 코드를 사례집으로 자동 반출하지 않습니다. 같은 동작을 나타내는 합성 최소 사례를 만들고 원본과의 대응 의미를 사람이 확인합니다.
+- 새 판정 변경에는 바뀐 판정 사례, 대응 정상 사례, 출력 상태와 이유 코드, 호환성 영향, 비용 변화를 CHANGELOG와 해당 문서에 남깁니다.

@@ -21,6 +21,7 @@ from iron_laws.engine.ast_tools import (
     NESTING_TYPES,
     STRING_TYPES,
     enclosing_function,
+    has_interpolation,
     identifiers_in,
     iter_calls,
     iter_functions,
@@ -106,13 +107,28 @@ def _target_names(src: SourceFile, target: Node) -> set[str]:
     return identifiers_in(src, target) if target.type != "member_expression" else set()
 
 
+_STRING_FRAGMENT_TYPES = frozenset({"string_fragment", "string_content", "string_value", "escape_sequence", "string_literal_content"})
+
+
 def _text_without_plain_strings(src: SourceFile, node: Node) -> str:
-    """보간이 없는 문자열 리터럴의 내용을 지운 식의 원문. 문자열 안에 적힌 `request.args` 같은 글자는 코드가 아니다."""
-    buf = bytearray(src.data[node.start_byte : node.end_byte])
+    """문자열 리터럴 안의 글자를 지운 식의 원문. 문자열 안에 적힌 `request.args` 같은 글자는 코드가 아니다.
+    보간(`${...}`, `{...}`, f-string)이 있는 문자열은 고정 조각만 지우고 보간식은 코드로 남긴다."""
+    base = node.start_byte
+    buf = bytearray(src.data[base : node.end_byte])
+
+    def blank(n: Node) -> None:
+        for i in range(max(n.start_byte, base) - base, min(n.end_byte, node.end_byte) - base):
+            buf[i] = 32
+
     for n in walk(node):
-        if n.type in STRING_TYPES and "interpol" not in n.type and not any("interpol" in c.type for c in n.children):
-            for i in range(n.start_byte - node.start_byte, n.end_byte - node.start_byte):
-                buf[i] = 32
+        if n.type not in STRING_TYPES:
+            continue
+        if not has_interpolation(n):
+            blank(n)
+            continue
+        for child in n.children:
+            if child.type in _STRING_FRAGMENT_TYPES:
+                blank(child)
     return buf.decode("utf-8", errors="replace")
 
 
@@ -682,7 +698,8 @@ def _clean_ranges(src: SourceFile, node: Node, names: set[str], cli: bool, ctx: 
     while stack:
         n = stack.pop()
         parts = _call_parts(src, n)
-        if parts is not None and _call_is_clean(src, parts, names, cli, ctx, by_name=False):
+        # 도달하는 문맥이 정해져 있으면(셸·경로·SQL 등) 그 문맥에 유효한 정제 함수 호출은 중첩되어 있어도 그 호출 범위만 깨끗하다. 문맥을 모르면(ANY) 이름만으로 인정하지 않는다
+        if parts is not None and _call_is_clean(src, parts, names, cli, ctx, by_name=ctx is not Ctx.ANY):
             ranges.append((n.start_byte, n.end_byte))
             continue
         stack.extend(n.children)

@@ -50,6 +50,7 @@ class Receipt(BaseModel):
     target: dict[str, Any] | None = None
     checks: list[CheckResult] = Field(default_factory=list)
     findings: dict[str, Any] = Field(default_factory=dict)
+    evidence: dict[str, Any] = Field(default_factory=dict)  # 원본·후보 점검의 실행 식별자와 지적 참조. 독립 검증기가 대조한다
     coverage: dict[str, Any] = Field(default_factory=dict)
     bypass_changes: list[dict[str, str]] = Field(default_factory=list)
     verdict: Verdict

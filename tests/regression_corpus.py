@@ -166,3 +166,46 @@ def _block_everything(code: str) -> str:
             out.extend(f"    # {rest}" for rest in lines[index + 1 :] if rest.strip())
             break
     return "\n".join(out) + "\n"
+
+
+# ---------------------------------------------------------------------------
+# 평가용 잘못된 수정(시험 작성에 쓰지 않은 독립 변이): 시험 입력 하나만 막는 수정
+# ---------------------------------------------------------------------------
+
+FILTERS = {
+    "command": "v.replace(';', '')",  # 세미콜론만 지우는 필터: && · | · $() 로는 뚫린다
+    "path": "v.replace('../', '')",  # 상대 경로만 지우는 필터: 절대 경로로는 뚫린다
+    "sql": "v.replace(\"'\", \"''\")",  # 따옴표만 겹치는 필터: 따옴표 없는 입력으로는 뚫린다
+}
+
+
+def held_out_fixes(case: Case, function: str, payload: str, source_kind: str) -> dict[str, str]:
+    """시험이 쓰는 입력 하나만 막고 같은 결함을 건드리는 다른 입력은 통과시키는 수정. 이 변형은 시험 명세에 적히지 않은 독립 반례로만 가려낼 수 있다."""
+    import re
+
+    renamed = re.sub(rf"\bdef {function}\(", f"def _orig_{function}(", case.vulnerable, count=1)
+    header = "\n\nimport functools\n"
+    fixes: dict[str, str] = {}
+    if source_kind == "request":
+        guard = (
+            f"{header}\n@functools.wraps(_orig_{function})\ndef {function}(*a, **k):\n"
+            "    from flask import request as _r\n"
+            "    for _part in ('args', 'form', 'values', 'json', 'cookies', 'headers'):\n"
+            "        try:\n            _v = str(getattr(_r, _part)['v'])\n        except Exception:\n            continue\n"
+            f"        if _v == {payload!r}:\n            raise ValueError('blocked')\n"
+            f"    return _orig_{function}(*a, **k)\n"
+        )
+        fixes["exact-payload-block"] = renamed + guard
+        return fixes
+    fixes["exact-payload-block"] = renamed + (
+        f"{header}\n@functools.wraps(_orig_{function})\ndef {function}(*a, **k):\n"
+        f"    if any(str(x) == {payload!r} for x in (*a, *k.values())):\n        raise ValueError('blocked')\n"
+        f"    return _orig_{function}(*a, **k)\n"
+    )
+    fixes["character-filter"] = renamed + (
+        f"{header}\n@functools.wraps(_orig_{function})\ndef {function}(*a, **k):\n"
+        f"    a = tuple({FILTERS[case.family].replace('v.', 'x.')} if isinstance(x, str) else x for x in a)\n"
+        f"    k = {{n: ({FILTERS[case.family]} if isinstance(v, str) else v) for n, v in k.items()}}\n"
+        f"    return _orig_{function}(*a, **k)\n"
+    )
+    return fixes

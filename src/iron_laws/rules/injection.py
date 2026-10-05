@@ -35,6 +35,12 @@ from iron_laws.engine.taint import (
     taint_state,
 )
 from iron_laws.rules.base import BaseRule
+from iron_laws.rules.guards import (
+    executes_unconditionally,
+    mutated_between,
+    redefined_between,
+    terminates,
+)
 from iron_laws.rules.sinks import (
     CFAM,
     CS,
@@ -96,7 +102,6 @@ class SinkRule(BaseRule):
     include_cli_sources: bool = False
     taint_ctx: Ctx = Ctx.ANY  # 오염된 값이 도달하는 곳. 그 문맥에 유효한 정제만 인정한다
     tainted_message: str = ""
-    dynamic_message: str = ""
 
     def skip_hit(self, src: SourceFile, call: Call, arg: Node, flow: Flow) -> bool:
         return False
@@ -164,16 +169,26 @@ class SinkRule(BaseRule):
                 continue
             variable, rejects_when_true = membership
             if node.type == "assert_statement":
-                if node.end_byte <= call.node.start_byte and not rejects_when_true:
+                if node.end_byte <= call.node.start_byte and not rejects_when_true and executes_unconditionally(node, scope) and not mutated_between(src, scope, variable, node.end_byte, call.node.start_byte):
                     guarded.add(variable)
                 continue
             consequence = node.child_by_field_name("consequence")
             if consequence is None:
                 continue
             if rejects_when_true:
-                if node.end_byte <= call.node.start_byte and self.DEAD_END_RE.search(src.text_of(consequence)):
+                # 거부 분기가 실제로 실행을 끊고, 모든 경로에서 검사를 거치며, 검사한 값이 싱크까지 바뀌지 않아야 한다
+                if (
+                    node.end_byte <= call.node.start_byte
+                    and terminates(src, consequence)
+                    and executes_unconditionally(node, scope)
+                    and not mutated_between(src, scope, variable, node.end_byte, call.node.start_byte)
+                ):
                     guarded.add(variable)
-            elif consequence.start_byte <= call.node.start_byte and call.node.end_byte <= consequence.end_byte:
+            elif (
+                consequence.start_byte <= call.node.start_byte
+                and call.node.end_byte <= consequence.end_byte
+                and not mutated_between(src, scope, variable, cond.end_byte, call.node.start_byte)
+            ):
                 guarded.add(variable)
         return names <= guarded
 
@@ -425,8 +440,6 @@ class PathTraversalRule(SinkRule):
         Sink.of(RUST, r"(^|::)(File::open|File::create|read_to_string|fs::read|fs::write|remove_file|Path::new|PathBuf::from)$", None),
     ]
 
-    DEAD_END_RE = re.compile(r"\b(raise|return|abort|exit|throw|panic|die)\b|sys\.exit")
-
     RECEIVER_PATH_METHODS = re.compile(r"\.(read_text|write_text|read_bytes|write_bytes|open|unlink|rmdir|mkdir|rename|touch)$")
 
     def select_args(self, src: SourceFile, call: Call, sink: Sink) -> list[Node]:
@@ -481,9 +494,17 @@ class PathTraversalRule(SinkRule):
             if not (NORMALIZE_RE.search(cond_text) or NORMALIZE_RE.search(defs_text)):
                 continue
             if node.type == "assert_statement":
-                return True
+                if executes_unconditionally(node, scope) and not redefined_between(src, scope, variable, call.node.end_byte, node.start_byte):
+                    return True
+                continue
             consequence = node.child_by_field_name("consequence") or node.child_by_field_name("body")
-            if consequence is not None and re.match(r"\s*\(?\s*(not\b|!)", cond_text) and self.DEAD_END_RE.search(src.text_of(consequence)):
+            if (
+                consequence is not None
+                and re.match(r"\s*\(?\s*(not\b|!)", cond_text)
+                and terminates(src, consequence)
+                and executes_unconditionally(node, scope)
+                and not redefined_between(src, scope, variable, call.node.end_byte, node.start_byte)
+            ):
                 return True
         return False
 
@@ -509,8 +530,13 @@ class PathTraversalRule(SinkRule):
                 continue
             if not (NORMALIZE_RE.search(cond_text) or NORMALIZE_RE.search(defs_text)):
                 continue
+            checked = identifiers_in(src, cond) & names
             if node.type == "assert_statement":
-                if node.end_byte <= call.node.start_byte:
+                if (
+                    node.end_byte <= call.node.start_byte
+                    and executes_unconditionally(node, scope)
+                    and not any(redefined_between(src, scope, n, node.end_byte, call.node.start_byte) for n in checked)
+                ):
                     return True
                 continue
             consequence = node.child_by_field_name("consequence") or node.child_by_field_name("body")
@@ -518,9 +544,18 @@ class PathTraversalRule(SinkRule):
                 continue
             negated = re.match(r"\s*\(?\s*(not\b|!)", cond_text) is not None
             if negated:
-                if node.end_byte <= call.node.start_byte and self.DEAD_END_RE.search(src.text_of(consequence)):
+                if (
+                    node.end_byte <= call.node.start_byte
+                    and terminates(src, consequence)
+                    and executes_unconditionally(node, scope)
+                    and not any(redefined_between(src, scope, n, node.end_byte, call.node.start_byte) for n in checked)
+                ):
                     return True
-            elif consequence.start_byte <= call.node.start_byte and call.node.end_byte <= consequence.end_byte:
+            elif (
+                consequence.start_byte <= call.node.start_byte
+                and call.node.end_byte <= consequence.end_byte
+                and not any(redefined_between(src, scope, n, cond.end_byte, call.node.start_byte) for n in checked)
+            ):
                 return True
         return False
 
@@ -925,7 +960,7 @@ class XxeRule(BaseRule):
         found = []
         text = src.code_text
         spans = [(f.node.start_byte, f.node.end_byte) for f in iter_functions(src)] if src.root is not None else []
-        data = src.data
+        data = src.code_data if src.code_data is not None else src.data  # code_text는 주석을 바이트 단위로 공백 처리한 본문이라 같은 바이트열 기준으로 위치를 옮긴다
         for m in self.java_factory.finditer(text):
             var = m.group("var")
             line = text.count("\n", 0, m.start()) + 1
@@ -935,20 +970,30 @@ class XxeRule(BaseRule):
             lo, hi = (min(enclosing, key=lambda ab: ab[1] - ab[0]) if enclosing else (0, len(data)))
             start_char = len(data[:lo].decode("utf-8", errors="replace"))
             end_char = len(data[:hi].decode("utf-8", errors="replace"))
-            first_use = end_char
-            if var:
-                for use in self.java_use.finditer(text, m.end(), end_char):
-                    if use.group("var") == var:
-                        first_use = use.start()
+            if var:  # 같은 이름에 팩토리를 다시 만들면 그 앞까지가 이 객체의 범위다
+                rebuilt = [n.start() for n in self.java_factory.finditer(text, m.end(), end_char) if n.group("var") == var]
+                end_char = min([end_char, *rebuilt])
+            uses = [use.start() for use in self.java_use.finditer(text, m.end(), end_char) if use.group("var") == var] if var else []
+            # 파서를 쓰는 지점마다 그 시점의 최종 설정 상태를 본다. 첫 사용 뒤에 되돌린 설정이 두 번째 사용에 닿을 수 있다.
+            checkpoints = uses or [end_char]
+            unsafe = None
+            if not var:
+                unsafe = end_char
+            else:
+                for point in checkpoints:
+                    if not self._java_final_state(text, var, max(m.end(), start_char), point):
+                        unsafe = point
                         break
-            if var and self._java_final_state(text, var, max(m.end(), start_char), first_use):
+            if unsafe is None:
                 continue
+            used_at = text.count("\n", 0, unsafe) + 1 if uses and unsafe in uses else None
+            where = f" (설정이 막혀 있지 않은 사용 지점: {used_at}행)" if used_at and used_at != line else ""
             found.append(
                 self.at_line(
                     src,
                     line,
                     "XML 파서 팩토리를 만들면서 DTD·외부 개체를 막는 설정이 없습니다. "
-                    "(차단 값이 true/false인지, 같은 메서드 안의 그 객체에 파싱 전에 적용했는지, 나중에 값을 되돌리지 않았는지 확인하십시오.)",
+                    "(차단 값이 true/false인지, 같은 메서드 안의 그 객체에 파싱 전에 적용했는지, 나중에 값을 되돌리지 않았는지 확인하십시오.)" + where,
                 )
             )
         return found

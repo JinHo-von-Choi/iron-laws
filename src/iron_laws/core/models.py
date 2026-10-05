@@ -90,7 +90,9 @@ class Violation(BaseModel):
     how_to_fix: str = ""
     rule_version: int = 1
     fingerprint: str = ""
+    finding_id: str = ""  # 이 점검 실행의 지적 식별자(규칙·경로·위치·지문). 장부·승인·검증기가 같은 지적을 참조하는 키
     scope_name: str = ""  # 지적이 속한 함수 이름 (구문 분석 언어에서만)
+    snippet_full: str = Field(default="", exclude=True)  # 길이를 제한하기 전의 코드 줄(토큰 형식만 가린 상태). 같은 줄의 비밀을 알게 된 뒤 다시 가려 제한한다
     shape: str = Field(default="", exclude=True)  # 주석을 뺀 정규화한 코드 줄(지문 계산용, 비밀은 가린 상태)
     evidence: list[EvidenceStep] = Field(default_factory=list)
     baseline_status: BaselineStatus | None = None
@@ -141,11 +143,15 @@ class InterestPoint(BaseModel):
     family: str = Field(..., description="command / path / sql")
     path: str
     line: int
+    column: int = 1
     callee: str
     state: str = Field(..., description="evidence_met / unsupported / unresolved / budget_exceeded / policy_excluded")
     reason: str = ""
     in_scope: bool = True  # 계약 범위(전체 또는 변경 파일) 안에 있는가
     finding: bool = False  # 같은 지점에서 지적이 나왔는가
+    finding_ids: list[str] = Field(default_factory=list, description="이 지점·계열의 규칙이 실제로 낸 확정 지적의 finding_id")
+    evidence_kind: str = Field(default="none", description="finding / closed_value / guard / none — 충족 근거의 종류")
+    suppressed_rules: list[str] = Field(default_factory=list, description="이 지점에서 억제된 규칙 ID(정확한 억제 범위)")
 
 
 class LedgerFile(BaseModel):
@@ -166,6 +172,36 @@ class FamilyTally(BaseModel):
     by_state: dict[str, int] = Field(default_factory=dict)  # 계약 범위 안 지점의 상태별 수
 
 
+class ExecutionRecord(BaseModel):
+    """이 보고서를 만든 점검 실행의 식별자와 범위. 지적·장부·승인이 같은 실행의 근거인지 확인하는 기준이다."""
+
+    run_id: str
+    tool_version: str
+    ruleset_hash: str
+    config_hash: str
+    contract_digest: str
+    code_digest: str
+    scan_status: str
+    files_scanned: int
+    files_skipped: int
+    error_diagnostics: int
+    cross_file_limit_hits: int = 0
+
+
+class ApprovalCheck(BaseModel):
+    """승인 기록 하나의 현재 판정. `valid`는 같은 코드 모양의 지적(finding_id)에 대한 유효한 승인이라는 뜻이다."""
+
+    approval_id: str
+    status: str = Field(..., description="valid / needs_review / invalid / revoked / resolved / unobserved")
+    reasons: list[str] = Field(default_factory=list)
+    rule_id: str = ""
+    path: str = ""
+    approved_fingerprint: str = ""
+    finding_id: str | None = None
+    expires: str | None = None
+    policy: dict[str, str] = Field(default_factory=dict)
+
+
 class CoverageLedger(BaseModel):
     """파일과 보안 관심 지점별 분석 근거 기록. 단일 '안전 점수'를 만들지 않고, 분모(발견한 지점·분류하지 못한 파일)를 함께 공개한다."""
 
@@ -181,11 +217,13 @@ class CoverageLedger(BaseModel):
     files: list[LedgerFile] = Field(default_factory=list)
     unclassified_changed_files: list[str] = Field(default_factory=list)
     status: str = Field(..., description="met / unmet / policy_change_review / not_applicable")
+    run_id: str = Field(default="", description="코드·도구·설정·계약 지문에서 만든 분석 실행 식별자")
+    requirements: dict[str, dict[str, Any]] = Field(default_factory=dict, description="검사 계열별 요구(필수 여부, 차단 상태). 독립 검증기가 차단 사유를 다시 계산하는 입력")
     blockers: list[str] = Field(default_factory=list)
     limitations: list[str] = Field(default_factory=list)
 
 
-REPORT_SCHEMA_VERSION = "1.2"
+REPORT_SCHEMA_VERSION = "1.3"
 
 
 class AuditReport(BaseModel):
@@ -201,4 +239,6 @@ class AuditReport(BaseModel):
     violations: list[Violation] = Field(default_factory=list)
     diagnostics: list[Diagnostic] = Field(default_factory=list)
     coverage_ledger: CoverageLedger | None = None
+    execution: ExecutionRecord | None = None
+    approval_checks: list[ApprovalCheck] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)

@@ -28,23 +28,48 @@ BLOCK_SCALAR_RE = re.compile(r"[|>][+\-0-9]*\s*$")
 TOML_TRIPLES = ('"""', "'''")
 
 
-def _scan_hash_comment(line: str, kind: str) -> int | None:
-    """따옴표 밖에서 `#`가 시작하는 주석의 위치. 없으면 None"""
+@dataclass
+class _QuoteState:
+    """줄을 넘어 이어지는 따옴표 문자열의 상태. shell·YAML의 여러 줄 따옴표 문자열 안의 `#`은 주석이 아니다."""
+
     quote: str | None = None
+    ansi: bool = False  # shell `$'...'`: 작은따옴표 안에서도 백슬래시가 다음 글자를 이스케이프한다
+
+
+def _yaml_scalar_start(line: str, index: int) -> bool:
+    """YAML에서 따옴표는 값(스칼라)의 첫 글자일 때만 문자열을 연다. `it's`처럼 값 중간의 작은따옴표는 문자열이 아니다."""
+    before = line[:index].rstrip()
+    return not before or before[-1] in ":-[{,?"
+
+
+def _scan_hash_comment(line: str, kind: str, state: _QuoteState | None = None) -> int | None:
+    """따옴표 밖에서 `#`가 시작하는 주석의 위치. 없으면 None. state를 넘기면 여러 줄 따옴표 문자열을 줄 사이에 이어서 따라간다."""
+    state = state if state is not None else _QuoteState()
+    quote = state.quote
     i = 0
     while i < len(line):
         ch = line[i]
         if quote:
-            if ch == "\\" and quote == '"' and kind != "yaml":
-                i += 2
+            if ch == "\\" and (quote == '"' or (quote == "'" and state.ansi)):
+                i += 2  # 큰따옴표(YAML 포함)와 shell `$'...'` 안의 백슬래시는 다음 글자를 이스케이프한다
                 continue
             if ch == quote:
                 quote = None
+                state.ansi = False
+        elif ch == "\\" and kind in ("shell", "env"):
+            i += 2  # shell의 따옴표 밖 백슬래시는 다음 글자(따옴표 포함)를 이스케이프한다
+            continue
         elif ch in ("'", '"'):
-            quote = ch
+            if kind in ("yaml", "compose", "actions") and not _yaml_scalar_start(line, i):
+                pass
+            else:
+                quote = ch
+                state.ansi = kind == "shell" and ch == "'" and i > 0 and line[i - 1] == "$"
         elif ch == "#" and (kind == "toml" or i == 0 or line[i - 1].isspace()):
+            state.quote = None
             return i
         i += 1
+    state.quote = quote
     return None
 
 
@@ -82,6 +107,7 @@ def _hash_comments(lines: list[str], kind: str) -> list[tuple[int, str]]:
     heredoc_tag: str | None = None
     block_indent: int | None = None
     toml_quote: str | None = None
+    state = _QuoteState()
     for idx, raw in enumerate(lines, start=1):
         stripped = raw.strip()
         if heredoc_tag is not None:
@@ -103,7 +129,7 @@ def _hash_comments(lines: list[str], kind: str) -> list[tuple[int, str]]:
         line = raw
         if kind == "toml":
             line, toml_quote = _toml_multiline_state(raw, toml_quote)
-        pos = _scan_hash_comment(line, kind)
+        pos = _scan_hash_comment(line, kind, state if kind in ("shell", "yaml", "compose", "actions", "env") else None)
         code = line
         if pos is not None:
             found.append((idx, raw[pos + 1 :]))

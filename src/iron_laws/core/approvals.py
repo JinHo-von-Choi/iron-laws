@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from iron_laws.core.baseline import Baseline, BaselineEntry, apply_baseline, loose_key, shape_of
 from iron_laws.core.config import ConfigError
-from iron_laws.core.dependencies import compare_dependencies
+from iron_laws.core.dependencies import Premise, explain_dependencies
 from iron_laws.core.models import BaselineStatus, Violation
 
 APPROVALS_SCHEMA = 1
@@ -92,6 +92,62 @@ class Approval:
         return self.record.id
 
 
+CREATED_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
+
+
+def parse_expiry(value: str | None) -> tuple[date | None, str | None]:
+    """유효기간 값을 날짜로 읽는다. (날짜, 오류). 값이 없으면 기한 없음, 형식이 틀리면 오류를 돌려준다."""
+    if value is None or value == "":
+        return None, None
+    try:
+        return date.fromisoformat(value), None
+    except (ValueError, TypeError):  # iron-laws: ignore[IL-301] 날짜가 아니면 오류 문구를 함께 돌려주고 호출부가 승인을 invalid로 처리한다
+        return None, f"유효기간 값이 날짜가 아니다({value!r})"
+
+
+def validate_record(record: "Record") -> list[str]:
+    """기록 한 줄의 형식·필수 필드 검증. check·status·verify·prune이 같은 규칙을 쓴다."""
+    problems: list[str] = []
+    try:
+        datetime.strptime(record.created, CREATED_FORMAT)
+    except (ValueError, TypeError):  # iron-laws: ignore[IL-301] 형식 오류는 problems 목록에 담아 호출부가 승인을 invalid로 처리한다
+        problems.append(f"생성 시각 형식이 맞지 않는다({record.created!r})")
+    if record.kind == "approve":
+        if not record.id.startswith("AP-"):
+            problems.append(f"승인 ID 형식이 맞지 않는다({record.id!r})")
+        if record.finding is None or not record.finding.fingerprint or not record.finding.rule_id or not record.finding.path:
+            problems.append("승인 대상(규칙·경로·지문)이 비어 있다")
+        if record.policy is None:
+            problems.append("승인 당시의 정책 정보가 없다")
+        if len(record.reason.strip()) < 3:
+            problems.append("승인 사유가 3자 미만이다")
+        if record.expires is not None:
+            _expiry, error = parse_expiry(record.expires)
+            if error:
+                problems.append(error)
+    elif not record.target:
+        problems.append(f"{record.kind} 기록에 대상 승인 ID가 없다")
+    return problems
+
+
+@dataclass
+class Integrity:
+    """승인 기록 파일의 검증 결과. 해시 연결 문제는 파일 전체의 신뢰를, 기록별 문제는 그 승인만 영향을 준다."""
+
+    chain: list[str] = field(default_factory=list)
+    records: dict[str, list[str]] = field(default_factory=dict)  # 승인 ID → 문제
+
+    @property
+    def ok(self) -> bool:
+        return not self.chain and not self.records
+
+    def lines(self) -> list[str]:
+        out = list(self.chain)
+        for approval_id, problems in sorted(self.records.items()):
+            out.extend(f"{approval_id}: {problem}" for problem in problems)
+        return out
+
+
 class ApprovalStore:
     def __init__(self, path: Path):
         self.path = path
@@ -126,6 +182,16 @@ class ApprovalStore:
             previous = record.hash
         return problems
 
+    def integrity(self) -> Integrity:
+        """해시 연결과 기록별 형식을 함께 확인한다."""
+        result = Integrity(chain=self.verify_chain())
+        for record in self.records:
+            problems = validate_record(record)
+            if problems:
+                key = record.id if record.kind == "approve" else (record.target or record.id)
+                result.records.setdefault(key, []).extend(problems)
+        return result
+
     def append(self, record: Record) -> Record:
         problems = self.verify_chain()
         if problems:
@@ -152,18 +218,33 @@ class ApprovalStore:
         return [a for a in by_id.values() if not a.forgotten]
 
     def prune(self, before: date, today: date | None = None) -> int:
-        """보존기간이 지난 기록을 지운다. 만료·철회·삭제된 승인 중 before 이전의 것만 지우고, 남은 기록은 해시 연결을 새로 만든다.
+        """보존기간이 지난 기록을 지운다. 지우는 조건은 하나다: 승인이 만료·철회·삭제 표시된 상태이고 만들어진 날이 before 이전.
+        조건에 맞지 않는 승인과 그 철회·삭제 기록은 그대로 두고, 남은 기록은 해시 연결을 새로 만든다.
         추가 전용 이력을 깨는 되돌릴 수 없는 작업이므로 호출부가 명시적 확인을 받아야 한다."""
         today = today or date.today()
-        drop_ids: set[str] = set()
-        for approval in self.approvals():
-            expires = date.fromisoformat(approval.record.expires) if approval.record.expires else None
-            created = date.fromisoformat(approval.record.created[:10])
-            if (approval.revoked or (expires is not None and expires < today)) and created < before:
-                drop_ids.add(approval.id)
+        problems = self.verify_chain()
+        if problems:
+            raise ConfigError("승인 기록의 무결성이 깨져 있어 정리하지 않습니다: " + "; ".join(problems[:2]))
+        revoked: set[str] = set()
+        forgotten: set[str] = set()
         for record in self.records:
-            if record.kind == "forget" and record.target:
-                drop_ids.add(record.target)
+            if record.kind == "revoke" and record.target:
+                revoked.add(record.target)
+            elif record.kind == "forget" and record.target:
+                forgotten.add(record.target)
+        drop_ids: set[str] = set()
+        for record in self.records:
+            if record.kind != "approve":
+                continue
+            expires, error = parse_expiry(record.expires)
+            created_text = record.created[:10]
+            try:
+                created = date.fromisoformat(created_text)
+            except ValueError:  # iron-laws: ignore[IL-301] 생성일을 읽을 수 없는 기록은 시점 조건을 확인할 수 없으므로 지우지 않고 남긴다(검증기가 invalid로 드러낸다)
+                continue
+            ended = record.id in revoked or record.id in forgotten or (error is None and expires is not None and expires < today)
+            if ended and created < before:
+                drop_ids.add(record.id)
         kept = [r for r in self.records if r.id not in drop_ids and r.target not in drop_ids]
         if len(kept) == len(self.records):
             return 0
@@ -225,9 +306,41 @@ def approve_record(violation: Violation, reason: str, reviewer: str, policy: App
 @dataclass
 class ApprovalStatusRow:
     approval: Approval
-    status: str  # valid / needs_review / expired / revoked / resolved / unobserved
+    status: str  # valid / needs_review / invalid / revoked / resolved / unobserved
     reasons: list[str] = field(default_factory=list)
     violation: Violation | None = None
+    premises: list[Premise] = field(default_factory=list)  # 승인 전제별 비교 결과(유지된 항목 포함). 검토 묶음이 쓴다
+    keep_reasons: list[str] = field(default_factory=list)  # 승인을 유지하는 근거(바뀌지 않은 전제)
+
+
+def _footprint(recorded: dict | None, current: dict | None) -> set[str]:
+    """승인 전제에 걸린 파일들(흐름의 함수·호출 함수의 경로)"""
+    files: set[str] = set()
+    for deps in (recorded, current):
+        if not deps:
+            continue
+        files |= {c["path"] for c in deps.get("chain", [])}
+        files |= {c.get("path", "") for c in deps.get("callees", [])}
+    return files
+
+
+def _premise_reasons(approval: "Approval", violation: Violation, changed_files: set[str] | None) -> tuple[list[str], list[Premise]]:
+    recorded = approval.record.dependencies
+    if recorded is None:
+        return [], []
+    premises = explain_dependencies(recorded, violation.dependencies)
+    reasons = [r for p in premises if p.state == "changed" or (p.state == "unknown" and p.key == "structure") for r in p.reasons]
+    boundary = next((p for p in premises if p.key == "boundaries" and p.state == "unknown"), None)
+    if boundary is not None and changed_files:
+        footprint = _footprint(recorded, violation.dependencies)
+        outside = sorted(f for f in changed_files if f.endswith(".py") and f not in footprint)
+        if outside:
+            # 호출 대상을 알 수 없는 호출 경계에서는 변경이 영향을 주는지 판단할 수 없으므로 재검토 범위를 넓힌다. 영향 없음으로 처리하지 않는다
+            note = f"호출 대상을 정적으로 알 수 없는 호출이 있고 이번 변경에 영향 여부를 확인할 수 없는 파일이 있다: {', '.join(outside[:3])}"
+            reasons.append(note)
+            boundary.state = "changed"
+            boundary.reasons = [note]
+    return reasons, premises
 
 
 def evaluate_approvals(
@@ -238,9 +351,12 @@ def evaluate_approvals(
     scanned_paths: set[str],
     existing_paths: set[str],
     today: date | None = None,
+    changed_files: set[str] | None = None,
 ) -> list[ApprovalStatusRow]:
-    """전체 지적 집합에서 승인과 지적을 일대일로 맺고(복제본은 새 검토 대상), 맺어진 승인의 전제가 유지되는지 본다."""
+    """전체 지적 집합에서 승인과 지적을 일대일로 맺고(복제본은 새 검토 대상), 맺어진 승인의 전제가 유지되는지 본다.
+    기록 파일의 무결성이 깨졌거나 승인 기록의 형식이 틀리면 그 승인은 유효한 승인으로 쓰지 않는다(`invalid`)."""
     today = today or date.today()
+    integrity = store.integrity()
     approvals = store.approvals()
     entries = [
         BaselineEntry(
@@ -271,7 +387,14 @@ def evaluate_approvals(
         if approval.revoked:
             rows.append(ApprovalStatusRow(approval, "revoked", ["승인이 철회되었다"]))
             continue
-        expires = date.fromisoformat(approval.record.expires) if approval.record.expires else None
+        invalid = list(integrity.records.get(approval.id, []))
+        if integrity.chain:
+            invalid.insert(0, "승인 기록 파일의 무결성 확인에 실패했다: " + integrity.chain[0])
+        if invalid:
+            matched_row = mapping.get(finding.fingerprint)
+            rows.append(ApprovalStatusRow(approval, "invalid", invalid, matched_row[0] if matched_row else None))
+            continue
+        expires, _error = parse_expiry(approval.record.expires)
         matched = mapping.get(finding.fingerprint)
         if matched is None:
             if finding.fingerprint in unobserved_fp:
@@ -290,9 +413,12 @@ def evaluate_approvals(
             reasons.append("근거 계약이 바뀌었다")
         if old_policy.config_hash and old_policy.config_hash != policy.config_hash:
             reasons.append("점검 설정이 바뀌었다")
-        if approval.record.dependencies is not None:
-            reasons.extend(compare_dependencies(approval.record.dependencies, violation.dependencies))
-        rows.append(ApprovalStatusRow(approval, "needs_review" if reasons else "valid", reasons, violation))
+        premise_reasons, premises = _premise_reasons(approval, violation, changed_files)
+        reasons.extend(premise_reasons)
+        keep = [f"{p.label}: {p.detail}" for p in premises if p.state == "unchanged" and p.detail]
+        if not reasons:
+            keep.insert(0, "승인한 지적과 같은 지문의 지적이다")
+        rows.append(ApprovalStatusRow(approval, "needs_review" if reasons else "valid", reasons, violation, premises, keep))
 
     # 지적의 코드 모양이 바뀌어 지문이 달라졌지만 같은 규칙·같은 파일·같은 함수에 지적이 하나만 남은 경우는 '해소'가 아니라
     # '승인한 코드가 바뀐 것'이다. 일대일일 때만 맺고, 모호하면 승계하지 않는다.
@@ -303,9 +429,9 @@ def evaluate_approvals(
             violation = pool[0]
             free.remove(violation)
             reasons = ["승인한 지적의 코드가 바뀌었다(같은 함수의 같은 규칙 지적)"]
-            if approval.record.dependencies is not None:
-                reasons.extend(compare_dependencies(approval.record.dependencies, violation.dependencies))
-            rows.append(ApprovalStatusRow(approval, "needs_review", reasons, violation))
+            premise_reasons, premises = _premise_reasons(approval, violation, changed_files)
+            reasons.extend(premise_reasons)
+            rows.append(ApprovalStatusRow(approval, "needs_review", reasons, violation, premises))
         else:
             nearby = [v for v in free if v.rule_id == finding.rule_id and v.file_path.as_posix() == finding.path]
             if nearby:

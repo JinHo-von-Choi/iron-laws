@@ -611,7 +611,7 @@ def test_multiline_secret_assignment_keeps_surrounding_code(tmp_path: Path):
 def test_report_json_has_schema_version(tmp_path: Path):
     (tmp_path / "a.py").write_text("x = 1\n")
     data = json.loads(runner.invoke(app, ["audit", str(tmp_path), "--format", "json"]).output)
-    assert data["schema_version"] == "1.2"
+    assert data["schema_version"] == "1.3"
     assert "diagnostics" in data
 
 

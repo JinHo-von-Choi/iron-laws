@@ -29,6 +29,7 @@ from iron_laws.core.contract import Contract, contract_digest, default_contract,
 from iron_laws.core.models import AuditReport, Violation
 from iron_laws.core.scanner import SEVERITY_ORDER, AuditScanner, tool_version
 from iron_laws.verify.bypass import POLICY_FILES, TEST_INFRA_NAMES, BypassChange, detect_bypasses
+from iron_laws.verify.debt_delta import compare as compare_debt
 from iron_laws.verify.patchfile import apply_patch, inspect_patch
 from iron_laws.verify.receipt import CheckResult, Receipt, decide
 from iron_laws.verify.runner import (
@@ -313,6 +314,10 @@ def _verify(original: Path, patch_path: Path, options: VerifyOptions, runner: Ru
     for key, items in before_groups.items():
         if len(after_groups.get(key, [])) < len(items):
             resolved_groups.append(key)
+    if incomplete or not same_condition:
+        debt_delta: dict[str, Any] = {"status": "not_compared", "reason": "원본 또는 후보 점검이 끝까지 이루어지지 않았거나 조건이 달라 비교하지 않았다"}
+    else:
+        debt_delta = {"status": "compared", **compare_debt(original_report, candidate_report).to_dict()}
     threshold = SEVERITY_ORDER[config.fail_on]
     blocking_new = [v for v in new_findings if SEVERITY_ORDER[v.severity] >= threshold]
     findings_summary = {
@@ -459,7 +464,7 @@ def _verify(original: Path, patch_path: Path, options: VerifyOptions, runner: Ru
         }
         for side, report in (("original", original_report), ("candidate", candidate_report))
     }
-    return _finish(options, checks, receipt_inputs, digests, target_info, findings_summary, coverage_summary, bypasses, runner_obj, started, environment, runs, evidence)
+    return _finish(options, checks, receipt_inputs, digests, target_info, findings_summary, coverage_summary, bypasses, runner_obj, started, environment, runs, evidence, debt_delta)
 
 
 def _digest_policy(policy: RunnerPolicy) -> str:
@@ -528,6 +533,7 @@ def _finish(
     environment: dict[str, Any] | None = None,
     runs: dict[str, RunResult] | None = None,
     evidence: dict[str, Any] | None = None,
+    debt_delta: dict[str, Any] | None = None,
 ) -> Receipt:
     if not any(c.id == "existing_tests" for c in checks):
         checks.append(_check("existing_tests", "기존 시험(원본과 후보, 격리 실행)", "not_run", "patch 검사 단계에서 중단되어 실행하지 않았다", required=options.require_tests, executed=False))
@@ -542,6 +548,7 @@ def _finish(
         checks=checks,
         findings=findings,
         evidence=evidence or {},
+        debt_delta=debt_delta or {},
         coverage=coverage,
         bypass_changes=[b.__dict__ for b in bypasses],
         verdict=verdict,

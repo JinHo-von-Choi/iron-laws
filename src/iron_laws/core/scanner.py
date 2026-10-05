@@ -181,6 +181,8 @@ class AuditScanner:
         baseline: Baseline | None = None,
         changed_files: set[str] | None = None,
         changed_since: str | None = None,
+        renames: list[tuple[str, str]] | None = None,
+        gates: dict[str, float] | None = None,
         respect_gitignore: bool = False,
         contract: Contract | None = None,
         contract_source: str = "기본값",
@@ -209,6 +211,9 @@ class AuditScanner:
         self.baseline = baseline
         self.changed_files = changed_files
         self.changed_since = changed_since
+        self.renames = sorted(renames or [])
+        self.gates = dict(gates) if gates else None
+        self._trust_cells: dict[tuple[str, str], bool] | None = None
         self._skipped: list[dict[str, str]] = []
         self._diagnostics: list[Diagnostic] = []
         self._gitignore_patterns: list[str] = self._load_gitignore() if self.config.respect_gitignore else []
@@ -508,10 +513,10 @@ class AuditScanner:
 
     def _build_ledger(self, sources: list[SourceFile], violations: list[Violation]):
         family_rules = {cls.rule_id for cls in FAMILY_RULES.values()}
-        findings: dict[tuple[str, str, int], list[str]] = {}
+        findings: dict[tuple[str, str, int, int], list[str]] = {}
         for v in violations:
             if v.rule_id in family_rules and v.confidence.value == "CONFIRMED":  # '확인 필요'는 근거가 확정된 지적이 아니다
-                findings.setdefault((v.rule_id, v.file_path.as_posix(), v.line_number), []).append(v.finding_id)
+                findings.setdefault((v.rule_id, v.file_path.as_posix(), v.line_number, v.column), []).append(v.finding_id)
         digests = {
             "code": self._code_digest(sources),
             "tool": f"{tool_version()}+{self._ruleset_info()['hash']}",
@@ -620,13 +625,45 @@ class AuditScanner:
             return "A-"
         return "A+"
 
+    @staticmethod
+    def _support_manifest_digest() -> str:
+        from importlib.resources import files
+
+        raw = files("iron_laws.standards").joinpath("data", "support_fixtures.json").read_bytes()
+        return hashlib.sha256(raw).hexdigest()[:16]
+
     def _ruleset_info(self) -> dict:
         entries = sorted(f"{r.rule_id}:{r.version}" for r in self.rules)
+        support = self._support_manifest_digest()  # 규칙 검증 등급의 근거. 등급이 바뀌면 규칙 집합의 지문도 바뀐다
         return {
             "count": len(entries),
-            "hash": hashlib.sha256("\n".join(entries).encode()).hexdigest()[:16],
+            "hash": hashlib.sha256("\n".join([*entries, f"support:{support}"]).encode()).hexdigest()[:16],
+            "support_manifest": support,
             "rules": [{"id": r.rule_id, "version": r.version} for r in sorted(self.rules, key=lambda r: r.rule_id)],
         }
+
+    def _trust_table(self) -> dict[tuple[str, str], bool]:
+        """(규칙, 언어) → 양성·음성 시험이 모두 있는가. 적용되지 않는 조합은 표에 없다."""
+        if self._trust_cells is None:
+            from iron_laws.reporters.support import build_support_matrix
+
+            self._trust_cells = {(row.rule_id, lang): cell.verified for row in build_support_matrix(self.rules) for lang, cell in row.cells.items() if cell.status != "미지원"}
+        return self._trust_cells
+
+    def _apply_trust(self, sources: list[SourceFile], violations: list[Violation]) -> tuple[int, int]:
+        """지적마다 (규칙, 언어) 검증 등급을 붙이고, 이번 점검에서 실제로 적용된 조합 수와 그중 미검증 조합 수를 센다."""
+        from iron_laws.reporters.support import FIXTURE_LANG_ALIASES
+
+        table = self._trust_table()
+        lang_of = {s.path.as_posix(): FIXTURE_LANG_ALIASES.get(s.lang.value, s.lang.value) for s in sources if s.lang is not None}
+        for v in violations:
+            lang = lang_of.get(v.file_path.as_posix())
+            if lang is not None and (v.rule_id, lang) in table:
+                v.verification_grade = "verified" if table[(v.rule_id, lang)] else "unverified"
+        scanned_langs = set(lang_of.values())
+        evaluated = {pair for pair in table if pair[1] in scanned_langs}
+        unverified = sum(1 for pair in evaluated if not table[pair])
+        return len(evaluated), unverified
 
     def scan(self) -> AuditReport:
         self._skipped = []
@@ -686,6 +723,7 @@ class AuditScanner:
                 "ref": self.changed_since,
                 "changed_files": len(self.changed_files),
                 "changed_paths": sorted(self.changed_files),
+                "renames": [{"from": old, "to": new} for old, new in self.renames],
                 "full_findings": full_count,
                 "note": "변경된 파일의 지적만 표시했습니다. 프로젝트 전체 규칙과 파일 간 영향은 전체 점검으로 정기적으로 대조하십시오.",
             }
@@ -735,6 +773,8 @@ class AuditScanner:
         summary.contract_status = ledger.status
         if self.contract.mode == "block" and ledger.status in ("unmet", "policy_change_review"):
             summary.is_passed = False  # 근거 계약을 충족하지 못했다. 경고 0건이 자동 승인으로 이어지지 않는다
+
+        self._apply_gates(summary, violations, sources, ledger)
 
         if files_scanned == 0:
             summary.scan_status = "empty"
@@ -818,6 +858,29 @@ class AuditScanner:
         if report.execution is not None:
             report.execution.scan_status = "incomplete"
             report.execution.error_diagnostics = sum(1 for d in report.diagnostics if d.severity == "error")
+
+    def _apply_gates(self, summary: AuditSummary, violations: list[Violation], sources: list[SourceFile], ledger) -> None:
+        """신뢰 지표(분석 unknown 비율, 미검증 규칙×언어 비율)를 보고서에 남기고, 상한 정책이 있으면 초과를 통과가 아니라 재검토로 돌린다."""
+        evaluated, unverified = self._apply_trust(sources, violations)
+        in_scope = [p for p in ledger.points if p.in_scope]
+        gap_states = ("unsupported", "unresolved", "budget_exceeded")
+        summary.analysis_unknown_rate = round(sum(1 for p in in_scope if p.state in gap_states) / len(in_scope), 4) if in_scope else None
+        summary.evaluated_rule_language_pairs = evaluated
+        summary.unverified_rule_language_pairs = unverified
+        summary.unverified_rule_language_rate = round(unverified / evaluated, 4) if evaluated else None
+        if not self.gates:
+            return
+        was_passed = summary.is_passed
+        summary.gates = dict(sorted(self.gates.items()))
+        rates = {"max_analysis_unknown_rate": summary.analysis_unknown_rate, "max_unverified_rule_language_rate": summary.unverified_rule_language_rate}
+        names = {"max_analysis_unknown_rate": "analysis_unknown_rate", "max_unverified_rule_language_rate": "unverified_rule_language_rate"}
+        for key, limit_value in summary.gates.items():
+            rate = rates.get(key)
+            if rate is not None and rate > limit_value:
+                summary.gate_exceeded.append(f"{names[key]} {rate} > {limit_value}")
+        if summary.gate_exceeded:
+            summary.gate_only_failure = was_passed  # 지적이나 계약이 아니라 상한만으로 실패했는가(보고서 문구가 지적의 실패를 가리지 않게 한다)
+            summary.is_passed = False  # 상한을 넘은 점검은 통과로 세지 않고 사람이 재검토한다
 
     def _approval_checks(self, violations: list[Violation]) -> list[ApprovalCheck]:
         by_fp = {v.fingerprint: v for v in violations}

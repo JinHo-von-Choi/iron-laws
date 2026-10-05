@@ -1,0 +1,720 @@
+{
+  "tool_version": "1.4.0",
+  "baseline": "v1.3.0",
+  "note": "표본은 구현자가 직접 만들고 분류했다. 독립 검토자의 분류가 아니며 효과 주장의 근거가 아니라 회귀 방지와 결함 수정 확인에 쓴다.",
+  "experiment_1_same_line_evidence": {
+    "v1_3_0": {
+      "cases": 24,
+      "borrowed_total": 39,
+      "cases_with_borrowing": 24,
+      "verifier_rejected": 0,
+      "rows": [
+        {
+          "case": "risky+closed",
+          "risky_calls": 1,
+          "findings": 1,
+          "calls_met_by_a_finding": 2,
+          "borrowed": 1,
+          "verifier_ok": true
+        },
+        {
+          "case": "risky+closed|한글주석",
+          "risky_calls": 1,
+          "findings": 1,
+          "calls_met_by_a_finding": 2,
+          "borrowed": 1,
+          "verifier_ok": true
+        },
+        {
+          "case": "risky+closed|CRLF",
+          "risky_calls": 1,
+          "findings": 1,
+          "calls_met_by_a_finding": 2,
+          "borrowed": 1,
+          "verifier_ok": true
+        },
+        {
+          "case": "closed+risky",
+          "risky_calls": 1,
+          "findings": 1,
+          "calls_met_by_a_finding": 2,
+          "borrowed": 1,
+          "verifier_ok": true
+        },
+        {
+          "case": "closed+risky|한글주석",
+          "risky_calls": 1,
+          "findings": 1,
+          "calls_met_by_a_finding": 2,
+          "borrowed": 1,
+          "verifier_ok": true
+        },
+        {
+          "case": "closed+risky|CRLF",
+          "risky_calls": 1,
+          "findings": 1,
+          "calls_met_by_a_finding": 2,
+          "borrowed": 1,
+          "verifier_ok": true
+        },
+        {
+          "case": "risky+risky",
+          "risky_calls": 2,
+          "findings": 1,
+          "calls_met_by_a_finding": 2,
+          "borrowed": 1,
+          "verifier_ok": true
+        },
+        {
+          "case": "risky+risky|한글주석",
+          "risky_calls": 2,
+          "findings": 1,
+          "calls_met_by_a_finding": 2,
+          "borrowed": 1,
+          "verifier_ok": true
+        },
+        {
+          "case": "risky+risky|CRLF",
+          "risky_calls": 2,
+          "findings": 1,
+          "calls_met_by_a_finding": 2,
+          "borrowed": 1,
+          "verifier_ok": true
+        },
+        {
+          "case": "risky+risky+risky",
+          "risky_calls": 3,
+          "findings": 1,
+          "calls_met_by_a_finding": 3,
+          "borrowed": 2,
+          "verifier_ok": true
+        },
+        {
+          "case": "risky+risky+risky|한글주석",
+          "risky_calls": 3,
+          "findings": 1,
+          "calls_met_by_a_finding": 3,
+          "borrowed": 2,
+          "verifier_ok": true
+        },
+        {
+          "case": "risky+risky+risky|CRLF",
+          "risky_calls": 3,
+          "findings": 1,
+          "calls_met_by_a_finding": 3,
+          "borrowed": 2,
+          "verifier_ok": true
+        },
+        {
+          "case": "closed+risky+closed",
+          "risky_calls": 1,
+          "findings": 1,
+          "calls_met_by_a_finding": 3,
+          "borrowed": 2,
+          "verifier_ok": true
+        },
+        {
+          "case": "closed+risky+closed|한글주석",
+          "risky_calls": 1,
+          "findings": 1,
+          "calls_met_by_a_finding": 3,
+          "borrowed": 2,
+          "verifier_ok": true
+        },
+        {
+          "case": "closed+risky+closed|CRLF",
+          "risky_calls": 1,
+          "findings": 1,
+          "calls_met_by_a_finding": 3,
+          "borrowed": 2,
+          "verifier_ok": true
+        },
+        {
+          "case": "risky+closed+risky",
+          "risky_calls": 2,
+          "findings": 1,
+          "calls_met_by_a_finding": 3,
+          "borrowed": 2,
+          "verifier_ok": true
+        },
+        {
+          "case": "risky+closed+risky|한글주석",
+          "risky_calls": 2,
+          "findings": 1,
+          "calls_met_by_a_finding": 3,
+          "borrowed": 2,
+          "verifier_ok": true
+        },
+        {
+          "case": "risky+closed+risky|CRLF",
+          "risky_calls": 2,
+          "findings": 1,
+          "calls_met_by_a_finding": 3,
+          "borrowed": 2,
+          "verifier_ok": true
+        },
+        {
+          "case": "closed+closed+risky",
+          "risky_calls": 1,
+          "findings": 1,
+          "calls_met_by_a_finding": 3,
+          "borrowed": 2,
+          "verifier_ok": true
+        },
+        {
+          "case": "closed+closed+risky|한글주석",
+          "risky_calls": 1,
+          "findings": 1,
+          "calls_met_by_a_finding": 3,
+          "borrowed": 2,
+          "verifier_ok": true
+        },
+        {
+          "case": "closed+closed+risky|CRLF",
+          "risky_calls": 1,
+          "findings": 1,
+          "calls_met_by_a_finding": 3,
+          "borrowed": 2,
+          "verifier_ok": true
+        },
+        {
+          "case": "risky+closed+closed",
+          "risky_calls": 1,
+          "findings": 1,
+          "calls_met_by_a_finding": 3,
+          "borrowed": 2,
+          "verifier_ok": true
+        },
+        {
+          "case": "risky+closed+closed|한글주석",
+          "risky_calls": 1,
+          "findings": 1,
+          "calls_met_by_a_finding": 3,
+          "borrowed": 2,
+          "verifier_ok": true
+        },
+        {
+          "case": "risky+closed+closed|CRLF",
+          "risky_calls": 1,
+          "findings": 1,
+          "calls_met_by_a_finding": 3,
+          "borrowed": 2,
+          "verifier_ok": true
+        }
+      ]
+    },
+    "current": {
+      "cases": 24,
+      "borrowed_total": 0,
+      "cases_with_borrowing": 0,
+      "verifier_rejected": 0,
+      "rows": [
+        {
+          "case": "risky+closed",
+          "risky_calls": 1,
+          "findings": 1,
+          "calls_met_by_a_finding": 1,
+          "borrowed": 0,
+          "verifier_ok": true
+        },
+        {
+          "case": "risky+closed|한글주석",
+          "risky_calls": 1,
+          "findings": 1,
+          "calls_met_by_a_finding": 1,
+          "borrowed": 0,
+          "verifier_ok": true
+        },
+        {
+          "case": "risky+closed|CRLF",
+          "risky_calls": 1,
+          "findings": 1,
+          "calls_met_by_a_finding": 1,
+          "borrowed": 0,
+          "verifier_ok": true
+        },
+        {
+          "case": "closed+risky",
+          "risky_calls": 1,
+          "findings": 1,
+          "calls_met_by_a_finding": 1,
+          "borrowed": 0,
+          "verifier_ok": true
+        },
+        {
+          "case": "closed+risky|한글주석",
+          "risky_calls": 1,
+          "findings": 1,
+          "calls_met_by_a_finding": 1,
+          "borrowed": 0,
+          "verifier_ok": true
+        },
+        {
+          "case": "closed+risky|CRLF",
+          "risky_calls": 1,
+          "findings": 1,
+          "calls_met_by_a_finding": 1,
+          "borrowed": 0,
+          "verifier_ok": true
+        },
+        {
+          "case": "risky+risky",
+          "risky_calls": 2,
+          "findings": 1,
+          "calls_met_by_a_finding": 1,
+          "borrowed": 0,
+          "verifier_ok": true
+        },
+        {
+          "case": "risky+risky|한글주석",
+          "risky_calls": 2,
+          "findings": 1,
+          "calls_met_by_a_finding": 1,
+          "borrowed": 0,
+          "verifier_ok": true
+        },
+        {
+          "case": "risky+risky|CRLF",
+          "risky_calls": 2,
+          "findings": 1,
+          "calls_met_by_a_finding": 1,
+          "borrowed": 0,
+          "verifier_ok": true
+        },
+        {
+          "case": "risky+risky+risky",
+          "risky_calls": 3,
+          "findings": 1,
+          "calls_met_by_a_finding": 1,
+          "borrowed": 0,
+          "verifier_ok": true
+        },
+        {
+          "case": "risky+risky+risky|한글주석",
+          "risky_calls": 3,
+          "findings": 1,
+          "calls_met_by_a_finding": 1,
+          "borrowed": 0,
+          "verifier_ok": true
+        },
+        {
+          "case": "risky+risky+risky|CRLF",
+          "risky_calls": 3,
+          "findings": 1,
+          "calls_met_by_a_finding": 1,
+          "borrowed": 0,
+          "verifier_ok": true
+        },
+        {
+          "case": "closed+risky+closed",
+          "risky_calls": 1,
+          "findings": 1,
+          "calls_met_by_a_finding": 1,
+          "borrowed": 0,
+          "verifier_ok": true
+        },
+        {
+          "case": "closed+risky+closed|한글주석",
+          "risky_calls": 1,
+          "findings": 1,
+          "calls_met_by_a_finding": 1,
+          "borrowed": 0,
+          "verifier_ok": true
+        },
+        {
+          "case": "closed+risky+closed|CRLF",
+          "risky_calls": 1,
+          "findings": 1,
+          "calls_met_by_a_finding": 1,
+          "borrowed": 0,
+          "verifier_ok": true
+        },
+        {
+          "case": "risky+closed+risky",
+          "risky_calls": 2,
+          "findings": 1,
+          "calls_met_by_a_finding": 1,
+          "borrowed": 0,
+          "verifier_ok": true
+        },
+        {
+          "case": "risky+closed+risky|한글주석",
+          "risky_calls": 2,
+          "findings": 1,
+          "calls_met_by_a_finding": 1,
+          "borrowed": 0,
+          "verifier_ok": true
+        },
+        {
+          "case": "risky+closed+risky|CRLF",
+          "risky_calls": 2,
+          "findings": 1,
+          "calls_met_by_a_finding": 1,
+          "borrowed": 0,
+          "verifier_ok": true
+        },
+        {
+          "case": "closed+closed+risky",
+          "risky_calls": 1,
+          "findings": 1,
+          "calls_met_by_a_finding": 1,
+          "borrowed": 0,
+          "verifier_ok": true
+        },
+        {
+          "case": "closed+closed+risky|한글주석",
+          "risky_calls": 1,
+          "findings": 1,
+          "calls_met_by_a_finding": 1,
+          "borrowed": 0,
+          "verifier_ok": true
+        },
+        {
+          "case": "closed+closed+risky|CRLF",
+          "risky_calls": 1,
+          "findings": 1,
+          "calls_met_by_a_finding": 1,
+          "borrowed": 0,
+          "verifier_ok": true
+        },
+        {
+          "case": "risky+closed+closed",
+          "risky_calls": 1,
+          "findings": 1,
+          "calls_met_by_a_finding": 1,
+          "borrowed": 0,
+          "verifier_ok": true
+        },
+        {
+          "case": "risky+closed+closed|한글주석",
+          "risky_calls": 1,
+          "findings": 1,
+          "calls_met_by_a_finding": 1,
+          "borrowed": 0,
+          "verifier_ok": true
+        },
+        {
+          "case": "risky+closed+closed|CRLF",
+          "risky_calls": 1,
+          "findings": 1,
+          "calls_met_by_a_finding": 1,
+          "borrowed": 0,
+          "verifier_ok": true
+        }
+      ]
+    }
+  },
+  "experiment_2_suppression_grammar": {
+    "v1_3_0": {
+      "cases": 18,
+      "string_treated_as_suppression": [
+        "yaml-escaped-quote-inside",
+        "yaml-escaped-quote-two-pairs",
+        "shell-two-heredocs"
+      ],
+      "real_comment_lost": []
+    },
+    "current": {
+      "cases": 18,
+      "string_treated_as_suppression": [],
+      "real_comment_lost": []
+    }
+  },
+  "experiment_3_value_identity": {
+    "v1_3_0": {
+      "risky_cases": 6,
+      "benign_cases": 3,
+      "risky_missed": [
+        "walrus-in-condition",
+        "walrus-statement",
+        "walrus-in-call",
+        "walrus-in-comprehension"
+      ],
+      "benign_false_alarm": []
+    },
+    "current": {
+      "risky_cases": 6,
+      "benign_cases": 3,
+      "risky_missed": [],
+      "benign_false_alarm": []
+    }
+  },
+  "experiment_4_output_secret_exposure": {
+    "v1_3_0": {
+      "cases": 6,
+      "formats": 6,
+      "cases_with_leak": 4,
+      "leaked_cells": 16,
+      "leaks": {
+        "ts-typed-const": {
+          "console": 3,
+          "markdown": 3,
+          "json": 3,
+          "prompt": 3
+        },
+        "py-annotation": {
+          "console": 3,
+          "markdown": 3,
+          "json": 3,
+          "prompt": 3
+        },
+        "py-generic-annotation": {
+          "console": 3,
+          "markdown": 3,
+          "json": 3,
+          "prompt": 3
+        },
+        "rust-typed-let": {
+          "console": 3,
+          "markdown": 3,
+          "json": 3,
+          "prompt": 3
+        }
+      }
+    },
+    "current": {
+      "cases": 6,
+      "formats": 6,
+      "cases_with_leak": 0,
+      "leaked_cells": 0,
+      "leaks": {}
+    }
+  },
+  "experiment_5_approval_scope": {
+    "v1_3_0": {
+      "rows": {
+        "safe-move": {
+          "exit_codes": {
+            "full": 0,
+            "changed": 2,
+            "bundle_full": 0,
+            "bundle_changed": 2
+          },
+          "commands_disagree": true,
+          "errored": true
+        },
+        "move-into-subfolder": {
+          "exit_codes": {
+            "full": 0,
+            "changed": 2,
+            "bundle_full": 0,
+            "bundle_changed": 2
+          },
+          "commands_disagree": true,
+          "errored": true
+        },
+        "move-and-change-premise": {
+          "exit_codes": {
+            "full": 1,
+            "changed": 1,
+            "bundle_full": 1,
+            "bundle_changed": 1
+          },
+          "commands_disagree": false,
+          "errored": false
+        },
+        "copy-keeps-original": {
+          "exit_codes": {
+            "full": 1,
+            "changed": 1,
+            "bundle_full": 0,
+            "bundle_changed": 0
+          },
+          "commands_disagree": false,
+          "errored": false
+        }
+      },
+      "safe_cases_with_disagreement_or_error": 2,
+      "risky_cases_passed_by_check": 0
+    },
+    "current": {
+      "rows": {
+        "safe-move": {
+          "exit_codes": {
+            "full": 0,
+            "changed": 0,
+            "bundle_full": 0,
+            "bundle_changed": 0
+          },
+          "commands_disagree": false,
+          "errored": false
+        },
+        "move-into-subfolder": {
+          "exit_codes": {
+            "full": 0,
+            "changed": 0,
+            "bundle_full": 0,
+            "bundle_changed": 0
+          },
+          "commands_disagree": false,
+          "errored": false
+        },
+        "move-and-change-premise": {
+          "exit_codes": {
+            "full": 1,
+            "changed": 1,
+            "bundle_full": 1,
+            "bundle_changed": 1
+          },
+          "commands_disagree": false,
+          "errored": false
+        },
+        "copy-keeps-original": {
+          "exit_codes": {
+            "full": 1,
+            "changed": 1,
+            "bundle_full": 0,
+            "bundle_changed": 0
+          },
+          "commands_disagree": false,
+          "errored": false
+        }
+      },
+      "safe_cases_with_disagreement_or_error": 0,
+      "risky_cases_passed_by_check": 0
+    }
+  },
+  "experiment_6_pilot_total_cost": {
+    "v1_3_0": {
+      "review-time-down-total-time-up": "targets_met",
+      "both-improve": "targets_met",
+      "no-change": "targets_not_met"
+    },
+    "current": {
+      "review-time-down-total-time-up": "targets_not_met",
+      "both-improve": "targets_met",
+      "no-change": "targets_not_met"
+    },
+    "note": "첫 사례는 검토 시간 75% 감소, 총 능동시간 40분에서 120분으로 증가한 반례다. 성공으로 판정하면 결함이다."
+  },
+  "experiment_7_debt_delta": {
+    "hiding_fixes": 6,
+    "hiding_marked": 6,
+    "legitimate_fixes": 6,
+    "legitimate_marked": 0,
+    "rows": [
+      {
+        "family": "command",
+        "fix": "legit-argv",
+        "new_total": 0,
+        "fix_adjacent_new": 0,
+        "target_rule_gone": true
+      },
+      {
+        "family": "command",
+        "fix": "legit-allowlist",
+        "new_total": 0,
+        "fix_adjacent_new": 0,
+        "target_rule_gone": true
+      },
+      {
+        "family": "command",
+        "fix": "hide-swallow",
+        "new_total": 2,
+        "fix_adjacent_new": 2,
+        "target_rule_gone": true
+      },
+      {
+        "family": "command",
+        "fix": "hide-type-ignore",
+        "new_total": 1,
+        "fix_adjacent_new": 1,
+        "target_rule_gone": true
+      },
+      {
+        "family": "path",
+        "fix": "legit-basename",
+        "new_total": 0,
+        "fix_adjacent_new": 0,
+        "target_rule_gone": true
+      },
+      {
+        "family": "path",
+        "fix": "legit-realpath",
+        "new_total": 0,
+        "fix_adjacent_new": 0,
+        "target_rule_gone": true
+      },
+      {
+        "family": "path",
+        "fix": "hide-swallow",
+        "new_total": 2,
+        "fix_adjacent_new": 2,
+        "target_rule_gone": true
+      },
+      {
+        "family": "path",
+        "fix": "hide-type-ignore",
+        "new_total": 1,
+        "fix_adjacent_new": 1,
+        "target_rule_gone": true
+      },
+      {
+        "family": "sql",
+        "fix": "legit-param",
+        "new_total": 0,
+        "fix_adjacent_new": 0,
+        "target_rule_gone": true
+      },
+      {
+        "family": "sql",
+        "fix": "legit-param-qmark",
+        "new_total": 0,
+        "fix_adjacent_new": 0,
+        "target_rule_gone": true
+      },
+      {
+        "family": "sql",
+        "fix": "hide-swallow",
+        "new_total": 2,
+        "fix_adjacent_new": 2,
+        "target_rule_gone": true
+      },
+      {
+        "family": "sql",
+        "fix": "hide-type-ignore",
+        "new_total": 1,
+        "fix_adjacent_new": 1,
+        "target_rule_gone": true
+      }
+    ],
+    "note": "표시는 판정에 연결하지 않는다. 표본은 구현자가 분류했다."
+  },
+  "experiment_8_trust_and_determinism": {
+    "trust_metrics": {
+      "clean": {
+        "analysis_unknown_rate": null,
+        "unverified_rule_language_rate": 0.4512,
+        "evaluated_pairs": 82,
+        "gate_exceeded": [],
+        "is_passed": true
+      },
+      "unresolved-command": {
+        "analysis_unknown_rate": 1.0,
+        "unverified_rule_language_rate": 0.4512,
+        "evaluated_pairs": 82,
+        "gate_exceeded": [
+          "analysis_unknown_rate 1.0 > 0.5"
+        ],
+        "is_passed": false
+      },
+      "mixed": {
+        "analysis_unknown_rate": 0.0,
+        "unverified_rule_language_rate": 0.6196,
+        "evaluated_pairs": 163,
+        "gate_exceeded": [],
+        "is_passed": false
+      }
+    },
+    "determinism": {
+      "files": 64,
+      "findings": 129,
+      "projection_equal": true,
+      "raw_equal": false
+    }
+  },
+  "experiment_9_team_pilot": {
+    "performed": false,
+    "reason": "파일럿 팀이 없다. 도구만 준비했다."
+  }
+}

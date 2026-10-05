@@ -106,6 +106,27 @@ ChangedSinceOpt = typer.Option(
 )
 
 
+MaxUnknownOpt = typer.Option(
+    None,
+    "--max-analysis-unknown-rate",
+    min=0.0,
+    max=1.0,
+    help="계약 범위 안 보안 관심 지점 중 해석 미확정·미지원·예산 초과 비율의 상한(0~1). 넘으면 통과가 아니라 재검토로 판정합니다",
+)
+MaxUnverifiedOpt = typer.Option(
+    None,
+    "--max-unverified-rule-language-rate",
+    min=0.0,
+    max=1.0,
+    help="이번 점검에 적용된 (규칙, 언어) 조합 중 양성·음성 시험이 모두 있지 않은 조합 비율의 상한(0~1). 넘으면 통과가 아니라 재검토로 판정합니다",
+)
+
+
+def _gates(max_unknown: float | None, max_unverified: float | None) -> dict[str, float] | None:
+    gates = {k: v for k, v in (("max_analysis_unknown_rate", max_unknown), ("max_unverified_rule_language_rate", max_unverified)) if v is not None}
+    return gates or None
+
+
 class ReportFormat(StrEnum):
     CONSOLE = "console"
     MARKDOWN = "markdown"
@@ -150,6 +171,24 @@ def _changed_files(root: Path, ref: str) -> set[str]:
     return changed
 
 
+def _renamed_paths(root: Path, ref: str) -> list[tuple[str, str]]:
+    """ref 이후 이름이 바뀐(옮겨진) 파일의 (이전 경로, 새 경로). 점검 루트 기준 상대 경로이며, 둘 다 루트 안에 있을 때만 돌려준다.
+    승인·보고서·검토 묶음이 같은 범위 계약을 쓰도록 변경 파일 목록과 함께 보고서에 남긴다."""
+    folder = root if root.is_dir() else root.parent
+    top = Path(_git(["rev-parse", "--show-toplevel"], folder).decode("utf-8", errors="surrogateescape").strip())
+    fields = _nul_paths(_git(["diff", "--name-status", "-z", "-M", "--diff-filter=R", ref, "--"], folder))
+    base = root.resolve() if root.is_dir() else root.resolve().parent
+    pairs: list[tuple[str, str]] = []
+    for index in range(0, len(fields) - 2, 3):  # `R100 이전 새` 세 칸이 한 항목이다
+        try:
+            old = (top / fields[index + 1]).resolve().relative_to(base).as_posix()
+            new = (top / fields[index + 2]).resolve().relative_to(base).as_posix()
+        except ValueError:
+            continue
+        pairs.append((old, new))
+    return sorted(pairs)
+
+
 def _build_scanner(
     path: Path,
     config: Path | None = None,
@@ -161,6 +200,7 @@ def _build_scanner(
     contract_mode: str | None = None,
     approvals: Path | None = None,
     collect_dependencies: bool = False,
+    gates: dict[str, float] | None = None,
 ) -> AuditScanner:
     try:
         loaded_contract = None
@@ -175,6 +215,7 @@ def _build_scanner(
             loaded_contract.mode = contract_mode  # type: ignore[assignment]
         loaded: Baseline | None = load_baseline(baseline) if baseline else None
         changed = _changed_files(path, changed_since) if changed_since else None
+        renames = _renamed_paths(path, changed_since) if changed_since else None
         scanner = AuditScanner(
             path,
             config_path=config,
@@ -182,6 +223,8 @@ def _build_scanner(
             baseline=loaded,
             changed_files=changed,
             changed_since=changed_since,
+            renames=renames,
+            gates=gates,
             respect_gitignore=respect_gitignore,
             contract=loaded_contract,
             contract_source=(str(contract) if contract else "기본값") + (f" (모드 {contract_mode}는 명령행)" if contract_mode else ""),
@@ -260,11 +303,13 @@ def check_command(
     contract_mode: str | None = ContractModeOpt,
     approvals: Path | None = ApprovalsOpt,
     metrics: Path | None = MetricsOpt,
+    max_unknown: float | None = MaxUnknownOpt,
+    max_unverified: float | None = MaxUnverifiedOpt,
 ):
     """
     프로젝트의 보안 약점과 품질 결함을 신속 진단합니다. (CI/CD 적합)
     """
-    scanner = _build_scanner(path, config, search_parents, baseline, changed_since, respect_gitignore, contract, contract_mode, approvals)
+    scanner = _build_scanner(path, config, search_parents, baseline, changed_since, respect_gitignore, contract, contract_mode, approvals, gates=_gates(max_unknown, max_unverified))
     if fail_on is not None:
         scanner.config.fail_on = fail_on
         scanner.fail_on_source = "명령행 옵션"
@@ -275,6 +320,8 @@ def check_command(
     if not report.summary.is_passed:
         if report.summary.contract_mode == "block" and report.summary.contract_status in ("unmet", "policy_change_review"):
             err.print("[bold red]근거 계약을 충족하지 못해 점검이 실패했습니다. 지적이 없어도 요구한 분석 근거가 없으면 통과가 아닙니다.[/bold red]")
+        for item in report.summary.gate_exceeded:
+            err.print(f"[bold red]신뢰 지표 상한 초과: {escape(item)}. 통과로 세지 않고 사람이 재검토해야 합니다.[/bold red]")
         err.print(
             f"[bold red]오철칙 기준 미달 (등급: {report.summary.grade})로 인해 점검이 실패했습니다.[/bold red]"
         )
@@ -303,11 +350,13 @@ def audit_command(
     contract_mode: str | None = ContractModeOpt,
     approvals: Path | None = ApprovalsOpt,
     metrics: Path | None = MetricsOpt,
+    max_unknown: float | None = MaxUnknownOpt,
+    max_unverified: float | None = MaxUnverifiedOpt,
 ):
     """
     점검을 수행하고 보고서를 발행합니다. markdown 보고서에는 행안부 구현단계 49개 항목별 점검 현황이 포함됩니다.
     """
-    scanner = _build_scanner(path, config, search_parents, baseline, changed_since, respect_gitignore, contract, contract_mode, approvals)
+    scanner = _build_scanner(path, config, search_parents, baseline, changed_since, respect_gitignore, contract, contract_mode, approvals, gates=_gates(max_unknown, max_unverified))
     report = _timed_scan(scanner, metrics, "audit")
     if report.summary.scan_status == "empty" and not allow_empty:
         _check_completion(report, allow_empty)
@@ -629,6 +678,12 @@ def verify_patch_command(
         console.print("[bold yellow]우회 변경 (경고가 사라졌더라도 수정으로 인정하지 않음)[/bold yellow]")
         for b in receipt.bypass_changes:
             console.print(f"  - {escape(b['kind'])} {escape(b['path'])}: {escape(b['detail'])}")
+    delta = receipt.debt_delta
+    if delta.get("status") == "compared":
+        totals = delta["totals"]
+        console.print(f"[bold]수정이 만든 부채(다섯 습관, 표시만 하며 판정에 쓰지 않음)[/bold] 해결 {totals['resolved']} · 유지 {totals['maintained']} · 신규 {totals['new']} · 이동 {totals['moved']} · 판정 불가 {totals['undetermined']}")
+        for row in delta["fix_adjacent_new"]:
+            console.print(f"  - [yellow]수정 지점과 같은 함수에 새 부채[/yellow] {escape(row['habit'])} {escape(row['rule'])} {escape(row['path'])}:{row['line']} ({escape(row['scope'])})")
     console.print(f"[bold]종합: {receipt.verdict.label}[/bold]  (기록 해시 {receipt.receipt_digest})")
     console.print(f"[dim]{receipt.verdict.caveat}[/dim]")
     if out:
@@ -950,17 +1005,35 @@ def pilot_record_command(
 @pilot_app.command("flag")
 def pilot_flag_command(
     pr: str = typer.Argument(..., help="PR 이름표"),
-    kind: str = typer.Option(..., "--kind", help="misaccept(오통과) 또는 dangerous_inheritance(위험한 승인 승계)"),
+    kind: str = typer.Option(..., "--kind", help="misaccept(오통과), dangerous_inheritance(위험한 승인 승계), legitimate_exception(정당한 예외 승인)"),
+    note: str = typer.Option("", "--note", help="짧은 메모(코드 원문 금지)"),
+    status: str = typer.Option("confirmed", "--status", help="confirmed(확인됨) 또는 investigating(조사 중, 조사가 끝나기 전에는 성과에 포함하지 않음)"),
+    store: Path | None = typer.Option(None, "--store", help="파일럿 기록 파일"),
+):
+    """
+    오통과·위험한 승계를 기록합니다. bundle 조건에서 확인된 사건이 한 건이라도 기록되면 요약이 관련 자동 경로를 수동 검토로 돌리라고 표시합니다.
+    """
+    from iron_laws.core.pilot import flag_risk
+
+    _pilot_call(flag_risk, _pilot_store(store), pr, kind, note, status)
+    err.print(f"[yellow]위험 기록: {escape(pr)} ({escape(kind)}, {escape(status)})[/yellow]")
+
+
+@pilot_app.command("close")
+def pilot_close_command(
+    pr: str = typer.Argument(..., help="PR 이름표"),
+    kind: str = typer.Option(..., "--kind", help="조사 중이던 사건의 종류(misaccept 또는 dangerous_inheritance)"),
+    confirmed: bool = typer.Option(..., "--confirmed/--dismissed", help="조사 결과: 확인됨(오승인 확정) 또는 기각(정당한 예외로 분류)"),
     note: str = typer.Option("", "--note", help="짧은 메모(코드 원문 금지)"),
     store: Path | None = typer.Option(None, "--store", help="파일럿 기록 파일"),
 ):
     """
-    오통과·위험한 승계를 기록합니다. bundle 조건에서 한 건이라도 기록되면 요약이 관련 자동 경로를 수동 검토로 돌리라고 표시합니다.
+    조사 중이던 사건을 닫습니다. 기록은 지우지 않고 결과를 덧붙입니다.
     """
-    from iron_laws.core.pilot import flag_risk
+    from iron_laws.core.pilot import close_risk
 
-    _pilot_call(flag_risk, _pilot_store(store), pr, kind, note)
-    err.print(f"[yellow]위험 기록: {escape(pr)} ({escape(kind)})[/yellow]")
+    _pilot_call(close_risk, _pilot_store(store), pr, kind, confirmed, note)
+    err.print(f"[yellow]조사 종료: {escape(pr)} ({'확인' if confirmed else '기각'})[/yellow]")
 
 
 @pilot_app.command("dropout")
@@ -993,10 +1066,11 @@ def pilot_summary_command(
         sys.stdout.write(json.dumps(result, ensure_ascii=False, indent=2) + "\n")
     else:
         table = Table(title="[파일럿 요약]")
-        for column in ("조건", "검토 건수", "중앙값(분)", "75백분위(분)", "총 시간 중앙값(분)", "위험 수용"):
+        for column in ("조건", "검토 건수", "총 능동시간 중앙값(분)", "총 능동시간 75백분위(분)", "검토 시간 중앙값(분, 보조)", "확인된 오승인", "조사 중"):
             table.add_column(column)
         for arm, data in result["arms"].items():
-            table.add_row(arm, str(data["review_minutes"]["n"]), str(data["review_minutes"]["median"]), str(data["review_minutes"]["p75"]), str(data["total_minutes"]["median"]), str(data["risk_accepted"]))
+            mis = data["confirmed_misaccepts"]
+            table.add_row(arm, str(data["total_minutes"]["n"]), str(data["total_minutes"]["median"]), str(data["total_minutes"]["p75"]), str(data["review_minutes"]["median"]), f"{mis['count']}/{mis['of']}", str(data["investigating"]))
         console.print(table)
         console.print(f"판정: {result['verdict']} · 자동 경로: {result['automation']} · 중도 포기 {result['dropouts']}")
         for reason in result["sample"]["reasons"]:
@@ -1016,6 +1090,7 @@ def review_bundle_command(
     fmt: str = typer.Option("markdown", "--format", help="markdown 또는 json"),
     output: Path | None = typer.Option(None, "--output", "-o", help="저장 파일"),
     metrics: Path | None = MetricsOpt,
+    pilot_store: Path | None = typer.Option(None, "--pilot-store", help="파일럿 기록 파일. 주면 확인된 오승인·조사 중인 사건이 있을 때 자동 판정 경로를 닫고 필수 행동(종료코드 1)으로 돌립니다"),
 ):
     """
     검토자에게 줄 한 묶음: 바뀐 전제, 기존 승인의 유지·무효화·판정 불가와 각 근거, 필수 행동, 남은 공백, 재현 정보.
@@ -1034,6 +1109,13 @@ def review_bundle_command(
         raise typer.Exit(2)
     command = f"iron-laws review-bundle {path.as_posix()}" + (f" --approvals {store_path.as_posix()}" if approvals else "") + (f" --contract {contract.as_posix()}" if contract else "") + (f" --changed-since {changed_since}" if changed_since else "")
     bundle = build_bundle(report, scanner.approval_rows, changed_files=scanner.changed_files, command=command, approvals_path=store_path.as_posix() if store_path.exists() else None)
+    if pilot_store is not None:
+        from iron_laws.core.pilot import summarize
+
+        automation = _pilot_call(summarize, _pilot_store(pilot_store))["automation"]
+        if automation != "allowed":
+            reason = "파일럿에서 확인된 오승인·위험한 승인 승계가 기록되어" if automation == "manual_review_only" else "파일럿에서 조사 중인 오승인 사건이 있어"
+            bundle.actions.append({"kind": "manual_review_required", "target": f"pilot:{automation}", "text": f"{reason} 자동 판정 경로를 수동 검토로 전환하십시오"})
     text = json.dumps(bundle.to_dict(), ensure_ascii=False, indent=2) + "\n" if fmt == "json" else render_markdown(bundle)
     _write_or_print(text.rstrip("\n"), output, "검토 묶음")
     raise typer.Exit(1 if bundle.actions else 0)

@@ -130,7 +130,14 @@ def _ledger_section(report: AuditReport) -> list[str]:
 
 def generate_markdown_report(report: AuditReport, rules: list[BaseRule] | None = None) -> str:
     s = report.summary
-    status_str = "통과 (PASS)" if s.is_passed else "미통과 (시정조치 필요 / FAIL)"
+    if s.is_passed and s.unverified_rule_language_pairs:
+        status_str = "통과 (PASS) · 단, 미검증 (규칙, 언어) 조합 포함"
+    elif s.is_passed:
+        status_str = "통과 (PASS)"
+    elif s.gate_exceeded and s.gate_only_failure:
+        status_str = "재검토 필요 (신뢰 지표 상한 초과)"
+    else:
+        status_str = "미통과 (시정조치 필요 / FAIL)"
 
     md = [f"# {report.title}\n"]
     md.append(f"- **문서번호**: {report.document_id}")
@@ -138,6 +145,9 @@ def generate_markdown_report(report: AuditReport, rules: list[BaseRule] | None =
     md.append(f"- **점검 주체**: {report.auditor}")
     md.append(f"- **점검일자**: {report.audit_date}")
     md.append(f"- **종합 등급**: **{s.grade}** ({status_str})")
+    if s.evaluated_rule_language_pairs:
+        md.append(f"- **신뢰 지표**: 적용된 (규칙, 언어) {s.evaluated_rule_language_pairs}개 중 미검증 {s.unverified_rule_language_pairs}개 · 분석 unknown 비율 {s.analysis_unknown_rate if s.analysis_unknown_rate is not None else '-'}. 미검증 조합의 `지적 없음`은 통과 근거가 아닙니다.")
+    md.extend(f"- **신뢰 지표 상한 초과**: {item}" for item in s.gate_exceeded)
     meta = report.metadata
     md.append(f"- **점검 완료 상태**: {_STATUS_LABEL.get(s.scan_status, s.scan_status)}")
     if meta.get("tool_version"):

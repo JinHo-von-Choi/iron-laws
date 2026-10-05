@@ -23,7 +23,7 @@ FILE_DIRECTIVE_WINDOW = 30
 
 HASH_KINDS = {"shell", "yaml", "env", "properties", "docker", "compose", "actions", "toml", "version"}
 MARKUP_COMMENT_RE = re.compile(r"<!--(?P<text>.*?)(?:-->|$)|\{#(?P<t2>.*?)(?:#\}|$)|@\*(?P<t3>.*?)(?:\*@|$)")
-HEREDOC_RE = re.compile(r"<<-?\s*(?P<q>['\"]?)(?P<tag>\w+)(?P=q)")
+HEREDOC_RE = re.compile(r"""<<-?\s*(?:'(?P<sq>[^'\n]+)'|"(?P<dq>[^"\n]+)"|(?P<bare>[^\s'"<>;&|()]+))""")
 BLOCK_SCALAR_RE = re.compile(r"[|>][+\-0-9]*\s*$")
 TOML_TRIPLES = ('"""', "'''")
 
@@ -54,6 +54,9 @@ def _scan_hash_comment(line: str, kind: str, state: _QuoteState | None = None) -
                 i += 2  # 큰따옴표(YAML 포함)와 shell `$'...'` 안의 백슬래시는 다음 글자를 이스케이프한다
                 continue
             if ch == quote:
+                if quote == "'" and kind in ("yaml", "compose", "actions") and line[i + 1 : i + 2] == "'":
+                    i += 2  # YAML 작은따옴표 문자열 안의 `''`는 따옴표 하나를 뜻하는 이스케이프다
+                    continue
                 quote = None
                 state.ansi = False
         elif ch == "\\" and kind in ("shell", "env"):
@@ -104,15 +107,15 @@ def _hash_comments(lines: list[str], kind: str) -> list[tuple[int, str]]:
     """YAML·shell·TOML·.env 등에서 실제 주석만 뽑는다. 문자열, 여러 줄 문자열(YAML `|`·TOML 삼중 따옴표),
     here-document 안의 `#`은 주석이 아니다."""
     found: list[tuple[int, str]] = []
-    heredoc_tag: str | None = None
+    heredoc_tags: list[str] = []  # 한 줄에 here-document가 여럿이면 열린 순서대로 본문이 이어진다(`cat <<A <<B`)
     block_indent: int | None = None
     toml_quote: str | None = None
     state = _QuoteState()
     for idx, raw in enumerate(lines, start=1):
         stripped = raw.strip()
-        if heredoc_tag is not None:
-            if stripped == heredoc_tag:
-                heredoc_tag = None
+        if heredoc_tags:
+            if stripped == heredoc_tags[0]:
+                heredoc_tags.pop(0)
             continue
         if block_indent is not None:
             if not stripped or len(raw) - len(raw.lstrip()) > block_indent:
@@ -135,9 +138,7 @@ def _hash_comments(lines: list[str], kind: str) -> list[tuple[int, str]]:
             found.append((idx, raw[pos + 1 :]))
             code = line[:pos]
         if kind == "shell":
-            m = HEREDOC_RE.search(code)
-            if m:
-                heredoc_tag = m.group("tag")
+            heredoc_tags = [m.group("sq") or m.group("dq") or m.group("bare") for m in HEREDOC_RE.finditer(code)]
         elif kind in ("yaml", "compose", "actions") and BLOCK_SCALAR_RE.search(code.rstrip()):
             block_indent = len(raw) - len(raw.lstrip())
     return found

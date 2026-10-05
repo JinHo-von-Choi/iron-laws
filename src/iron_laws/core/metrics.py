@@ -39,6 +39,7 @@ def metrics_record(report: AuditReport, elapsed_s: float, command: str) -> dict[
         "files_scanned": s.total_files_scanned,
         "findings": {"total": s.total_violations, "critical": s.critical_count, "high": s.high_count, "medium": s.medium_count, "low": s.low_count, "review_confidence": review},
         "contract": {"status": s.contract_status, "mode": s.contract_mode, "points_in_scope": sum(states.values()), "gaps": {k: states.get(k, 0) for k in GAP_STATES}, "unknown_rate": round(sum(states.get(k, 0) for k in GAP_STATES) / sum(states.values()), 3) if states else 0.0},
+        "trust": {"analysis_unknown_rate": s.analysis_unknown_rate, "evaluated_rule_language_pairs": s.evaluated_rule_language_pairs, "unverified_rule_language_pairs": s.unverified_rule_language_pairs, "unverified_rule_language_rate": s.unverified_rule_language_rate, "gate_exceeded": len(s.gate_exceeded)},
         "approvals": {"valid": s.approvals_valid, "review": s.approvals_review, "unobserved": s.approvals_unobserved, "rows": {st: sum(1 for c in report.approval_checks if c.status == st) for st in ("valid", "needs_review", "invalid", "unobserved", "resolved", "revoked")}},
         "review_queue_size": queue,
         "diagnostics": {"errors": sum(1 for d in report.diagnostics if d.severity == "error"), "warnings": sum(1 for d in report.diagnostics if d.severity == "warning")},

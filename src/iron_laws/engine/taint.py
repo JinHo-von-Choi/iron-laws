@@ -65,6 +65,7 @@ ASSIGN_TYPES = {
     "augmented_assignment",
     "variable_declarator",
     "assignment_expression",
+    "named_expression",
     "short_var_declaration",
     "assignment_statement",
     "let_declaration",

@@ -18,6 +18,7 @@ from iron_laws.core.metrics import METRICS_SCHEMA
 from iron_laws.core.pilot import (
     PilotStore,
     assign,
+    close_risk,
     flag_risk,
     record_dropout,
     record_review,
@@ -73,7 +74,8 @@ def test_summary_refuses_to_judge_a_small_sample(tmp_path: Path):
     _fill(store, "a", 40, 20, 10)
     result = summarize(store)
     assert result["verdict"] == "insufficient_sample" and not result["sample"]["sufficient"]
-    assert result["comparison"]["median_reduction"] == 0.5  # 값은 보여 주되 판정하지 않는다
+    assert result["comparison"]["median_reduction"] == 0.45  # 총 능동 시간(22분 대 40분) 기준. 값은 보여 주되 판정하지 않는다
+    assert result["comparison"]["review_only"]["median_reduction"] == 0.5  # 순수 검토 시간은 보조 지표다
     assert any("팀" in r for r in result["sample"]["reasons"])
 
 
@@ -83,7 +85,7 @@ def test_summary_evaluates_the_targets_only_when_the_sample_is_sufficient(tmp_pa
         _fill(store, team, 40, 24, 22)  # 팀별 22건, 총 66건
     result = summarize(store)
     assert result["sample"]["sufficient"] and result["verdict"] == "targets_met"
-    assert result["checks"] == {"setup_within_30_minutes": True, "median_reduction_at_least_30_percent": True, "p75_not_worse": True, "no_risk_increase": True}
+    assert result["checks"] == {"setup_within_30_minutes": True, "median_reduction_at_least_20_percent": True, "p75_not_worse": True, "no_risk_increase": True}
     # 총 시간(추가 시간 포함)은 따로 보고된다
     assert result["arms"]["bundle"]["total_minutes"]["median"] == 26
     worse = PilotStore(tmp_path / "w.jsonl")
@@ -143,3 +145,132 @@ def test_metrics_are_opt_in_and_contain_no_paths_code_or_messages(tmp_path: Path
     assert record["findings"]["total"] >= 1 and record["elapsed_s"] >= 0 and "unknown_rate" in record["contract"]
     cli.invoke(app, ["audit", str(project), "--format", "json", "--metrics", str(metrics)])
     assert len(metrics.read_text().splitlines()) == 2
+
+
+def _one_team_fill(store: PilotStore, baseline: tuple[float, float], bundle: tuple[float, float], n: int = 22) -> None:
+    """(검토 분, 추가 분)을 조건별로 채운다. 세 팀이 모두 같은 값을 쓴다."""
+    for team in ("a", "b", "c"):
+        for i in range(n):
+            arm = assign(store, team, f"{team}-{i}", "medium", 1)["arm"]
+            minutes, overhead = baseline if arm == "baseline" else bundle
+            record_review(store, f"{team}-{i}", minutes, setup_minutes=10 if i == 0 else 0, overhead_minutes=overhead)
+
+
+def test_a_review_time_gain_that_costs_more_total_time_is_not_a_success(tmp_path: Path):
+    store = PilotStore(tmp_path / "s.jsonl")
+    _one_team_fill(store, baseline=(40, 0), bundle=(10, 110))  # 검토는 짧아졌지만 총 120분으로 늘었다
+    result = summarize(store)
+    assert result["comparison"]["review_only"]["median_reduction"] == 0.75
+    assert result["comparison"]["median_reduction"] < 0 and result["verdict"] == "targets_not_met"
+    assert result["checks"]["median_reduction_at_least_20_percent"] is False and result["checks"]["p75_not_worse"] is False
+
+
+def test_total_time_p75_worsening_blocks_even_when_the_median_improves(tmp_path: Path):
+    store = PilotStore(tmp_path / "s.jsonl")
+    for team in ("a", "b", "c"):
+        for i in range(22):
+            arm = assign(store, team, f"{team}-{i}", "medium", 2)["arm"]
+            slow_tail = i % 4 == 0
+            record_review(store, f"{team}-{i}", 20 if arm == "bundle" else 40, overhead_minutes=(100 if slow_tail else 0) if arm == "bundle" else 0)
+    result = summarize(store)
+    assert result["comparison"]["median_reduction"] >= 0.2 and result["comparison"]["p75_change"] > 0
+    assert result["checks"]["p75_not_worse"] is False and result["verdict"] == "targets_not_met"
+
+
+def test_setup_time_is_amortized_and_reported_without_changing_the_primary_metric(tmp_path: Path):
+    store = PilotStore(tmp_path / "s.jsonl")
+    _one_team_fill(store, baseline=(40, 0), bundle=(20, 2))
+    result = summarize(store)
+    assert result["arms"]["bundle"]["total_minutes"]["median"] == 22
+    assert result["arms"]["bundle"]["total_minutes_with_amortized_setup"]["median"] > 22
+    assert result["arms"]["baseline"]["total_minutes_with_amortized_setup"]["median"] == 40
+
+
+def test_risk_rates_carry_their_denominators_and_exceptions_are_not_misaccepts(tmp_path: Path):
+    store = PilotStore(tmp_path / "s.jsonl")
+    _one_team_fill(store, baseline=(40, 0), bundle=(20, 2))
+    prs = [r["pr"] for r in store.records() if r["kind"] == "assign" and r["arm"] == "bundle"]
+    flag_risk(store, prs[0], "legitimate_exception", "승인된 예외")
+    result = summarize(store)
+    bundle = result["arms"]["bundle"]
+    assert bundle["legitimate_exceptions"] == 1 and bundle["confirmed_misaccepts"]["count"] == 0
+    assert bundle["confirmed_misaccepts"]["of"] == bundle["risk_accepted_rate"]["of"] > 0
+    assert result["automation"] == "allowed" and result["verdict"] == "targets_met"
+
+
+def test_review_outcome_and_flag_feed_the_same_risk_count(tmp_path: Path):
+    store = PilotStore(tmp_path / "s.jsonl")
+    for team in ("a", "b", "c"):
+        for i in range(22):
+            arm = assign(store, team, f"{team}-{i}", "medium", 3)["arm"]
+            record_review(store, f"{team}-{i}", 40 if arm == "baseline" else 20, outcome="misaccept" if (team, i, arm) == ("a", 0, "bundle") else "")
+    bundle_first = next(r["pr"] for r in store.records() if r["kind"] == "assign" and r["arm"] == "bundle")
+    flag_risk(store, bundle_first, "misaccept", "같은 사건")
+    result = summarize(store)
+    assert result["arms"]["bundle"]["flagged_risks"] == 1  # PR당 한 번만 센다
+    assert result["automation"] == "manual_review_only"
+
+
+def test_outcome_alone_turns_the_automation_off(tmp_path: Path):
+    store = PilotStore(tmp_path / "s.jsonl")
+    arm = assign(store, "a", "pr-1", "small", 1)["arm"]
+    record_review(store, "pr-1", 10, outcome="dangerous_inheritance")
+    result = summarize(store)
+    assert result["automation"] == ("manual_review_only" if arm == "bundle" else "allowed")
+
+
+def test_an_investigation_is_kept_apart_until_it_is_closed(tmp_path: Path):
+    store = PilotStore(tmp_path / "s.jsonl")
+    _one_team_fill(store, baseline=(40, 0), bundle=(20, 2))
+    pr = next(r["pr"] for r in store.records() if r["kind"] == "assign" and r["arm"] == "bundle")
+    flag_risk(store, pr, "misaccept", "확인 중", status="investigating")
+    open_result = summarize(store)
+    assert open_result["verdict"] == "investigation_pending" and open_result["investigating"] == 1
+    assert open_result["automation"] == "pending_investigation" and open_result["arms"]["bundle"]["flagged_risks"] == 0
+    close_risk(store, pr, "misaccept", confirmed=False, note="정당한 예외로 분류")
+    cleared = summarize(store)
+    assert cleared["investigating"] == 0 and cleared["verdict"] == "targets_met" and cleared["arms"]["bundle"]["legitimate_exceptions"] == 1
+    flag_risk(store, pr, "misaccept", "다시 확인 중", status="investigating")
+    close_risk(store, pr, "misaccept", confirmed=True)
+    confirmed = summarize(store)
+    assert confirmed["automation"] == "manual_review_only" and confirmed["verdict"] == "targets_not_met"
+    with pytest.raises(ConfigError):
+        close_risk(store, pr, "misaccept", confirmed=True)  # 조사 중인 사건이 없다
+    with pytest.raises(ConfigError):
+        flag_risk(store, pr, "misaccept", status="maybe")
+
+
+def test_pilot_cli_flag_status_close_and_summary_columns(tmp_path: Path):
+    path = tmp_path / "p.jsonl"
+    arm = cli.invoke(app, ["pilot", "assign", "pr-1", "--team", "a", "--seed", "5", "--store", str(path)]).stdout.strip()
+    assert cli.invoke(app, ["pilot", "record", "pr-1", "--minutes", "12", "--store", str(path)]).exit_code == 0
+    assert cli.invoke(app, ["pilot", "flag", "pr-1", "--kind", "misaccept", "--status", "investigating", "--store", str(path)]).exit_code == 0
+    assert cli.invoke(app, ["pilot", "flag", "pr-1", "--kind", "misaccept", "--status", "maybe", "--store", str(path)]).exit_code == 2
+    summary = json.loads(cli.invoke(app, ["pilot", "summary", "--json", "--store", str(path)]).stdout)
+    assert summary["verdict"] == "investigation_pending" and summary["investigating"] == 1
+    assert cli.invoke(app, ["pilot", "close", "pr-1", "--kind", "misaccept", "--confirmed", "--store", str(path)]).exit_code == 0
+    assert cli.invoke(app, ["pilot", "close", "pr-1", "--kind", "misaccept", "--confirmed", "--store", str(path)]).exit_code == 2
+    closed = json.loads(cli.invoke(app, ["pilot", "summary", "--json", "--store", str(path)]).stdout)
+    assert closed["investigating"] == 0 and closed["automation"] == ("manual_review_only" if arm == "bundle" else "allowed")
+    assert "주 지표는 총 능동 시간" in cli.invoke(app, ["pilot", "summary", "--store", str(path)]).stdout
+
+
+@pytest.mark.parametrize(("status", "expected_exit"), [("none", 0), ("investigating", 1), ("confirmed", 1)])
+def test_pilot_state_closes_the_review_bundle_gate(tmp_path: Path, status: str, expected_exit: int):
+    """파일럿에서 오승인이 확인되거나 조사 중이면 review-bundle은 필수 행동을 내어 CI 종료코드를 바꾼다. 문자열만 바꾸고 통과시키지 않는다."""
+    project = tmp_path / "proj"
+    project.mkdir()
+    (project / "a.py").write_text("def f():\n    return 1\n", encoding="utf-8")
+    store = tmp_path / "pilot.jsonl"
+    for index in range(2):  # 같은 팀·층에서 두 번 배정하면 baseline·bundle이 한 번씩 나온다
+        arm = assign(PilotStore(store), "a", f"pr-{index}", "small", 1)["arm"]
+        if arm == "bundle":
+            bundle_pr = f"pr-{index}"
+    if status != "none":
+        flag_risk(PilotStore(store), bundle_pr, "misaccept", "시험", status="investigating" if status == "investigating" else "confirmed")
+    result = cli.invoke(app, ["review-bundle", str(project), "--pilot-store", str(store), "--format", "json"])
+    assert result.exit_code == expected_exit, result.stdout + result.stderr
+    kinds = [a["kind"] for a in json.loads(result.stdout)["actions"]]
+    assert ("manual_review_required" in kinds) == (status != "none")
+    without = cli.invoke(app, ["review-bundle", str(project), "--format", "json"])
+    assert without.exit_code == 0  # 파일럿 기록을 주지 않으면 기존 동작 그대로다

@@ -63,60 +63,76 @@ pip install git+https://github.com/JinHo-von-Choi/iron-laws.git
 ## 빠른 시작
 
 ```bash
-iron-laws check .                       # 터미널에서 점검 (HIGH 이상이 있으면 종료코드 1)
-iron-laws fix-prompt .                  # 코딩 AI에게 붙여넣을 수정 지시문 만들기
-iron-laws audit . --format markdown -o report.md   # 49개 항목별 점검 현황이 포함된 보고서
+iron-laws check .                          # 점검. HIGH 이상이 있으면 종료코드 1
+iron-laws fix-prompt .                     # 코딩 AI에게 붙여넣을 수정 지시문
+iron-laws audit . --format markdown -o report.md     # 행안부 49개 항목별 점검 현황 보고서
 iron-laws audit . --format sarif -o iron-laws.sarif  # GitHub Code Scanning 연동
-iron-laws explain IL-501                # 규칙 하나를 쉬운 말로 설명
-iron-laws coverage                      # 행안부 49개 항목 중 무엇을 점검하는지 확인
-iron-laws rules                         # 탑재된 규칙 전체
-iron-laws init                          # .iron-laws.yml 설정 파일 생성
-iron-laws support                       # 언어·규칙별 구현·검증 현황 (파서 있음 ≠ 검증됨)
-iron-laws baseline create .             # 현재 지적을 승인된 부채로 기록
-iron-laws check . --baseline .iron-laws-baseline.json   # 새로 생긴 지적만 판정
-iron-laws check . --changed-since origin/main           # 바뀐 파일의 지적만 표시 (전체 점검과 정기 대조)
-iron-laws feedback add IL-501 src/a.py:3 --verdict false-positive --minutes 10   # '확인 필요' 검토 결과 기록
-iron-laws check . --contract .iron-laws-contract.yml    # 근거 계약: 요구한 분석 근거가 충족됐는지(계약 파일은 직접 작성, 예시는 docs/PATCH_VERIFICATION.md §1)
-iron-laws verify-patch ./proj --patch ../fix.diff --finding IL-504@app.py:8 --runner docker --image iron-laws-verify:py313 \
-  --test-cmd python --test-cmd -m --test-cmd pytest --test-cmd -q -o ../receipt.json   # AI 패치 검증(docker와 미리 만든 이미지 필요, 아래 참고)
-iron-laws regression propose . --finding IL-504@app.py -o spec.yml    # 결함을 구별하는 회귀시험 후보(확정 전)
-iron-laws approvals add . --finding IL-504@app.py --reason "사유" --store 승인기록.jsonl   # 사람의 검토 승인 기록
-iron-laws check . --approvals 승인기록.jsonl                          # 전제가 유지되는 유효한 승인만 받아들임
-iron-laws audit . --format json -o ../report.json && iron-laws evidence verify ../report.json   # 보고서 모순 검증(1.3)
-iron-laws review-bundle . --approvals 승인기록.jsonl                  # 변경이 승인 전제에 준 영향을 한 묶음으로(1.3)
-iron-laws check . --metrics ../metrics.jsonl                          # 건수·시간만 로컬에 기록(선택, 1.3)
+iron-laws explain IL-501                   # 규칙 하나를 쉬운 말로 설명
+iron-laws rules                            # 규칙 목록
+iron-laws coverage                         # 행안부 49개 항목 중 점검하는 것
+iron-laws support                          # 언어·규칙별 구현·검증 현황
+iron-laws init                             # .iron-laws.yml 생성
 ```
 
-- `--finding`의 위치(`:8`)는 `iron-laws check` 출력의 줄 번호를 그대로 쓰십시오(`RULE@경로:줄` 또는 `RULE@경로`).
-- `verify-patch`는 docker와 미리 만든 시험 이미지가 필요합니다(`docker build -t iron-laws-verify:py313 .`, Dockerfile은 [PATCH_VERIFICATION.md](docs/PATCH_VERIFICATION.md) §4). `--test-cmd` 없이는 시험을 실행하지 않아 `판정 불가`(종료코드 2)로 끝납니다.
-- patch·보고서·Receipt·승인 기록은 점검 폴더 **밖**에 두십시오. 안에 두면 다음 점검 대상에 들어가고 원본 해시가 달라져 `--replay`가 재현되지 않습니다.
+기존 프로젝트에 도입할 때는 지적의 범위를 줄여 씁니다.
 
-종료코드는 명령마다 같은 뜻을 씁니다.
+```bash
+iron-laws baseline create .                              # 현재 지적을 기준선으로 기록
+iron-laws check . --baseline .iron-laws-baseline.json    # 새로 생긴 지적만 판정
+iron-laws check . --changed-since origin/main            # 바뀐 파일의 지적만 표시
+iron-laws feedback add IL-501 src/a.py:3 --verdict false-positive --minutes 10   # '확인 필요' 검토 결과 기록
+```
+
+AI가 만든 수정의 검증과 승인 기록은 아래 명령을 씁니다. 설명은 다음 절에 있습니다.
+
+```bash
+iron-laws check . --contract .iron-laws-contract.yml   # 요구한 분석 근거가 충족됐는지(계약 예시: docs/PATCH_VERIFICATION.md §1)
+iron-laws verify-patch ./proj --patch ../fix.diff --finding IL-504@app.py:8 \
+  --runner docker --image iron-laws-verify:py313 \
+  --test-cmd python --test-cmd -m --test-cmd pytest --test-cmd -q -o ../receipt.json
+iron-laws regression propose . --finding IL-504@app.py -o spec.yml   # 결함을 구별하는 회귀시험 후보
+iron-laws approvals add . --finding IL-504@app.py --reason "사유" --store 승인기록.jsonl
+iron-laws check . --approvals 승인기록.jsonl           # 전제가 유지되는 승인만 받아들임
+iron-laws review-bundle . --approvals 승인기록.jsonl   # 변경이 승인 전제에 준 영향 한 묶음
+iron-laws audit . --format json -o ../report.json && iron-laws evidence verify ../report.json
+iron-laws check . --max-analysis-unknown-rate 0.3 --max-unverified-rule-language-rate 0.5
+```
+
+- `--finding`의 줄 번호는 `iron-laws check` 출력의 값을 그대로 씁니다(`RULE@경로:줄` 또는 `RULE@경로`).
+- `verify-patch`는 docker와 시험 이미지가 필요합니다(`docker build -t iron-laws-verify:py313 .`, Dockerfile은 [PATCH_VERIFICATION.md](docs/PATCH_VERIFICATION.md) §4). `--test-cmd`가 없으면 시험을 실행하지 않고 `판정 불가`(종료코드 2)로 끝납니다.
+- patch·보고서·Receipt·승인 기록은 점검 폴더 밖에 둡니다. 안에 두면 다음 점검 대상이 되고 원본 해시가 달라집니다.
+
+종료코드는 명령마다 같은 뜻입니다.
 
 | 종료코드 | `check`·`audit` | `evidence verify`·`review-bundle`·`approvals status`·`verify-patch` |
 |---|---|---|
 | `0` | 통과 | 모순 없음 / 필수 행동 없음 / 모든 승인 유효 / 검증 항목 통과 |
-| `1` | 설정한 심각도 이상의 지적 발견 | 모순 발견 / 필수 행동 있음 / 재검토할 승인 있음 / 검증 실패 |
+| `1` | 설정한 심각도 이상의 지적, 또는 신뢰 지표 상한 초과 | 모순 발견 / 필수 행동 있음 / 재검토할 승인 있음 / 검증 실패 |
 | `2` | 잘못된 입력·설정, 점검 대상 0개, 점검이 끝까지 되지 않음(규칙 오류·파일 읽기 실패·내부 모순) | 판정 불가(지원하지 않는 버전·누락·격리 실패)·입력 오류 |
 
-불완전한 점검은 등급과 통과를 확정하지 않고 보고서의 `diagnostics`에 사유를 남깁니다. 없는 경로, 등록되지 않은 규칙 ID, 범위를 벗어난 제한값, 점검 대상 파일이 0개인 경우는 통과로 처리하지 않습니다(비어 있는 것이 의도라면 `--allow-empty`). `--approvals`나 `--baseline`을 쓰면 통과 여부는 신규·재검토 지적만으로 판정하므로 등급이 F여도 통과일 수 있습니다. `fix-prompt`는 지시문 생성이 목적이라 지적이 있어도 종료코드 0이므로 배포 관문에는 `check`나 `audit`를 쓰십시오.
+- 불완전한 점검은 등급과 통과를 확정하지 않고 `diagnostics`에 사유를 남깁니다. 없는 경로, 등록되지 않은 규칙 ID, 범위를 벗어난 제한값, 점검 대상이 0개인 경우도 통과가 아닙니다(의도한 경우 `--allow-empty`).
+- `--approvals`·`--baseline`을 쓰면 신규·재검토 지적만으로 통과를 판정하므로 등급이 F여도 통과일 수 있습니다.
+- `fix-prompt`는 지시문 생성이 목적이라 지적이 있어도 종료코드 0입니다. 배포 관문에는 `check`나 `audit`을 씁니다.
 
 ---
 
-## AI가 만든 패치의 검증과 승인 근거
+## AI가 만든 수정의 검증과 승인 근거
 
-점검 결과를 AI에게 고치게 한 뒤, **무엇을 확인했고 무엇을 확인하지 못했는지**를 승인 판단에서 사라지지 않게 남기는 기능입니다. 자세한 설명과 안전 경계, 측정한 것·측정하지 못한 것은 [docs/PATCH_VERIFICATION.md](docs/PATCH_VERIFICATION.md)에 있습니다.
+AI가 고친 코드를 승인할 때 "무엇을 확인했고 무엇을 확인하지 못했는지"가 사라지지 않게 남기는 기능입니다. 안전 경계와 측정 결과는 [docs/PATCH_VERIFICATION.md](docs/PATCH_VERIFICATION.md)에 있습니다.
 
-- **근거 계약과 검사 공백 장부**: 검사가 끝났다는 것과 요구한 근거가 충족됐다는 것을 구별합니다. 장부는 파일과 보안 관심 지점(호출)마다 근거 상태를 적은 표입니다. 입력 출처를 확정하지 못한 지점(`해석 미확정`)을 깨끗함으로 바꾸지 않습니다. (Python의 명령 실행·경로 접근·SQL 조립 세 계열)
-- **패치 검증과 Receipt**(Receipt는 검증 결과를 담은 기록 파일, `verify-patch -o`): 원본과 후보를 같은 정책으로 검사하고, 시험 삭제·skip 증가·무시 주석·정책 약화 같은 우회 변경을 따로 표시합니다. 경고가 사라졌다는 이유만으로 수정으로 인정하지 않습니다. 시험은 자격증명 없는 일회용 격리 환경에서만 실행하며, 격리를 얻지 못하면 호스트에서 대신 실행하지 않고 `판정 불가`로 남깁니다.
-- **결함을 구별하는 회귀시험**: 원본에서 결함 때문에 실패 → 후보에서 통과 → 수정을 되돌린 mutant에서 다시 실패를 세 번 반복해 확인합니다.
-- **승인 기록**: 사유·전제를 남기고, 코드가 승인 전제(호출자·흐름·정제 함수·접근 범위·규칙 의미)를 바꾸면 관련 승인만 다시 검토하게 합니다. 복제된 취약 코드는 승인을 물려받지 않습니다.
+| 기능 | 하는 일 |
+|---|---|
+| 근거 계약과 검사 공백 장부 | 점검이 끝난 것과 요구한 근거가 충족된 것을 구별합니다. 명령 실행·경로 접근·SQL 조립 호출마다 근거 상태를 적고, 입력 출처를 확정하지 못한 호출을 깨끗함으로 바꾸지 않습니다. 같은 줄의 다른 호출이 낸 지적은 근거로 쓰지 않습니다. |
+| 패치 검증(`verify-patch`) | 원본과 수정본을 같은 정책으로 점검하고, 시험 삭제·skip 증가·무시 주석·정책 약화 같은 우회 변경을 따로 표시합니다. 시험은 자격증명 없는 일회용 격리 환경에서만 돌리며, 격리를 얻지 못하면 `판정 불가`입니다. 결과는 Receipt 파일에 남습니다. |
+| 수정이 만든 부채 | 수정 전후의 지적을 하드코딩·구조 붕괴·삼킨 예외·중복 헬퍼·타입 회피별로 해결·유지·신규·이동으로 나눕니다. 지적을 고치지 않고 `except: pass`나 `# type: ignore`로 가린 수정은 "수정 지점과 같은 함수의 신규 부채"로 보입니다. 표시만 하며 통과·실패에는 쓰이지 않습니다. |
+| 회귀시험 | 원본에서 결함 때문에 실패하고, 수정본에서 통과하고, 수정을 되돌린 코드에서 다시 실패하는지 세 번 반복해 확인합니다. |
+| 승인 기록 | 사유와 전제를 남기고, 호출자·흐름·정제 함수·접근 범위·규칙 의미가 바뀌면 해당 승인만 다시 검토하게 합니다. 복제된 취약 코드와 전제가 바뀐 이동은 승인을 물려받지 않습니다. |
+| 검토 묶음(`review-bundle`) | 변경이 승인 전제에 준 영향을 승인별 유지·무효화·판정 불가와 이유로 보여 줍니다. 호출 대상을 알 수 없는 경계와 점검하지 못한 파일은 영향 없음으로 보지 않고 재검토 범위를 넓힙니다. |
+| 독립 검증기(`evidence verify`) | 보고서와 Receipt가 서로 모순되는지 엔진과 별도의 코드로 확인합니다. 없는 지적을 가리키거나, 근거 없이 충족이라 하거나, 만료·복제본의 승인을 쓴 보고서를 잡습니다. `check`·`audit`도 내보내기 전에 같은 검증을 거치고, 모순이 있으면 통과가 아니라 점검 불완전(종료코드 2)입니다. ([EVIDENCE_VERIFICATION.md](docs/EVIDENCE_VERIFICATION.md)) |
+| 신뢰 지표와 상한 | 보고서에 `analysis_unknown_rate`(해석을 끝내지 못한 보안 관심 지점의 비율)와 `unverified_rule_language_rate`(양성·음성 시험이 모두 없는 규칙×언어 조합의 비율)를 남깁니다. 미검증 조합이 있으면 통과 표시에 "단, 미검증 조합 포함"이 붙고, 상한 옵션을 넘으면 통과 대신 재검토(종료코드 1)입니다. |
+| 파일럿 기록 | `iron-laws pilot`과 `--metrics`로 팀의 검토 시간과 위험 수용을 로컬에 기록합니다(경로·코드는 저장하지 않으며 `--metrics`는 기본 꺼짐). 주 지표는 총 능동시간입니다. 확인된 오승인이나 조사 중인 사건이 있으면 `review-bundle --pilot-store`가 자동 판정을 닫고 수동 검토(종료코드 1)로 돌립니다. |
 
-- **독립 검증기(1.3)**: 점검 보고서와 검증 기록이 서로 모순되지 않는지 엔진과 별도의 코드로 확인합니다. 없는 지적을 가리키거나, 근거 없이 '근거 충족'이라 하거나, 만료·복제본의 승인을 유효로 쓴 보고서를 잡아냅니다. `iron-laws evidence verify report.json [--checkout 다른_폴더]`. `check`·`audit`도 내보내기 전에 같은 검증을 거치며, 모순이 있으면 통과로 내보내지 않고 점검 불완전(종료코드 2)으로 표시합니다. ([docs/EVIDENCE_VERIFICATION.md](docs/EVIDENCE_VERIFICATION.md))
-- **검토 묶음(1.3)**: `iron-laws review-bundle . --approvals approvals.jsonl`은 이번 변경이 어떤 승인 전제를 건드렸는지와 각 승인의 상태·이유를 한 묶음으로 보여 줍니다. 승인 상태는 유지, 무효화(전제가 바뀌어 다시 검토해야 함), 판정 불가 중 하나입니다. 다시 할 일과 비어 있는 곳도 함께 나옵니다. 호출 대상을 알 수 없는 경계와 점검하지 못한 파일은 영향이 없다고 보지 않고 재검토 범위를 넓혀 표시합니다.
-- **파일럿 준비(1.3)**: `iron-laws pilot ...`과 `--metrics`(건수·시간만, 경로·코드 없음, 기본 꺼짐)로 팀 단위 검토 시간·위험 수용을 로컬에서 기록합니다. 이 저장소는 파일럿을 수행하지 않았습니다.
-
-이 기능의 '통과'는 지정된 검사 계약을 충족했다는 뜻이며 안전성, 취약점 부재, 완전한 기능 동등성을 증명하지 않습니다. 보고서에서 PASS는 ① 필수 계약이 적용 대상이고 ② 필수 검사가 지정한 코드·정책에 대해 완료됐으며 ③ 요구 근거가 존재하고 유효하며 ④ 차단할 위반이 없다는 뜻입니다. 분석 한계와 미실행은 결과 옆에 표시합니다.
+'통과'는 지정한 검사 계약을 충족했다는 뜻입니다. 안전성, 취약점 없음, 동작의 완전한 동등성을 증명하지 않습니다. PASS는 ① 필수 계약이 적용 대상이고 ② 필수 검사가 지정한 코드·정책에 대해 끝났고 ③ 요구 근거가 있고 유효하며 ④ 차단할 위반이 없다는 뜻이며, 분석 한계와 미실행은 결과 옆에 표시합니다.
 
 ---
 
@@ -203,7 +219,7 @@ jobs:
 ## 한계
 
 - 실행 순서를 따르는 흐름 분석(분기·반복·예외를 합쳐서 판정)은 함수 안에서 합니다. 같은 파일의 도우미 함수는 호출 깊이 4단계까지 따라가고, **Python은 import를 따라 다른 파일의 함수까지**(시범 지원, 해석 횟수 상한 있음) 따라갑니다. 그 밖의 언어에서 파일 사이 호출로 전달되는 입력은 놓치거나 확인이 필요한 지적(`확인 필요`)으로만 보고합니다. 정제 함수는 자기가 막는 문맥(HTML·SQL·셸·경로 등)에서만 인정합니다.
-- 패치 검증·회귀시험·승인 추적·변형 사례집의 표본 평가는 구현자가 직접 분류한 것이며(평가용 holdout도 구현자가 만들었습니다) 독립 검토나 실사용 파일럿은 아직 없습니다([docs/PATCH_VERIFICATION.md](docs/PATCH_VERIFICATION.md) §6~7).
+- 정확도 측정에 쓴 표본은 개발팀이 직접 분류한 것입니다. 외부 전문가의 독립 평가와 실제 팀 도입 결과는 아직 없습니다([docs/PATCH_VERIFICATION.md](docs/PATCH_VERIFICATION.md) §6).
 - 안전 조건(허용 목록 검사·경로 범위 검사)은 검사가 모든 경로에서 싱크 앞에 실행되고 검사한 값이 싱크까지 바뀌지 않을 때만 인정합니다. 갈래마다 따로 검사하는 코드(한 갈래는 허용 목록, 다른 갈래는 범위 검사)처럼 경로별로 안전한 경우는 알아보지 못해 확정 지적이 남을 수 있습니다. 독립 검증기는 구조적 모순만 잡고 엔진이 일관되게 만든 의미 오류는 잡지 못합니다.
 - 통과 결과만으로 배포를 승인하지 마십시오. 기존 테스트, 코드 검토, 다른 보안 점검과 함께 쓰는 보조 도구입니다.
 - 비밀값이 들어 있는 코드 줄은 모든 보고서와 AI 수정 지시문에서 값을 가려서(`****`) 출력합니다. 다만 규칙이 비밀로 인식하지 못한 값까지 가려 주는 것은 아니므로 지시문을 외부 AI에 붙여넣기 전에 한 번 읽어 보십시오.

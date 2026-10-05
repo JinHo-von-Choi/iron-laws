@@ -80,6 +80,7 @@ CONFIG_AND_TEMPLATE_EXTENSIONS = [
     ".cshtml",
     ".gradle",
     ".md",
+    ".mdc",
 ]
 # 언어 정의에 있는 확장자는 모두 기본 점검 대상이다. 두 목록이 어긋나 파일이 조용히 빠지는 일을 막는다.
 DEFAULT_EXTENSIONS = [*EXTENSION_TO_LANG, *CONFIG_AND_TEMPLATE_EXTENSIONS]
@@ -97,6 +98,8 @@ SPECIAL_FILE_PATTERNS = [
     ".python-version",
     ".java-version",
     ".tool-versions",
+    ".cursorrules",
+    ".windsurfrules",
 ]
 
 

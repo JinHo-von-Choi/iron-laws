@@ -27,6 +27,8 @@ CASE_SOURCES = [
     ("tests.test_regressions", "CASES"),
     ("tests.test_review_rules", "CASES"),
     ("tests.test_review_findings", "FLOW_CASES"),
+    ("tests.test_ai_attack_cases", "CASES"),
+    ("tests.test_performance_cases", "CASES"),
 ]
 ALIASES = {"tsx": "typescript"}
 

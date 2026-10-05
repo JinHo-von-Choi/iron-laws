@@ -36,6 +36,23 @@
 - 계약 파일이 이번 변경에 포함되어 있으면(`--changed-since`) 후보 변경이 정책을 바꾼 것이므로 `policy_change_review`로 표시합니다.
 - 장부의 한계: 관심 지점은 호출 이름으로 찾습니다. import 별칭, `getattr` 같은 동적 호출, 프레임워크가 감춘 호출은 지점으로 발견되지 않을 수 있습니다.
 
+계약 파일은 직접 작성합니다(`init`은 만들지 않습니다). 최소 예시:
+
+```yaml
+# .iron-laws-contract.yml
+version: 1
+mode: block            # report(기본): 공백을 모으기만 함 / block: 필수 계열의 미충족이면 실패
+scope: all             # changed: --changed-since로 바뀐 파일의 지점만 판정
+families:              # command / path / sql. 생략하면 셋 다 필수
+  command: {required: true}
+  path: {required: true, block_on: [unresolved, unsupported]}   # 차단할 상태
+  sql: {required: false}
+include_tests: false
+trusted_sources: [env]   # 값을 배포자가 정한다고 믿는 출처
+# exclude_paths: ["legacy/*"]
+# exclusion_reason: "제외 사유와 승인 전제"   # exclude_paths를 쓰면 필수
+```
+
 ```bash
 iron-laws check . --contract .iron-laws-contract.yml --changed-since origin/main
 iron-laws audit . --format json     # coverage_ledger: 판정·분모·해시
@@ -45,8 +62,10 @@ CLI·JSON·SARIF(`runs[].properties.coverageLedger`, invocation notification)·�
 
 ## 2. 패치 검증과 Receipt (`verify-patch`)
 
+준비: docker가 있어야 하고 시험 이미지를 미리 만들어 둡니다(§4의 Dockerfile, `docker build -t iron-laws-verify:py313 .`). 시험 중에는 이미지를 내려받지 않습니다(`--pull never`). `--finding`의 줄 번호는 `check` 출력의 위치를 씁니다. patch·Receipt·승인 기록은 점검 폴더 **밖**에 두십시오(안에 두면 원본 해시가 달라져 `--replay`가 재현되지 않습니다).
+
 ```bash
-iron-laws verify-patch ./proj --patch fix.diff --finding IL-504@app.py:6 \
+iron-laws verify-patch ./proj --patch fix.diff --finding IL-504@app.py:8 \
   --runner docker --image iron-laws-verify:py313 \
   --test-cmd python --test-cmd -m --test-cmd pytest --test-cmd -q -o receipt.json
 iron-laws verify-patch ./proj --patch fix.diff --replay receipt.json   # 같은 입력·조건으로 깨끗한 작업영역에서 재실행
@@ -86,7 +105,7 @@ iron-laws verify-patch ./proj --patch fix.diff --finding ... --regression spec.y
 - 사람이 확정한 명세만 신뢰된 harness가 실행합니다. harness는 실제 셸·네트워크·작업영역 밖 파일·DB에 접근하지 않고 mock sink(`os.system`·`subprocess`·`open`·커서 등)에서 호출을 **기록만** 합니다.
 - 검증 순서: ① 원본에서 결함 때문에 실패(세 번 반복 일치), ② 정상 대조군 통과, ③ 후보에서 통과하고 정상 대조군 유지(세 번 반복 일치), ④ 수정 hunk를 되돌리거나 추가한 문장을 지운 mutant 중 유효한 것에서 다시 실패(killed / survived / invalid 구분).
 - 환경 실패(import 오류·의존성 누락·문법 오류)는 결함 재현으로 세지 않습니다. 정상 입력까지 막는 수정(위험 기능을 전부 막는 것)은 정답이 아닙니다. 원본이 재현되지 않거나 의미 있는 mutant가 없으면 시험 후보로 남기고 통과로 보지 않습니다.
-- **변형 입력(1.3)**: 명세의 `input.variants`는 같은 결함을 건드리는 다른 입력입니다(명령: `&&`·`|`·`$()`·백틱, 경로: 절대 경로·깊은 `../`, SQL: 따옴표 없는 `1 OR 1=1` 등). 기본 입력이 통과한 뒤, 원본에서 재현되는 변형 입력이 후보에서도 재현되면 `fail`입니다(수정이 시험 입력 하나에만 통한다). 원본에서 재현되지 않는 변형은 적용되지 않는 입력으로 건너뛰고 `evidence.variants.inapplicable`에 남깁니다. 변형은 시험 작성에 쓰지 않은 반례 역할이며, 제안은 사람이 확인합니다.
+- **변형 입력(1.3)**: 명세의 `input.variants`는 같은 결함을 건드리는 다른 입력입니다(명령: `&&`·`|`·`$()`·백틱, 경로: 절대 경로·깊은 `../`, SQL: 따옴표 없는 `1 OR 1=1` 등). 기본 입력이 통과한 뒤, 원본에서 재현되는 변형 입력이 후보에서도 재현되면 `fail`입니다(수정이 시험 입력 하나에만 통한다). 원본에서 재현되지 않는 변형은 적용되지 않는 입력으로 건너뛰고 `evidence.variants.inapplicable`에 남깁니다. 변형 입력은 시험을 쓸 때 쓰지 않은 반례이며, 제안된 목록은 사람이 확인합니다.
 - 시험의 입력·기대 결과는 **취약한 원본 코드와 계열별 입력 목록**에서 만들며 수정 구현에서 복사하지 않습니다. 수정이 결과를 그대로 베낀 assertion으로 같은 오류를 반복하는 것을 막기 위해, 판정은 후보를 실제로 실행해 mock sink가 기록한 호출만 봅니다.
 - 정적 분석기의 탐지 결과만 assertion으로 쓰는 시험은 만들지 않습니다. 시험은 코드를 실제로 실행해 관측한 동작만 판정합니다.
 - 한계: 후보 코드가 같은 프로세스 안에서 harness의 결과를 조작하는 것까지 막지 못합니다. 살아남은 mutant는 수정과 무관하거나 기능적으로 동등한 변경일 수 있어 사람이 검토해야 합니다.
@@ -122,7 +141,7 @@ RUN pip install --no-cache-dir pytest
 iron-laws approvals add . --finding IL-504@app.py --reason "관리자 전용·입력 검증됨" --reviewer 홍길동 \
   --expires 2027-03-31 --receipt receipt.json --minutes 12 --store /trusted/path/approvals.jsonl
 iron-laws check . --approvals /trusted/path/approvals.jsonl          # 유효한 승인만 받아들임
-iron-laws approvals status .   --store ...                            # 승인별 유효성: 유효 / 재검토 필요 / 해소 / 미확인 / 철회
+iron-laws approvals status .   --store ...                            # 승인별 유효성: 유효 / 재검토 필요 / 해소 / 미확인 / 철회 / 검증 실패(invalid)
 iron-laws approvals queue .    --store ...                            # 검토 대기열
 iron-laws approvals stats      --store ...                            # 검토 시간 계측
 ```
@@ -144,11 +163,11 @@ iron-laws approvals stats      --store ...                            # 검토 �
 - 기록은 추가 전용 JSONL이며 각 줄이 앞 줄의 해시를 이어받습니다(`approvals verify`). 이는 변조 탐지용입니다. 검토자 이름은 인증되지 않은 표기입니다. 기록 파일을 바꿀 수 있는 공격자가 있는 환경에서는 승인 인증을 주장하지 않으며, 조직 서명은 후속 범위입니다. 기록 파일은 후보 변경이 쓸 수 없는 위치에 두십시오(저장소 안에 있으면 `verify-patch`가 원본으로 되돌려 실행하고 우회 변경으로 표시합니다).
 - 보존기간과 삭제: `approvals forget`(삭제 표시), `approvals prune --before DATE --yes`(만료·철회·삭제 표시된 기록을 파일에서 지우고 해시 연결을 새로 만듦, 되돌릴 수 없음). 프로젝트별 검토 판단을 동의 없이 자동 수집하거나 외부로 보내지 않습니다.
 - 영향 분석은 구문 구조와 호출 요약을 쓰는 보수적 판정이며 의미 동등성을 주장하지 않습니다. Python 외 언어는 같은 파일 안 호출만 요약합니다.
-- **같은 이름은 같은 대상이 아닙니다(1.3).** 호출자·호출 함수는 `경로::이름`으로 비교하므로, 다른 파일의 같은 이름 함수(예: 같은 `handle` 라우트)가 새로 호출하면 새 호출자로 봅니다. 독스트링만 바뀐 변경은 전제를 바꾸지 않습니다.
+- **같은 이름의 함수(1.3).** 호출자·호출 함수는 `경로::이름`으로 비교하므로, 다른 파일의 같은 이름 함수(예: 같은 `handle` 라우트)가 새로 호출하면 새 호출자로 봅니다. 독스트링만 바뀐 변경은 전제를 바꾸지 않습니다.
 - **동적 호출 경계(1.3).** 호출 대상을 정적으로 알 수 없는 호출(`getattr`·`eval`·`handlers[name](...)`·호출 결과의 호출)이 흐름 안에 있으면 승인 기록에 경계로 남깁니다. 이번 변경에 그 대상이 될 수 있는 다른 Python 파일이 있으면 영향 없음으로 보지 않고 재검토 범위를 넓힙니다. 변경 정보가 없으면 승인은 유지하되 검토 묶음의 '남은 공백'에 경계를 표시합니다.
-- **검증 입구 통일(1.3).** `check`·`audit`·`approvals status`·`approvals verify`·`approvals prune`·검토 묶음이 같은 검증(해시 연결 + 기록별 형식: 유효기간 날짜·생성 시각·승인 ID·대상·정책·사유)을 씁니다. 하나라도 실패한 승인은 `invalid`(검증 실패)로 표시하고 유효한 승인으로 받아들이지 않으며, 파일 전체의 해시 연결이 깨졌으면 모든 승인이 `invalid`입니다. `prune`은 깨진 기록을 정리하지 않고, 지우는 조건은 하나(만료·철회·삭제 표시 **그리고** `--before` 이전에 만든 승인)입니다.
+- **승인 검증을 한 곳으로 모음(1.3).** `check`·`audit`·`approvals status`·`approvals verify`·`approvals prune`·검토 묶음이 같은 검증(해시 연결 + 기록별 형식: 유효기간 날짜·생성 시각·승인 ID·대상·정책·사유)을 씁니다. 하나라도 실패한 승인은 `invalid`(검증 실패)로 표시하고 유효한 승인으로 받아들이지 않으며, 파일 전체의 해시 연결이 깨졌으면 모든 승인이 `invalid`입니다. `prune`은 깨진 기록을 정리하지 않고, 지우는 조건은 하나(만료·철회·삭제 표시 **그리고** `--before` 이전에 만든 승인)입니다.
 - **검토 묶음(1.3).** `iron-laws review-bundle . --approvals ...`는 바뀐 전제, 승인별 유지·무효화·판정 불가와 각각의 이유·근거 ID, 필수 행동, 남은 공백, 재현 정보를 구조화된 근거에서 결정적으로 만듭니다(AI 요약을 판정 근거로 쓰지 않음). 5개 승인 중 2개만 영향을 받으면 재검토 이유 2개와 유지 이유 3개가 모두 나옵니다. 기록된 정책(계약·설정)이 현재와 다르면 승인은 재검토 대상이고, 규칙 집합·도구 버전의 차이는 '바뀐 전제'에 표시하되 규칙별 `version`이 바뀐 승인만 재검토를 강제합니다. 종료코드: 0 필수 행동 없음, 1 필수 행동 있음, 2 점검 불완전·입력 오류.
-- **파일럿 준비(1.3).** `pilot assign|record|flag|dropout|summary`는 같은 PR을 두 조건에 노출하지 않고(팀·난도층별 크기 2 블록의 무작위 순서), 검토 시간·추가 시간·위험 수용을 로컬 JSONL에 남기며, 표본이 부족하면 판정하지 않습니다. `--metrics`는 건수·시간·식별 해시만 한 줄로 남깁니다(경로·코드·메시지 없음, 기본 꺼짐). 이 저장소는 파일럿을 수행하지 않았습니다.
+- **파일럿 준비(1.3).** `pilot assign|record|flag|dropout|summary`는 같은 PR을 두 조건에 모두 배정하지 않으며(팀·난도층별로 두 건마다 두 조건이 한 번씩 나오고 그 순서만 무작위), 검토 시간·추가 시간·위험 수용을 로컬 JSONL에 남기며, 표본이 부족하면 판정하지 않습니다. `--metrics`는 건수·시간·식별 해시만 한 줄로 남깁니다(경로·코드·메시지 없음, 기본 꺼짐). 이 저장소는 파일럿을 수행하지 않았습니다. 사용 순서: `pilot assign PR-1 --team A`(조건 출력) → 검토 후 `pilot record PR-1 --minutes 12` → `pilot summary`(표본이 부족하면 판정하지 않음).
 
 ## 6. 측정한 것과 측정하지 못한 것
 
@@ -166,7 +185,7 @@ iron-laws approvals stats      --store ...                            # 검토 �
 
 **아직 하지 못한 것(계획에는 있으나 이 저장소의 시험으로는 확인할 수 없는 것):**
 - 전문가가 분류한 독립 표본(1.3의 holdout은 구현자가 직접 만든 것이라 독립 검토가 아니다)
-- 동의한 3~5개 팀의 교차 배정 파일럿(1.3은 도구만 준비했다)(검토 시간 중앙값 30% 감소, 해로운 수정 수용, 신규 오탐, 검토 포기, 실행비 측정)
+- 동의한 3~5개 팀의 교차 배정 파일럿. 1.3은 도구만 준비했습니다. 측정할 항목은 검토 시간 중앙값 30% 감소, 해로운 수정 수용, 신규 오탐, 검토 포기, 실행비입니다
 - Semgrep·CodeQL 등 경쟁 도구와의 동일 조건 비교
 - 이 도구의 효과가 검증 대상 도구들과의 결합에서만 나타난다는 차별 가설의 입증. 이 문서는 독점성이나 우월한 탐지 성능을 주장하지 않습니다.
 - Windows·macOS에서의 격리 실행, microVM 수준의 격리

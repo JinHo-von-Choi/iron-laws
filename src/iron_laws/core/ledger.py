@@ -319,41 +319,71 @@ def _build_callers(sources: list[SourceFile]) -> dict[tuple[str, int], list[tupl
     return callers
 
 
-def _classify(src: SourceFile, call: Call, family: str, ctx: _Context, tainted_lines: set[tuple[str, int]]) -> tuple[str, str, bool]:
-    """(상태, 이유, 지적 여부)"""
+@dataclass
+class _Verdict:
+    state: str
+    reason: str
+    finding_ids: list[str] = field(default_factory=list)
+    evidence_kind: str = "none"
+
+
+def _classify(
+    src: SourceFile,
+    call: Call,
+    family: str,
+    ctx: _Context,
+    findings: dict[tuple[str, str, int], list[str]],
+) -> _Verdict:
+    """한 관심 지점의 상태. 지적은 규칙이 실제로 낸 확정 지적(finding_id)에서만 가져온다.
+    장부가 흐름을 따로 평가해 지적이 있다고 추정하지 않는다: 지적 없이 '근거 충족'이 되려면 닫힌 값이거나 규칙이 인정한 안전 조건이 있어야 한다."""
     rule = ctx.rules[family]
     sink = next((s for s in rule.sinks if src.lang in s.langs and s.callee.search(call.callee)), None)
     if sink is None:
-        return PointState.UNSUPPORTED.value, f"{call.callee}() 호출은 이 계열의 관심 지점으로 보이지만 규칙에 모델이 없다", False
+        return _Verdict(PointState.UNSUPPORTED.value, f"{call.callee}() 호출은 이 계열의 관심 지점으로 보이지만 규칙에 모델이 없다")
     index = xfile.get_index()
     before = index.limit_hits if index else 0
     args = rule.select_args(src, call, sink)
-    finding = (src.path.as_posix(), call.line) in tainted_lines
+    finding_ids = list(findings.get((rule.rule_id, src.path.as_posix(), call.line), []))
     unresolved: str | None = None
+    guarded = False
     for arg in args:
         if is_literal(arg):
             continue
         flow = assess(src, arg, rule.include_cli_sources, ctx=rule.taint_ctx)
         if flow is Flow.TAINTED:
-            finding = True
+            if finding_ids:
+                continue
+            # 오염 흐름이 보이는데 규칙이 지적하지 않았다. 규칙이 인정한 안전 조건이 있을 때만 근거로 삼는다.
+            if rule._allowlisted(src, call, arg):
+                guarded = True
+                continue
+            if family != "sql" and rule.skip_hit(src, call, arg, flow):
+                guarded = True
+                continue
+            if unresolved is None:
+                unresolved = "외부 입력이 닿는 흐름이 보이지만 규칙은 지적하지 않았다. 규칙이 안전하다고 본 근거를 사람이 확인해야 한다"
             continue
         if family != "sql" and rule.skip_hit(src, call, arg, flow):
+            guarded = True
             continue  # 규칙이 안전한 호출 형태로 판정 (예: 셸을 거치지 않는 인자 배열, 정규화·범위 검사를 거친 경로). SQL의 skip은 소음 억제라 안전 근거가 아니다
         ok, reason = _Closed(src, ctx, rule.taint_ctx).check(arg)
         if not ok and unresolved is None:
             unresolved = reason
     after = index.limit_hits if index else 0
-    if finding:
-        return PointState.EVIDENCE_MET.value, "외부 입력 도달이 확인되어 지적으로 보고되었다", True
+    if finding_ids:
+        return _Verdict(PointState.EVIDENCE_MET.value, "외부 입력 도달이 확인되어 지적으로 보고되었다", finding_ids, "finding")
     if after > before:
-        return PointState.BUDGET_EXCEEDED.value, "함수 간·파일 간 해석 한도에 도달해 흐름을 끝까지 따라가지 못했다", False
+        return _Verdict(PointState.BUDGET_EXCEEDED.value, "함수 간·파일 간 해석 한도에 도달해 흐름을 끝까지 따라가지 못했다")
     if unresolved is not None:
-        return PointState.UNRESOLVED.value, unresolved, False
-    return PointState.EVIDENCE_MET.value, "모든 입력이 상수이거나 닫힌 값으로 확인되었다", False
+        return _Verdict(PointState.UNRESOLVED.value, unresolved)
+    if guarded:
+        return _Verdict(PointState.EVIDENCE_MET.value, "규칙이 인정한 안전 조건(허용 목록·범위 검증·셸을 거치지 않는 호출)이 확인되었다", [], "guard")
+    return _Verdict(PointState.EVIDENCE_MET.value, "모든 입력이 상수이거나 닫힌 값으로 확인되었다", [], "closed_value")
 
 
-def _point_id(family: str, path: str, line: int, callee: str) -> str:
-    return hashlib.sha256(f"{family}|{path}|{line}|{callee}".encode()).hexdigest()[:12]
+def _point_id(family: str, path: str, line: int, column: int, callee: str) -> str:
+    """같은 줄에 같은 호출이 둘 이상 있을 수 있으므로 열 위치까지 넣어 지점마다 유일하게 만든다."""
+    return hashlib.sha256(f"{family}|{path}|{line}|{column}|{callee}".encode()).hexdigest()[:12]
 
 
 def build_ledger(
@@ -362,8 +392,8 @@ def build_ledger(
     contract: Contract,
     contract_source: str,
     config: IronLawsConfig,
-    findings: set[tuple[str, int]],
-    suppressed_lines: set[tuple[str, int]],
+    findings: dict[tuple[str, str, int], list[str]],
+    suppressed_lines: set[tuple[str, int, str]],
     changed_files: set[str] | None,
     digests: dict[str, str],
     policy_changed: bool = False,
@@ -413,16 +443,21 @@ def build_ledger(
                     continue  # 프로젝트가 정의한 함수의 호출은 라이브러리 관심 지점이 아니다. 그 함수 안의 호출이 지점으로 잡힌다
                 if family == "path" and not modeled and call.callee.rsplit(".", 1)[-1] in ("get", "values", "items"):
                     continue
-                state, reason, finding = _classify(src, call, family, ctx, findings)
-                if family == "path" and ctx.rules["path"].BUILDER_RE.search(call.callee) and not finding and state == PointState.EVIDENCE_MET.value:
+                verdict = _classify(src, call, family, ctx, findings)
+                state, reason = verdict.state, verdict.reason
+                if family == "path" and ctx.rules["path"].BUILDER_RE.search(call.callee) and not verdict.finding_ids and state == PointState.EVIDENCE_MET.value:
                     continue  # 경로를 조립만 하는 호출은 접근 지점이 아니다. 접근하는 호출이 따로 지점으로 잡힌다
+                family_rule_id = rule.rule_id
+                suppressed_here = [family_rule_id] if (path, call.line, family_rule_id) in suppressed_lines else []
                 if excluded:
                     state, reason = PointState.POLICY_EXCLUDED.value, f"계약 제외 경로({contract.exclusion_reason.strip()})"
-                elif (path, call.line) in suppressed_lines:
-                    state, reason = PointState.POLICY_EXCLUDED.value, "사유가 있는 억제 주석이 이 지점의 지적을 제외했다"
+                elif suppressed_here:
+                    # 억제는 그 계열 규칙의 지적에만 적용한다. 같은 줄의 다른 계열 지점으로 넓히지 않는다
+                    state, reason = PointState.POLICY_EXCLUDED.value, f"사유가 있는 억제 주석이 이 지점의 {family_rule_id} 지적을 제외했다"
                 points.append(
                     InterestPoint(
-                        id=_point_id(family, path, call.line, call.callee),
+                        id=_point_id(family, path, call.line, call.node.start_point[1] + 1, call.callee),
+                        column=call.node.start_point[1] + 1,
                         family=family,
                         path=path,
                         line=call.line,
@@ -430,7 +465,10 @@ def build_ledger(
                         state=state,
                         reason=reason,
                         in_scope=changed if contract.scope == "changed" else True,
-                        finding=finding,
+                        finding=bool(verdict.finding_ids),
+                        finding_ids=verdict.finding_ids,
+                        evidence_kind=verdict.evidence_kind if state == PointState.EVIDENCE_MET.value else "none",
+                        suppressed_rules=suppressed_here,
                     )
                 )
                 file_points += 1
@@ -485,10 +523,12 @@ def build_ledger(
     if policy_changed:
         status = "policy_change_review"
         blockers.insert(0, "[정책 변경] 계약 파일이 이번 변경에 포함되어 있다. 후보 변경이 정책을 바꾼 것이므로 별도의 정책 변경 검토가 필요하다")
+    elif blockers:
+        status = "unmet"  # 필수 차단 사유가 하나라도 있으면 비적용·충족보다 먼저 보인다
     elif not analyzed:
         status = "not_applicable"
     else:
-        status = "unmet" if blockers else "met"
+        status = "met"
 
     return CoverageLedger(
         contract_version=contract.version,
@@ -503,6 +543,8 @@ def build_ledger(
         files=files,
         unclassified_changed_files=unclassified_changed,
         status=status,
+        requirements={f: {"required": r.required, "block_on": sorted(x.value for x in r.block_on)} for f, r in contract.families.items()},
+        run_id="R-" + hashlib.sha256("|".join(f"{k}={digests[k]}" for k in sorted(digests)).encode()).hexdigest()[:12],
         blockers=blockers,
         limitations=limitations,
     )

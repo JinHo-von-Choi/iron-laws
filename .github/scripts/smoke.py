@@ -91,7 +91,35 @@ with tempfile.TemporaryDirectory() as tmp:
     expect(added.returncode == 0, "승인 기록 추가")
     expect(run("approvals", "status", str(project), "--store", str(store)).returncode == 0, "승인이 유효함")
     expect(run("approvals", "verify", "--store", str(store)).returncode == 0, "승인 기록 해시 연결 이상 없음")
+    expect(run("review-bundle", str(project), "--approvals", str(store)).returncode == 0, "변경이 없으면 검토 묶음에 필수 행동이 없음")
+    report_file = Path(tmp) / "report.json"
+    audit = run("audit", str(project), "--format", "json", "--approvals", str(store), "-o", str(report_file))
+    expect(audit.returncode == 0, "승인된 지적은 통과로 계산됨")
+    expect(run("evidence", "verify", str(report_file)).returncode == 0, "보고서의 불변식에 모순이 없음")
+    broken = json.loads(report_file.read_text(encoding="utf-8"))
+    broken["summary"]["total_violations"] += 7
+    broken_file = Path(tmp) / "broken.json"
+    broken_file.write_text(json.dumps(broken), encoding="utf-8")
+    expect(run("evidence", "verify", str(broken_file)).returncode == 1, "손상된 보고서는 독립 검증기가 거부함")
+    broken["schema_version"] = "0.9"
+    broken_file.write_text(json.dumps(broken), encoding="utf-8")
+    expect(run("evidence", "verify", str(broken_file)).returncode == 2, "지원하지 않는 버전은 통과가 아니라 판정 불가")
     (project / "app.py").write_text(vulnerable + "\ndef api():\n    return run_tool()\n", encoding="utf-8", newline="\n")
     expect(run("approvals", "status", str(project), "--store", str(store)).returncode == 1, "새 호출자가 생기면 승인을 다시 검토")
+    expect(run("review-bundle", str(project), "--approvals", str(store)).returncode == 1, "승인 전제가 바뀌면 검토 묶음이 필수 행동을 낸다")
+
+# ---- 파일럿 기록과 계측: 경로·코드를 담지 않는 로컬 파일 ----
+with tempfile.TemporaryDirectory() as tmp:
+    pilot = Path(tmp) / "pilot.jsonl"
+    arm = run("pilot", "assign", "pr-1", "--team", "a", "--store", str(pilot))
+    expect(arm.returncode == 0 and arm.stdout.strip() in ("baseline", "bundle"), "파일럿 조건 배정")
+    expect(run("pilot", "assign", "pr-1", "--team", "a", "--store", str(pilot)).returncode == 2, "같은 PR은 두 번 배정하지 않음")
+    expect(run("pilot", "summary", "--store", str(pilot)).returncode == 0, "표본이 부족하면 판정하지 않고 종료코드 0")
+    metrics = Path(tmp) / "metrics.jsonl"
+    sample_dir = Path(tmp) / "secret_named_dir"
+    sample_dir.mkdir()
+    (sample_dir / "a.py").write_text("x = 1\n", encoding="utf-8")
+    expect(run("check", str(sample_dir), "--metrics", str(metrics)).returncode == 0, "계측과 함께 check")
+    expect("secret_named_dir" not in metrics.read_text(encoding="utf-8"), "계측 기록에 경로가 없음")
 
 print("smoke test 완료")

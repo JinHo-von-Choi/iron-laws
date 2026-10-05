@@ -319,13 +319,20 @@ def _verify(original: Path, patch_path: Path, options: VerifyOptions, runner: Ru
         "original_total": len(original_report.violations),
         "candidate_total": len(candidate_report.violations),
         "resolved": [{"rule": r, "path": pth, "scope": sc} for r, pth, sc in resolved_groups],
-        "new": [{"rule": v.rule_id, "path": v.file_path.as_posix(), "line": v.line_number, "severity": v.severity.value} for v in new_findings],
+        "new": [{"rule": v.rule_id, "path": v.file_path.as_posix(), "line": v.line_number, "severity": v.severity.value, "finding_id": v.finding_id} for v in new_findings],
         "untrusted_suppressions_ignored": sum(1 for d in candidate_report.diagnostics if "신뢰된 정책에 없던 억제" in d.message),
     }
     target_info: dict[str, Any] | None = None
     if options.finding:
         target = resolve_finding(original_report, options.finding)
-        target_info = {"rule_id": target.rule_id, "path": target.file_path.as_posix(), "line": target.line_number, "fingerprint": target.fingerprint, "severity": target.severity.value}
+        target_info = {
+            "rule_id": target.rule_id,
+            "path": target.file_path.as_posix(),
+            "line": target.line_number,
+            "fingerprint": target.fingerprint,
+            "finding_id": target.finding_id,
+            "severity": target.severity.value,
+        }
         target_key = (target.rule_id, target.file_path.as_posix(), target.scope_name)
         resolved_entry = target_key if target_key in resolved_groups else None
         removed_file = target.file_path.as_posix() not in candidate_snapshot.files
@@ -442,7 +449,17 @@ def _verify(original: Path, patch_path: Path, options: VerifyOptions, runner: Ru
         "runner_image_id": runs["original"].image_id if runs else "",
         "isolation": "container" if runner_obj.name in ("docker", "bwrap") and runs and runs["original"].status != "isolation_unavailable" else "none",
     }
-    return _finish(options, checks, receipt_inputs, digests, target_info, findings_summary, coverage_summary, bypasses, runner_obj, started, environment, runs)
+    evidence = {
+        side: {
+            "run_id": report.coverage_ledger.run_id if report.coverage_ledger else "",
+            "code_digest": report.execution.code_digest if report.execution else "",
+            "finding_ids": [v.finding_id for v in report.violations],
+            "fingerprints": [v.fingerprint for v in report.violations],
+            "scan_status": report.summary.scan_status,
+        }
+        for side, report in (("original", original_report), ("candidate", candidate_report))
+    }
+    return _finish(options, checks, receipt_inputs, digests, target_info, findings_summary, coverage_summary, bypasses, runner_obj, started, environment, runs, evidence)
 
 
 def _digest_policy(policy: RunnerPolicy) -> str:
@@ -510,6 +527,7 @@ def _finish(
     started: float,
     environment: dict[str, Any] | None = None,
     runs: dict[str, RunResult] | None = None,
+    evidence: dict[str, Any] | None = None,
 ) -> Receipt:
     if not any(c.id == "existing_tests" for c in checks):
         checks.append(_check("existing_tests", "기존 시험(원본과 후보, 격리 실행)", "not_run", "patch 검사 단계에서 중단되어 실행하지 않았다", required=options.require_tests, executed=False))
@@ -523,6 +541,7 @@ def _finish(
         target=target,
         checks=checks,
         findings=findings,
+        evidence=evidence or {},
         coverage=coverage,
         bypass_changes=[b.__dict__ for b in bypasses],
         verdict=verdict,

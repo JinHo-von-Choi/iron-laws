@@ -5,6 +5,7 @@
 """
 
 import re
+import zlib
 from collections import Counter, defaultdict
 from pathlib import PurePosixPath
 
@@ -342,7 +343,8 @@ class DuplicateHelperRule(ArchRule):
                     continue
                 if self.trivial.match(fn.name) and len(tokens) < limits.duplicate_min_nodes * 2:
                     continue
-                shingles = {hash(tuple(tokens[i : i + self.SHINGLE])) for i in range(len(tokens) - self.SHINGLE + 1)}
+                # 문자열 hash()는 실행마다 달라져 같은 코드에서 다른 결과가 나온다. 실행과 무관한 해시를 쓴다
+                shingles = {zlib.crc32("\x1f".join(tokens[i : i + self.SHINGLE]).encode("utf-8")) for i in range(len(tokens) - self.SHINGLE + 1)}
                 funcs.append((src, fn, tokens, shingles))
         if len(funcs) < 2:
             return []

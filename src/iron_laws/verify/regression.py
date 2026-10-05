@@ -40,6 +40,12 @@ PAYLOADS = {
     "path": ("../../etc/passwd", "report.txt"),
     "sql": ("' OR '1'='1", "alice"),
 }
+# 수정이 시험의 입력 하나만 막는지 보려고 같은 결함을 건드리는 다른 입력을 함께 시험한다(명세에 적혀 사람이 확인한다).
+VARIANT_PAYLOADS = {
+    "command": ("x && touch IRON_LAWS_PWNED", "x | touch IRON_LAWS_PWNED", "$(touch IRON_LAWS_PWNED)", "`touch IRON_LAWS_PWNED`"),
+    "path": ("/etc/passwd", "sub/../../../../../etc/passwd", "../../../../../../../../etc/passwd"),  # 허용 폴더가 어디든 밖으로 나가는 입력만 쓴다
+    "sql": ("1 OR 1=1", "\" OR \"1\"=\"1", "'; DROP TABLE t--", "' UNION SELECT NULL--"),
+}
 CURSOR_NAMES = {"cur", "cursor", "c"}
 CONNECTION_NAMES = {"conn", "connection", "db", "database", "con"}
 REQUEST_RE = re.compile(r"\brequest\.(?:args|form|values|json|cookies|headers|get_json|data)\b")
@@ -66,6 +72,7 @@ class InputSpec(BaseModel):
 
     payload: str = Field(..., min_length=1, description="결함을 건드리는 입력")
     benign: str = Field(..., min_length=1, description="정상 대조군 입력")
+    variants: list[str] = Field(default_factory=list, description="같은 결함을 건드리는 다른 입력. 수정이 시험 입력 하나만 막는 것을 가려낸다")
 
 
 class ExpectSpec(BaseModel):
@@ -234,7 +241,7 @@ def propose_spec(root: Path, violation: Violation) -> Proposal:
         finding=f"{violation.rule_id}@{rel}:{violation.line_number}",
         target=TargetSpec(module=_module_name(rel), function=func.name, file=rel),
         source=source,
-        input=InputSpec(payload=payload, benign=benign),
+        input=InputSpec(payload=payload, benign=benign, variants=list(VARIANT_PAYLOADS[family])),
         expect=ExpectSpec(base=base, summary=expect_summary),
         call_args=call_args,
         fake_sink=FAKE_SINKS[family],
@@ -396,6 +403,54 @@ def build_mutants(candidate: Path, patch_text: str, target_file: str, work: Path
 # ---------------------------------------------------------------------------
 
 
+@dataclass
+class _VariantOutcome:
+    evidence: dict[str, Any]
+    result: tuple[str, str] | None = None  # (결과, 사유). 판정을 끝내야 하면 채운다
+
+
+def _variant_phase(
+    spec: RegressionSpec,
+    runner: Runner,
+    original: Path,
+    candidate: Path,
+    limits: RunLimits,
+    cached: Any,
+    original_memo: dict[str, Any] | None,
+    memo_key: str,
+) -> _VariantOutcome | None:
+    """명세의 변형 입력마다 원본에서 결함이 재현되는지 보고, 재현되는 입력이 후보에서도 재현되면 실패로 본다.
+    원본에서 재현되지 않는 입력은 이 결함에 적용되지 않는 입력이므로 건너뛰고 그 사실을 남긴다."""
+    if not spec.input.variants:
+        return None
+    original_runs: dict[int, HarnessRun] = cached[2] if cached and len(cached) > 2 else {}
+    checked: list[int] = []
+    inapplicable: list[int] = []
+    for index in range(1, len(spec.input.variants) + 1):
+        if index not in original_runs:
+            original_runs[index] = run_harness(runner, original, f"attack:{index}", limits)
+        if original_runs[index].outcome == "not_run":
+            return _VariantOutcome({"checked": checked, "inapplicable": inapplicable}, ("unknown", f"변형 입력을 실행하지 못했다: {original_runs[index].reason}"))
+    if original_memo is not None and cached is not None:
+        original_memo[memo_key] = (cached[0], cached[1], original_runs)
+    for index, run in original_runs.items():
+        if run.outcome != "defect_reproduced":
+            inapplicable.append(index)
+            continue
+        candidate_run = run_harness(runner, candidate, f"attack:{index}", limits)
+        if candidate_run.outcome == "not_run":
+            return _VariantOutcome({"checked": checked, "inapplicable": inapplicable}, ("unknown", f"후보에서 변형 입력을 실행하지 못했다: {candidate_run.reason}"))
+        if candidate_run.outcome == "defect_reproduced":
+            return _VariantOutcome(
+                {"checked": checked, "inapplicable": inapplicable, "failed": index},
+                ("fail", f"후보가 시험 입력은 막지만 같은 결함을 건드리는 다른 입력({spec.input.variants[index - 1]!r})에서는 결함이 재현된다(수정이 특정 입력에만 통한다)"),
+            )
+        if candidate_run.outcome == "error":
+            return _VariantOutcome({"checked": checked, "inapplicable": inapplicable}, ("unknown", f"후보에서 변형 입력 시험이 실행되지 않았다: {candidate_run.reason}"))
+        checked.append(index)
+    return _VariantOutcome({"checked": checked, "inapplicable": inapplicable, "total": len(spec.input.variants)})
+
+
 def _check(result: str, reason: str = "", executed: bool = True, **evidence: Any) -> CheckResult:
     return CheckResult(id="regression_test", title="결함을 구별하는 회귀시험(원본 실패·후보 통과·mutant 재실패)", result=result, reason=reason, required=True, executed=executed, evidence=evidence)  # type: ignore[arg-type]
 
@@ -442,7 +497,8 @@ def run_regression_check(
     evidence["original_failure_reason"] = original_attack[0].reason
     original_control = cached[1] if cached else run_harness(runner, original, "benign", limits)
     if original_memo is not None and cached is None and original_control.outcome != "not_run":
-        original_memo[memo_key] = (original_attack, original_control)
+        original_memo[memo_key] = (original_attack, original_control, {})
+        cached = original_memo[memo_key]
     evidence["original_control"] = original_control.outcome
     if original_control.outcome != "passed":
         return _check("unknown", f"원본에서 정상 입력이 싱크에 닿지 않아 시험이 정상 동작을 구별하지 못한다: {original_control.reason}", **evidence)
@@ -461,6 +517,13 @@ def run_regression_check(
         return _check("unknown", f"후보에서 시험이 실행되지 않았다(문법 오류·충돌·허용되지 않은 예외): {candidate_attack[0].reason}", **evidence)
     if candidate_control[0].outcome != "passed":
         return _check("fail", f"수정이 정상 입력까지 막는다(위험한 기능을 전부 막는 것은 정답이 아니다): {candidate_control[0].reason}", **evidence)
+
+    # 시험 입력은 막지만 다른 입력에는 뚫리는 수정을 가려낸다(기본 입력이 통과한 뒤에만 실행한다)
+    variants = _variant_phase(spec, runner, original, candidate, limits, cached, original_memo, memo_key)
+    if variants is not None:
+        evidence["variants"] = variants.evidence
+        if variants.result is not None:
+            return _check(variants.result[0], variants.result[1], **evidence)
 
     mutants: list[Mutant] = []
     if patch_path is not None:

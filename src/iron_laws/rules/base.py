@@ -78,10 +78,10 @@ class BaseRule(ABC):
         column: int = 1,
     ) -> Violation:
         # 원문을 먼저 가린 뒤 길이를 제한한다. 자른 뒤에 가리면 잘린 비밀 조각이 남는다
-        shown = redact_text(snippet.strip())
+        full = redact_text(snippet.strip())
         if self.sensitive_snippet:
-            shown = mask_secrets(shown)
-        shown = limit(shown, MAX_SNIPPET_LENGTH)
+            full = mask_secrets(full)
+        shown = limit(full, MAX_SNIPPET_LENGTH)
         return Violation(
             rule_id=self.rule_id,
             rule_name=self.name,
@@ -91,6 +91,7 @@ class BaseRule(ABC):
             line_number=line_number,
             column=column,
             snippet=shown,
+            snippet_full=full,
             rule_version=self.version,
             message=message,
             gov_standard=self.gov_standard,

@@ -19,7 +19,7 @@ from iron_laws.core.models import (
 from iron_laws.core.scanner import AuditScanner
 from iron_laws.rules.catalog import ALL_RULES, get_active_rules
 
-__version__ = "1.2.0"
+__version__ = "1.3.0"
 __author__ = "최진호"
 
 __all__ = [

@@ -5,12 +5,14 @@
 """
 
 from iron_laws.core.config import ConfigError, IronLawsConfig
+from iron_laws.rules.ai_attack import AIA_RULES
 from iron_laws.rules.ai_code import AI_RULES
 from iron_laws.rules.architecture import ARCH_RULES
 from iron_laws.rules.base import BaseRule
 from iron_laws.rules.code_quality import CODE_QUALITY_RULES
 from iron_laws.rules.errors import ERROR_RULES
 from iron_laws.rules.injection import INJECTION_RULES
+from iron_laws.rules.performance import PERF_RULES
 from iron_laws.rules.review_rules import REVIEW_RULES
 from iron_laws.rules.secrets_crypto import SECRETS_CRYPTO_RULES
 from iron_laws.rules.typing_rules import TYPING_RULES
@@ -21,7 +23,9 @@ ALL_RULES: list[type[BaseRule]] = [
     *INJECTION_RULES,
     *CODE_QUALITY_RULES,
     *AI_RULES,
+    *AIA_RULES,
     *ARCH_RULES,
+    *PERF_RULES,
     *TYPING_RULES,
     *REVIEW_RULES,
 ]

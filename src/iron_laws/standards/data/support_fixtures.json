@@ -201,6 +201,24 @@
    "positive": 1
   }
  },
+ "AIA-101": {
+  "kind:doc": {
+   "negative": 12,
+   "positive": 14
+  }
+ },
+ "AIA-102": {
+  "kind:json": {
+   "negative": 8,
+   "positive": 9
+  }
+ },
+ "AIA-106": {
+  "python": {
+   "negative": 3,
+   "positive": 1
+  }
+ },
  "ARC-201": {
   "python": {
    "negative": 0,
@@ -943,6 +961,64 @@
   "javascript": {
    "negative": 2,
    "positive": 3
+  }
+ },
+ "PERF-101": {
+  "python": {
+   "negative": 5,
+   "positive": 1
+  }
+ },
+ "PERF-102": {
+  "javascript": {
+   "negative": 6,
+   "positive": 3
+  },
+  "python": {
+   "negative": 17,
+   "positive": 5
+  },
+  "typescript": {
+   "negative": 3,
+   "positive": 0
+  }
+ },
+ "PERF-103": {
+  "javascript": {
+   "negative": 3,
+   "positive": 2
+  },
+  "python": {
+   "negative": 10,
+   "positive": 2
+  },
+  "typescript": {
+   "negative": 2,
+   "positive": 0
+  }
+ },
+ "PERF-104": {
+  "java": {
+   "negative": 1,
+   "positive": 1
+  },
+  "javascript": {
+   "negative": 1,
+   "positive": 1
+  },
+  "python": {
+   "negative": 7,
+   "positive": 3
+  }
+ },
+ "PERF-105": {
+  "javascript": {
+   "negative": 2,
+   "positive": 1
+  },
+  "python": {
+   "negative": 3,
+   "positive": 2
   }
  },
  "TYP-301": {

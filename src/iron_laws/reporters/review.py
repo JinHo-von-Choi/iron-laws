@@ -17,6 +17,8 @@ GROUPS: list[tuple[str, re.Pattern[str]]] = [
     ("운영·설정·의존성·버전", re.compile(r"^(AI-10[1-6]|AI-110|AI-111|AI-114|AI-121)$")),
     ("구조·유지보수", re.compile(r"^(ARC-\d+|IL-51[5-9]|IL-52[0-4])$")),
     ("타입 안전성", re.compile(r"^TYP-\d+$")),
+    ("AI 에이전트 공격면", re.compile(r"^AIA-\d+$")),
+    ("성능", re.compile(r"^PERF-\d+$")),
 ]
 SAMPLE_LOCATIONS = 3
 

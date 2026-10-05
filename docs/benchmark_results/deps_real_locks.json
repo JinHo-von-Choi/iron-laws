@@ -1,0 +1,50 @@
+{
+ "description": "실제 프로젝트의 잠금 파일에 `iron-laws deps`를 돌려, 같은 (패키지, 버전)을 OSV 서버(querybatch)에 물은 결과와 비교했다. 프로젝트 이름과 경로는 싣지 않는다.",
+ "advisory_db": "OSV all.zip 덤프(PyPI·npm), 2026-10-05",
+ "total": {
+  "locks": 40,
+  "packages": 13426,
+  "ours_vuln": 537,
+  "osv_vuln": 537,
+  "both": 537,
+  "only_ours": 0,
+  "only_osv": 0,
+  "exact_sets": 537,
+  "compared": 537,
+  "undetermined": 6
+ },
+ "by_lockfile_kind": {
+  "uv.lock": {
+   "lockfiles": 7,
+   "packages": 895,
+   "vulnerable_packages_ours": 106,
+   "vulnerable_packages_osv_server": 106,
+   "agree": 106,
+   "undetermined": 2
+  },
+  "package-lock.json": {
+   "lockfiles": 26,
+   "packages": 9825,
+   "vulnerable_packages_ours": 256,
+   "vulnerable_packages_osv_server": 256,
+   "agree": 256,
+   "undetermined": 0
+  },
+  "pnpm-lock.yaml": {
+   "lockfiles": 5,
+   "packages": 2138,
+   "vulnerable_packages_ours": 94,
+   "vulnerable_packages_osv_server": 94,
+   "agree": 94,
+   "undetermined": 0
+  },
+  "poetry.lock": {
+   "lockfiles": 2,
+   "packages": 568,
+   "vulnerable_packages_ours": 81,
+   "vulnerable_packages_osv_server": 81,
+   "agree": 81,
+   "undetermined": 4
+  }
+ }
+}

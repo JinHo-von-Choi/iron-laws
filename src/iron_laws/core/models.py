@@ -30,6 +30,8 @@ class RuleLayer(StrEnum):
     STANDARD = "STANDARD"  # 행안부 개발보안 가이드 등 외부 기준에 근거한 규칙
     AI_CODE = "AI_CODE"  # AI 생성 코드의 전형적 결함을 겨냥한 오철칙 자체 규칙
     ARCHITECTURE = "ARCHITECTURE"  # 구조 건전성 점검 오철칙 자체 규칙
+    AI_ATTACK = "AI_ATTACK"  # AI 에이전트·LLM 앱·AI 코딩 도구를 겨냥한 공격면 점검 오철칙 자체 규칙(OWASP GenAI 참조)
+    PERFORMANCE = "PERFORMANCE"  # 데이터가 늘면 급격히 느려지는 코드 점검 오철칙 자체 규칙
 
 
 class Confidence(StrEnum):

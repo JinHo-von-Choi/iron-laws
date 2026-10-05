@@ -46,7 +46,7 @@ def detect_kind(rel_path: Path) -> str:
         return "shell"
     if suffix == ".toml":
         return "toml"
-    if suffix == ".md":
+    if suffix in {".md", ".mdc"} or name in (".cursorrules", ".windsurfrules"):
         return "doc"
     if suffix == ".gradle":
         return "gradle"

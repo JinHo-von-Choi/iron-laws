@@ -1,0 +1,303 @@
+{
+ "note": "OSV 서버 판정과의 일치 측정이다. 표본 패키지는 개발팀이 골랐고 탐지 성능이나 우위의 증거가 아니다.",
+ "summary": {
+  "PyPI": {
+   "packages": 10,
+   "versions": 400,
+   "exact_version_agreement": 0.9625,
+   "tp": 4941,
+   "fp": 0,
+   "fn": 15,
+   "fn_with_git_range": 15
+  },
+  "npm": {
+   "packages": 10,
+   "versions": 391,
+   "exact_version_agreement": 1.0,
+   "tp": 2536,
+   "fp": 0,
+   "fn": 0,
+   "fn_with_git_range": 0
+  }
+ },
+ "rows": [
+  {
+   "ecosystem": "PyPI",
+   "package": "requests",
+   "advisories": 16,
+   "versions": 40,
+   "exact": 27,
+   "tp": 188,
+   "fp": 0,
+   "fn": 13,
+   "fn_with_git_range": 13,
+   "differences": [
+    {
+     "version": "0.10.1",
+     "only_ours": 0,
+     "only_osv": 1
+    },
+    {
+     "version": "0.10.4",
+     "only_ours": 0,
+     "only_osv": 1
+    },
+    {
+     "version": "0.10.6",
+     "only_ours": 0,
+     "only_osv": 1
+    },
+    {
+     "version": "0.13.9",
+     "only_ours": 0,
+     "only_osv": 1
+    },
+    {
+     "version": "0.14.0",
+     "only_ours": 0,
+     "only_osv": 1
+    }
+   ]
+  },
+  {
+   "ecosystem": "PyPI",
+   "package": "urllib3",
+   "advisories": 44,
+   "versions": 40,
+   "exact": 39,
+   "tp": 421,
+   "fp": 0,
+   "fn": 1,
+   "fn_with_git_range": 1,
+   "differences": [
+    {
+     "version": "0.4.0",
+     "only_ours": 0,
+     "only_osv": 1
+    }
+   ]
+  },
+  {
+   "ecosystem": "PyPI",
+   "package": "django",
+   "advisories": 324,
+   "versions": 40,
+   "exact": 40,
+   "tp": 1224,
+   "fp": 0,
+   "fn": 0,
+   "fn_with_git_range": 0,
+   "differences": []
+  },
+  {
+   "ecosystem": "PyPI",
+   "package": "jinja2",
+   "advisories": 20,
+   "versions": 40,
+   "exact": 40,
+   "tp": 257,
+   "fp": 0,
+   "fn": 0,
+   "fn_with_git_range": 0,
+   "differences": []
+  },
+  {
+   "ecosystem": "PyPI",
+   "package": "pyyaml",
+   "advisories": 8,
+   "versions": 40,
+   "exact": 40,
+   "tp": 66,
+   "fp": 0,
+   "fn": 0,
+   "fn_with_git_range": 0,
+   "differences": []
+  },
+  {
+   "ecosystem": "PyPI",
+   "package": "flask",
+   "advisories": 10,
+   "versions": 40,
+   "exact": 40,
+   "tp": 100,
+   "fp": 0,
+   "fn": 0,
+   "fn_with_git_range": 0,
+   "differences": []
+  },
+  {
+   "ecosystem": "PyPI",
+   "package": "pillow",
+   "advisories": 153,
+   "versions": 40,
+   "exact": 39,
+   "tp": 1747,
+   "fp": 0,
+   "fn": 1,
+   "fn_with_git_range": 1,
+   "differences": [
+    {
+     "version": "3.1.0rc1",
+     "only_ours": 0,
+     "only_osv": 1
+    }
+   ]
+  },
+  {
+   "ecosystem": "PyPI",
+   "package": "cryptography",
+   "advisories": 42,
+   "versions": 40,
+   "exact": 40,
+   "tp": 468,
+   "fp": 0,
+   "fn": 0,
+   "fn_with_git_range": 0,
+   "differences": []
+  },
+  {
+   "ecosystem": "PyPI",
+   "package": "werkzeug",
+   "advisories": 27,
+   "versions": 40,
+   "exact": 40,
+   "tp": 345,
+   "fp": 0,
+   "fn": 0,
+   "fn_with_git_range": 0,
+   "differences": []
+  },
+  {
+   "ecosystem": "PyPI",
+   "package": "numpy",
+   "advisories": 16,
+   "versions": 40,
+   "exact": 40,
+   "tp": 125,
+   "fp": 0,
+   "fn": 0,
+   "fn_with_git_range": 0,
+   "differences": []
+  },
+  {
+   "ecosystem": "npm",
+   "package": "lodash",
+   "advisories": 10,
+   "versions": 40,
+   "exact": 40,
+   "tp": 214,
+   "fp": 0,
+   "fn": 0,
+   "fn_with_git_range": 0,
+   "differences": []
+  },
+  {
+   "ecosystem": "npm",
+   "package": "minimist",
+   "advisories": 2,
+   "versions": 31,
+   "exact": 31,
+   "tp": 48,
+   "fp": 0,
+   "fn": 0,
+   "fn_with_git_range": 0,
+   "differences": []
+  },
+  {
+   "ecosystem": "npm",
+   "package": "express",
+   "advisories": 5,
+   "versions": 40,
+   "exact": 40,
+   "tp": 123,
+   "fp": 0,
+   "fn": 0,
+   "fn_with_git_range": 0,
+   "differences": []
+  },
+  {
+   "ecosystem": "npm",
+   "package": "axios",
+   "advisories": 56,
+   "versions": 40,
+   "exact": 40,
+   "tp": 1113,
+   "fp": 0,
+   "fn": 0,
+   "fn_with_git_range": 0,
+   "differences": []
+  },
+  {
+   "ecosystem": "npm",
+   "package": "jsonwebtoken",
+   "advisories": 4,
+   "versions": 40,
+   "exact": 40,
+   "tp": 126,
+   "fp": 0,
+   "fn": 0,
+   "fn_with_git_range": 0,
+   "differences": []
+  },
+  {
+   "ecosystem": "npm",
+   "package": "semver",
+   "advisories": 2,
+   "versions": 40,
+   "exact": 40,
+   "tp": 46,
+   "fp": 0,
+   "fn": 0,
+   "fn_with_git_range": 0,
+   "differences": []
+  },
+  {
+   "ecosystem": "npm",
+   "package": "moment",
+   "advisories": 5,
+   "versions": 40,
+   "exact": 40,
+   "tp": 97,
+   "fp": 0,
+   "fn": 0,
+   "fn_with_git_range": 0,
+   "differences": []
+  },
+  {
+   "ecosystem": "npm",
+   "package": "ws",
+   "advisories": 7,
+   "versions": 40,
+   "exact": 40,
+   "tp": 94,
+   "fp": 0,
+   "fn": 0,
+   "fn_with_git_range": 0,
+   "differences": []
+  },
+  {
+   "ecosystem": "npm",
+   "package": "tar",
+   "advisories": 21,
+   "versions": 40,
+   "exact": 40,
+   "tp": 638,
+   "fp": 0,
+   "fn": 0,
+   "fn_with_git_range": 0,
+   "differences": []
+  },
+  {
+   "ecosystem": "npm",
+   "package": "node-fetch",
+   "advisories": 3,
+   "versions": 40,
+   "exact": 40,
+   "tp": 37,
+   "fp": 0,
+   "fn": 0,
+   "fn_with_git_range": 0,
+   "differences": []
+  }
+ ]
+}

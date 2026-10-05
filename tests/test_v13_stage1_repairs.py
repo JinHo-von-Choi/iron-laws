@@ -391,3 +391,13 @@ def test_results_do_not_depend_on_the_python_hash_seed(tmp_path: Path):
         results.append(sorted((v["rule_id"], v["file_path"], v["line_number"], v["confidence"], v["message"]) for v in data["violations"]))
         assert data["summary"]["scan_status"] == "complete", data["diagnostics"][:2]
     assert results[0] == results[1]
+
+
+def test_violation_paths_are_serialized_with_forward_slashes_on_every_platform(tmp_path: Path):
+    from pathlib import PureWindowsPath
+
+    report = _scan(tmp_path, {"pkg/한글 폴더/a.py": "import os\nfrom flask import request\ndef f():\n    os.system('ls ' + request.args['d'])\n"})
+    assert report.model_dump(mode="json")["violations"][0]["file_path"] == "pkg/한글 폴더/a.py"
+    violation = report.violations[0]
+    # Windows의 역슬래시 경로도 같은 값으로 나가야 지문·finding_id·독립 검증기가 운영체제와 무관하게 같다
+    assert type(violation)._serialize_path(violation, PureWindowsPath("pkg\\한글 폴더\\a.py")) == "pkg/한글 폴더/a.py"

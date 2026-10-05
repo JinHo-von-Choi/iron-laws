@@ -8,7 +8,7 @@ from enum import IntEnum, StrEnum
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_serializer
 
 
 class Severity(StrEnum):
@@ -100,6 +100,11 @@ class Violation(BaseModel):
     approval_id: str | None = None
     approval_reasons: list[str] = Field(default_factory=list)  # 승인을 유지할 수 없는 이유(바뀐 전제)
     dependencies: dict | None = Field(default=None, exclude=True)  # 승인 유효성 판단에 쓰는 의존성 지문. 보고서에는 싣지 않는다
+
+    @field_serializer("file_path")
+    def _serialize_path(self, value: Path) -> str:
+        """운영체제와 무관하게 `/` 구분자로 내보낸다. Windows의 역슬래시 경로가 보고서·검증기·지문에서 다른 값이 되지 않게 한다."""
+        return value.as_posix()
 
 
 class Diagnostic(BaseModel):

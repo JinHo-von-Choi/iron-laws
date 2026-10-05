@@ -41,7 +41,7 @@
 `run_id`, `tool_version`, `ruleset_hash`, `config_hash`, `contract_digest`, `code_digest`, `scan_status`, `files_scanned`, `files_skipped`, `error_diagnostics`, `cross_file_limit_hits`. 이 보고서를 만든 점검 실행의 식별과 범위이며, 지적·장부·승인이 같은 실행의 근거인지 확인하는 기준이다. `code_digest`는 `(경로, 본문의 sha256)`을 경로순으로 sha256한 앞 16자다.
 
 ### `approval_checks[]`(1.3, `--approvals`를 쓸 때만)
-`approval_id`, `status`(`valid` / `needs_review` / `invalid` / `revoked` / `resolved` / `unobserved`), `reasons`, `rule_id`, `path`, `approved_fingerprint`, `finding_id`(이번 실행에서 맺어진 지적), `expires`, `policy`(승인 당시 계약·설정·규칙·도구 지문). `valid`는 같은 코드 모양의 지적에 대한 유효한 승인이라는 뜻이다. 승인 기록 파일의 해시 연결이나 기록 형식이 틀리면 그 승인은 `invalid`이며 유효한 승인으로 쓰지 않는다.
+`approval_id`, `status`(`valid` / `needs_review` / `invalid` / `revoked` / `resolved` / `unobserved`), `reasons`, `rule_id`, `path`, `approved_fingerprint`, `finding_id`(이번 실행에서 맺어진 지적), `expires`, `policy`(승인 당시 계약·설정·규칙·도구 지문). `valid`는 승인한 지적과 같은 코드 모양의 지적이 지금도 있다는 뜻이다. 승인 기록 파일의 해시 연결이나 기록 형식이 틀리면 그 승인은 `invalid`이며 유효한 승인으로 쓰지 않는다.
 
 ### `diagnostics[]`
 `kind`(read, encoding, parse, rule_error, worker, analysis_limit, suppression, baseline, approval, consistency), `severity`(info, warning, error), `message`, `file_path`, `line`.

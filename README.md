@@ -76,14 +76,30 @@ iron-laws baseline create .             # 현재 지적을 승인된 부채로 �
 iron-laws check . --baseline .iron-laws-baseline.json   # 새로 생긴 지적만 판정
 iron-laws check . --changed-since origin/main           # 바뀐 파일의 지적만 표시 (전체 점검과 정기 대조)
 iron-laws feedback add IL-501 src/a.py:3 --verdict false-positive --minutes 10   # '확인 필요' 검토 결과 기록
-iron-laws check . --contract .iron-laws-contract.yml    # 근거 계약: 요구한 분석 근거가 충족됐는지(검사 공백 장부)
-iron-laws verify-patch . --patch fix.diff --finding IL-504@app.py:6 --runner docker --image 이미지 -o receipt.json   # AI 패치 검증
+iron-laws check . --contract .iron-laws-contract.yml    # 근거 계약: 요구한 분석 근거가 충족됐는지(계약 파일은 직접 작성, 예시는 docs/PATCH_VERIFICATION.md §1)
+iron-laws verify-patch ./proj --patch ../fix.diff --finding IL-504@app.py:8 --runner docker --image iron-laws-verify:py313 \
+  --test-cmd python --test-cmd -m --test-cmd pytest --test-cmd -q -o ../receipt.json   # AI 패치 검증(docker와 미리 만든 이미지 필요, 아래 참고)
 iron-laws regression propose . --finding IL-504@app.py -o spec.yml    # 결함을 구별하는 회귀시험 후보(확정 전)
 iron-laws approvals add . --finding IL-504@app.py --reason "사유" --store 승인기록.jsonl   # 사람의 검토 승인 기록
 iron-laws check . --approvals 승인기록.jsonl                          # 전제가 유지되는 유효한 승인만 받아들임
+iron-laws audit . --format json -o ../report.json && iron-laws evidence verify ../report.json   # 보고서 모순 검증(1.3)
+iron-laws review-bundle . --approvals 승인기록.jsonl                  # 변경이 승인 전제에 준 영향을 한 묶음으로(1.3)
+iron-laws check . --metrics ../metrics.jsonl                          # 건수·시간만 로컬에 기록(선택, 1.3)
 ```
 
-종료코드는 `0` 통과, `1` 설정한 심각도 이상의 지적 발견, `2` 잘못된 입력·설정 오류, 점검한 파일이 없는 경우, 또는 점검이 끝까지 이루어지지 않은 경우(규칙 오류·파일 읽기 실패 등)입니다. 불완전한 점검은 등급과 통과를 확정하지 않고 보고서의 `diagnostics`에 사유를 남깁니다. 없는 경로, 등록되지 않은 규칙 ID, 범위를 벗어난 제한값, 점검 대상 파일이 0개인 경우는 통과로 처리하지 않습니다(점검 대상이 비어 있는 것이 의도라면 `--allow-empty`). `fix-prompt`는 지시문 생성이 목적이라 지적이 있어도 종료코드 0이므로, 배포 관문에는 `check`나 `audit`를 쓰십시오.
+- `--finding`의 위치(`:8`)는 `iron-laws check` 출력의 줄 번호를 그대로 쓰십시오(`RULE@경로:줄` 또는 `RULE@경로`).
+- `verify-patch`는 docker와 미리 만든 시험 이미지가 필요합니다(`docker build -t iron-laws-verify:py313 .`, Dockerfile은 [PATCH_VERIFICATION.md](docs/PATCH_VERIFICATION.md) §4). `--test-cmd` 없이는 시험을 실행하지 않아 `판정 불가`(종료코드 2)로 끝납니다.
+- patch·보고서·Receipt·승인 기록은 점검 폴더 **밖**에 두십시오. 안에 두면 다음 점검 대상에 들어가고 원본 해시가 달라져 `--replay`가 재현되지 않습니다.
+
+종료코드는 명령마다 같은 뜻을 씁니다.
+
+| 종료코드 | `check`·`audit` | `evidence verify`·`review-bundle`·`approvals status`·`verify-patch` |
+|---|---|---|
+| `0` | 통과 | 모순 없음 / 필수 행동 없음 / 모든 승인 유효 / 검증 항목 통과 |
+| `1` | 설정한 심각도 이상의 지적 발견 | 모순 발견 / 필수 행동 있음 / 재검토할 승인 있음 / 검증 실패 |
+| `2` | 잘못된 입력·설정, 점검 대상 0개, 점검이 끝까지 되지 않음(규칙 오류·파일 읽기 실패·내부 모순) | 판정 불가(지원하지 않는 버전·누락·격리 실패)·입력 오류 |
+
+불완전한 점검은 등급과 통과를 확정하지 않고 보고서의 `diagnostics`에 사유를 남깁니다. 없는 경로, 등록되지 않은 규칙 ID, 범위를 벗어난 제한값, 점검 대상 파일이 0개인 경우는 통과로 처리하지 않습니다(비어 있는 것이 의도라면 `--allow-empty`). `--approvals`나 `--baseline`을 쓰면 통과 여부는 신규·재검토 지적만으로 판정하므로 등급이 F여도 통과일 수 있습니다. `fix-prompt`는 지시문 생성이 목적이라 지적이 있어도 종료코드 0이므로 배포 관문에는 `check`나 `audit`를 쓰십시오.
 
 ---
 
@@ -91,13 +107,13 @@ iron-laws check . --approvals 승인기록.jsonl                          # 전�
 
 점검 결과를 AI에게 고치게 한 뒤, **무엇을 확인했고 무엇을 확인하지 못했는지**를 승인 판단에서 사라지지 않게 남기는 기능입니다. 자세한 설명과 안전 경계, 측정한 것·측정하지 못한 것은 [docs/PATCH_VERIFICATION.md](docs/PATCH_VERIFICATION.md)에 있습니다.
 
-- **근거 계약과 검사 공백 장부**: 검사가 끝났다는 것과 요구한 근거가 충족됐다는 것을 구별합니다. 입력 출처를 확정하지 못한 지점(`해석 미확정`)을 깨끗함으로 바꾸지 않습니다. (Python의 명령 실행·경로 접근·SQL 조립 세 계열)
-- **패치 검증과 Receipt**: 원본과 후보를 같은 정책으로 검사하고, 시험 삭제·skip 증가·무시 주석·정책 약화 같은 우회 변경을 따로 표시합니다. 경고가 사라졌다는 이유만으로 수정으로 인정하지 않습니다. 시험은 자격증명 없는 일회용 격리 환경에서만 실행하며, 격리를 얻지 못하면 호스트에서 대신 실행하지 않고 `판정 불가`로 남깁니다.
+- **근거 계약과 검사 공백 장부**: 검사가 끝났다는 것과 요구한 근거가 충족됐다는 것을 구별합니다. 장부는 파일과 보안 관심 지점(호출)마다 근거 상태를 적은 표입니다. 입력 출처를 확정하지 못한 지점(`해석 미확정`)을 깨끗함으로 바꾸지 않습니다. (Python의 명령 실행·경로 접근·SQL 조립 세 계열)
+- **패치 검증과 Receipt**(Receipt는 검증 결과를 담은 기록 파일, `verify-patch -o`): 원본과 후보를 같은 정책으로 검사하고, 시험 삭제·skip 증가·무시 주석·정책 약화 같은 우회 변경을 따로 표시합니다. 경고가 사라졌다는 이유만으로 수정으로 인정하지 않습니다. 시험은 자격증명 없는 일회용 격리 환경에서만 실행하며, 격리를 얻지 못하면 호스트에서 대신 실행하지 않고 `판정 불가`로 남깁니다.
 - **결함을 구별하는 회귀시험**: 원본에서 결함 때문에 실패 → 후보에서 통과 → 수정을 되돌린 mutant에서 다시 실패를 세 번 반복해 확인합니다.
 - **승인 기록**: 사유·전제를 남기고, 코드가 승인 전제(호출자·흐름·정제 함수·접근 범위·규칙 의미)를 바꾸면 관련 승인만 다시 검토하게 합니다. 복제된 취약 코드는 승인을 물려받지 않습니다.
 
-- **독립 검증기(1.3)**: 점검 보고서와 검증 기록이 서로 모순되지 않는지(없는 지적을 가리킴, 근거 없는 '근거 충족', 차단 사유를 가린 비적용, 설명할 수 없는 통과, 만료·손상·복제본의 승인 재사용)를 엔진과 독립으로 확인합니다. `iron-laws evidence verify report.json [--checkout 다른_폴더]`. `check`·`audit`도 내보내기 전에 같은 검증을 거쳐, 모순이 있으면 통과로 내보내지 않고 점검 불완전(종료코드 2)으로 표시합니다. ([docs/EVIDENCE_VERIFICATION.md](docs/EVIDENCE_VERIFICATION.md))
-- **검토 묶음(1.3)**: `iron-laws review-bundle . --approvals approvals.jsonl`은 이번 변경이 어떤 승인 전제를 건드렸는지, 승인별 유지·무효화·판정 불가의 이유와 근거 ID, 다시 해야 할 일, 아직 비어 있는 곳을 한 묶음으로 보여 줍니다. 호출 대상을 알 수 없는 경계와 점검하지 못한 파일은 '영향 없음'이 아니라 넓힌 재검토 범위로 표시합니다.
+- **독립 검증기(1.3)**: 점검 보고서와 검증 기록이 서로 모순되지 않는지 엔진과 별도의 코드로 확인합니다. 없는 지적을 가리키거나, 근거 없이 '근거 충족'이라 하거나, 만료·복제본의 승인을 유효로 쓴 보고서를 잡아냅니다. `iron-laws evidence verify report.json [--checkout 다른_폴더]`. `check`·`audit`도 내보내기 전에 같은 검증을 거치며, 모순이 있으면 통과로 내보내지 않고 점검 불완전(종료코드 2)으로 표시합니다. ([docs/EVIDENCE_VERIFICATION.md](docs/EVIDENCE_VERIFICATION.md))
+- **검토 묶음(1.3)**: `iron-laws review-bundle . --approvals approvals.jsonl`은 이번 변경이 어떤 승인 전제를 건드렸는지와 각 승인의 상태·이유를 한 묶음으로 보여 줍니다. 승인 상태는 유지, 무효화(전제가 바뀌어 다시 검토해야 함), 판정 불가 중 하나입니다. 다시 할 일과 비어 있는 곳도 함께 나옵니다. 호출 대상을 알 수 없는 경계와 점검하지 못한 파일은 영향이 없다고 보지 않고 재검토 범위를 넓혀 표시합니다.
 - **파일럿 준비(1.3)**: `iron-laws pilot ...`과 `--metrics`(건수·시간만, 경로·코드 없음, 기본 꺼짐)로 팀 단위 검토 시간·위험 수용을 로컬에서 기록합니다. 이 저장소는 파일럿을 수행하지 않았습니다.
 
 이 기능의 '통과'는 지정된 검사 계약을 충족했다는 뜻이며 안전성, 취약점 부재, 완전한 기능 동등성을 증명하지 않습니다. 보고서에서 PASS는 ① 필수 계약이 적용 대상이고 ② 필수 검사가 지정한 코드·정책에 대해 완료됐으며 ③ 요구 근거가 존재하고 유효하며 ④ 차단할 위반이 없다는 뜻입니다. 분석 한계와 미실행은 결과 옆에 표시합니다.
@@ -191,7 +207,7 @@ jobs:
 - 안전 조건(허용 목록 검사·경로 범위 검사)은 검사가 모든 경로에서 싱크 앞에 실행되고 검사한 값이 싱크까지 바뀌지 않을 때만 인정합니다. 갈래마다 따로 검사하는 코드(한 갈래는 허용 목록, 다른 갈래는 범위 검사)처럼 경로별로 안전한 경우는 알아보지 못해 확정 지적이 남을 수 있습니다. 독립 검증기는 구조적 모순만 잡고 엔진이 일관되게 만든 의미 오류는 잡지 못합니다.
 - 통과 결과만으로 배포를 승인하지 마십시오. 기존 테스트, 코드 검토, 다른 보안 점검과 함께 쓰는 보조 도구입니다.
 - 비밀값이 들어 있는 코드 줄은 모든 보고서와 AI 수정 지시문에서 값을 가려서(`****`) 출력합니다. 다만 규칙이 비밀로 인식하지 못한 값까지 가려 주는 것은 아니므로 지시문을 외부 AI에 붙여넣기 전에 한 번 읽어 보십시오.
-- 정확도 수치와 측정 방법은 [docs/ACCURACY.md](docs/ACCURACY.md), 언어·규칙별 검증 현황은 [docs/SUPPORT_MATRIX.md](docs/SUPPORT_MATRIX.md), 보고서 형식과 호환 정책은 [docs/REPORT_FORMATS.md](docs/REPORT_FORMATS.md)에 있습니다. OWASP Benchmark(Java) 기준으로 XSS 점수 +45%, 취약 암호 +77%이지만 SQL 삽입 +26%, 명령어 삽입 +14%로, 안전하게 가려진 사례에서 오탐이 남아 있습니다.
+- 정확도 수치와 측정 방법은 [docs/ACCURACY.md](docs/ACCURACY.md), 언어·규칙별 검증 현황은 [docs/SUPPORT_MATRIX.md](docs/SUPPORT_MATRIX.md), 보고서 형식과 호환 정책은 [docs/REPORT_FORMATS.md](docs/REPORT_FORMATS.md)에 있습니다. OWASP Benchmark(Java) 점수는 XSS +45%, 취약 암호 +77%인 반면 SQL 삽입은 +26%, 명령어 삽입은 +14%에 그칩니다. 안전하게 가려진 사례에서 오탐이 남기 때문입니다.
 - 존재하지 않는 패키지를 지어낸 경우(AI의 허위 의존성)는 저장소 조회 없이 알 수 없어, 인기 패키지와 철자가 비슷한 이름만 지적합니다.
 
 ## 참고 문서와 이용 조건

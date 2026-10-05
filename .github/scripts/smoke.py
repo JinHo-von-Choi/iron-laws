@@ -21,9 +21,11 @@ def run(*args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run([sys.executable, "-m", "iron_laws.cli", *args], capture_output=True, text=True, encoding="utf-8")
 
 
-def expect(condition: bool, message: str) -> None:
+def expect(condition: bool, message: str, result: subprocess.CompletedProcess[str] | None = None) -> None:
     if not condition:
         print(f"실패: {message}")
+        if result is not None:  # 운영체제별 실패를 로그만으로 진단할 수 있게 출력을 남긴다
+            print(f"  종료코드 {result.returncode}\n  stdout: {result.stdout[-800:]}\n  stderr: {result.stderr[-800:]}")
         sys.exit(1)
     print(f"통과: {message}")
 
@@ -39,7 +41,7 @@ with tempfile.TemporaryDirectory() as tmp:
     expect(run("support", "IL-501").returncode == 0, "support IL-501")
 
     checked = run("check", str(root))
-    expect(checked.returncode == 1, "비밀값이 있으면 check 종료코드 1")
+    expect(checked.returncode == 1, "비밀값이 있으면 check 종료코드 1", checked)
 
     sarif = run("audit", str(root), "--format", "sarif")
     data = json.loads(sarif.stdout)

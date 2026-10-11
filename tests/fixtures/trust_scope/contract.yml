@@ -1,0 +1,9 @@
+version: 1
+mode: block
+scope: all
+languages: [python]
+include_tests: true
+families:
+  command: {required: true}
+  path: {required: true}
+  sql: {required: true}

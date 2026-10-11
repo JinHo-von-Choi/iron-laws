@@ -16,17 +16,18 @@ import shutil
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, NamedTuple
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from iron_laws.core.config import ConfigError
 from iron_laws.core.models import Violation
+from iron_laws.core.redaction import limit, redact_text
 from iron_laws.engine.ast_tools import enclosing_function, iter_functions
 from iron_laws.engine.source import SourceFile
 from iron_laws.verify.harness_template import HARNESS_SOURCE
-from iron_laws.verify.receipt import CheckResult
+from iron_laws.verify.receipt import CheckResult, CheckState
 from iron_laws.verify.runner import RunLimits, Runner
 from iron_laws.verify.snapshot import scan_tree
 
@@ -34,7 +35,9 @@ HARNESS_DIR = "_iron_laws_harness"
 RESULT_PREFIX = "IRON_LAWS_RESULT "
 MAX_MUTANTS = 8
 REPEATS = 3
-FAMILY_OF_RULE = {"IL-504": "command", "IL-502": "path", "IL-513": "path", "IL-501": "sql"}
+RegressionFamily = Literal["command", "path", "sql"]
+
+FAMILY_OF_RULE: dict[str, RegressionFamily] = {"IL-504": "command", "IL-502": "path", "IL-513": "path", "IL-501": "sql"}
 PAYLOADS = {
     "command": ("x; touch IRON_LAWS_PWNED", "readme.txt"),
     "path": ("../../etc/passwd", "report.txt"),
@@ -88,7 +91,7 @@ class RegressionSpec(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     version: int = 1
-    family: Literal["command", "path", "sql"]
+    family: RegressionFamily
     finding: str = ""
     target: TargetSpec
     source: SourceSpec
@@ -237,7 +240,7 @@ def propose_spec(root: Path, violation: Violation) -> Proposal:
         "sql": "입력이 SQL 문자열에 들어가면 안 된다(파라미터 바인딩을 써야 한다).",
     }[family]
     spec = RegressionSpec(
-        family=family,  # type: ignore[arg-type]
+        family=family,
         finding=f"{violation.rule_id}@{rel}:{violation.line_number}",
         target=TargetSpec(module=_module_name(rel), function=func.name, file=rel),
         source=source,
@@ -283,9 +286,19 @@ def parse_result(excerpt_source: str) -> dict[str, Any] | None:
     for line in reversed(excerpt_source.splitlines()):
         if line.startswith(RESULT_PREFIX):
             try:
-                return json.loads(line[len(RESULT_PREFIX) :])
+                parsed = json.loads(line[len(RESULT_PREFIX) :])
             except json.JSONDecodeError:  # iron-laws: ignore[IL-301] 해석하지 못한 결과 줄은 None으로 알리고 호출부가 '결과를 내지 못했다' 오류로 기록한다
                 return None
+            if not isinstance(parsed, dict):
+                return None
+            if parsed.get("outcome") not in ("passed", "defect_reproduced", "control_failed", "error"):
+                return None
+            if not isinstance(parsed.get("reason", ""), str):
+                return None
+            count = parsed.get("sink_calls", 0)
+            if type(count) is not int or count < 0:
+                return None
+            return parsed
     return None
 
 
@@ -298,8 +311,8 @@ def run_harness(runner: Runner, directory: Path, mode: str, limits: RunLimits) -
         return HarnessRun("not_run", "시간·출력·자원 상한에 도달했다", run_status=result.status, limit_reached=True, notes=result.notes)
     parsed = parse_result(result.excerpt)
     if parsed is None:
-        return HarnessRun("error", "harness가 결과를 내지 못했다(문법 오류·충돌 가능성): " + (result.excerpt.splitlines()[-1][:120] if result.excerpt else ""), run_status=result.status)
-    return HarnessRun(parsed.get("outcome", "error"), parsed.get("reason", ""), int(parsed.get("sink_calls", 0) or 0), run_status=result.status)
+        return HarnessRun("error", "harness가 유효한 결과를 내지 못했다(문법 오류·형식 오류·충돌 가능성)", run_status=result.status)
+    return HarnessRun(parsed["outcome"], limit(redact_text(parsed.get("reason", "")), 500), parsed.get("sink_calls", 0), run_status=result.status)
 
 
 # ---------------------------------------------------------------------------
@@ -406,7 +419,13 @@ def build_mutants(candidate: Path, patch_text: str, target_file: str, work: Path
 @dataclass
 class _VariantOutcome:
     evidence: dict[str, Any]
-    result: tuple[str, str] | None = None  # (결과, 사유). 판정을 끝내야 하면 채운다
+    result: tuple[CheckState, str] | None = None  # (결과, 사유). 판정을 끝내야 하면 채운다
+
+
+class OriginalRuns(NamedTuple):
+    attacks: list[HarnessRun]
+    control: HarnessRun
+    variants: dict[int, HarnessRun]
 
 
 def _variant_phase(
@@ -415,15 +434,15 @@ def _variant_phase(
     original: Path,
     candidate: Path,
     limits: RunLimits,
-    cached: Any,
-    original_memo: dict[str, Any] | None,
+    cached: OriginalRuns | None,
+    original_memo: dict[str, OriginalRuns] | None,
     memo_key: str,
 ) -> _VariantOutcome | None:
     """명세의 변형 입력마다 원본에서 결함이 재현되는지 보고, 재현되는 입력이 후보에서도 재현되면 실패로 본다.
     원본에서 재현되지 않는 입력은 이 결함에 적용되지 않는 입력이므로 건너뛰고 그 사실을 남긴다."""
     if not spec.input.variants:
         return None
-    original_runs: dict[int, HarnessRun] = cached[2] if cached and len(cached) > 2 else {}
+    original_runs: dict[int, HarnessRun] = cached.variants if cached else {}
     checked: list[int] = []
     inapplicable: list[int] = []
     for index in range(1, len(spec.input.variants) + 1):
@@ -432,7 +451,7 @@ def _variant_phase(
         if original_runs[index].outcome == "not_run":
             return _VariantOutcome({"checked": checked, "inapplicable": inapplicable}, ("unknown", f"변형 입력을 실행하지 못했다: {original_runs[index].reason}"))
     if original_memo is not None and cached is not None:
-        original_memo[memo_key] = (cached[0], cached[1], original_runs)
+        original_memo[memo_key] = OriginalRuns(cached.attacks, cached.control, original_runs)
     for index, run in original_runs.items():
         if run.outcome != "defect_reproduced":
             inapplicable.append(index)
@@ -451,8 +470,8 @@ def _variant_phase(
     return _VariantOutcome({"checked": checked, "inapplicable": inapplicable, "total": len(spec.input.variants)})
 
 
-def _check(result: str, reason: str = "", executed: bool = True, **evidence: Any) -> CheckResult:
-    return CheckResult(id="regression_test", title="결함을 구별하는 회귀시험(원본 실패·후보 통과·mutant 재실패)", result=result, reason=reason, required=True, executed=executed, evidence=evidence)  # type: ignore[arg-type]
+def _check(result: CheckState, reason: str = "", executed: bool = True, **evidence: Any) -> CheckResult:
+    return CheckResult(id="regression_test", title="결함을 구별하는 회귀시험(원본 실패·후보 통과·mutant 재실패)", result=result, reason=reason, required=True, executed=executed, evidence=evidence)
 
 
 def run_regression_check(
@@ -465,7 +484,7 @@ def run_regression_check(
     allowed: list[list[str]],
     patch_path: Path | None = None,
     bypass_count: int = 0,
-    original_memo: dict[str, Any] | None = None,
+    original_memo: dict[str, OriginalRuns] | None = None,
 ) -> CheckResult:
     spec = load_spec(spec_path)
     if not spec.confirmed:
@@ -482,7 +501,7 @@ def run_regression_check(
     if original_memo is not None:
         memo_key = scan_tree(original).digest + json.dumps(spec.model_dump(mode="json"), sort_keys=True)
     cached = original_memo.get(memo_key) if original_memo is not None else None
-    original_attack = cached[0] if cached else many(original, "attack", REPEATS)
+    original_attack = cached.attacks if cached else many(original, "attack", REPEATS)
     evidence["original_attack"] = [r.outcome for r in original_attack]
     not_run = next((r for r in original_attack if r.outcome == "not_run"), None)
     if not_run is not None:
@@ -495,9 +514,9 @@ def run_regression_check(
     if outcome != "defect_reproduced":
         return _check("unknown", "원본에서 결함이 재현되지 않았다. 이 명세는 시험 후보로 남긴다(입력·기대 결과를 다시 검토하십시오)", **evidence)
     evidence["original_failure_reason"] = original_attack[0].reason
-    original_control = cached[1] if cached else run_harness(runner, original, "benign", limits)
+    original_control = cached.control if cached else run_harness(runner, original, "benign", limits)
     if original_memo is not None and cached is None and original_control.outcome != "not_run":
-        original_memo[memo_key] = (original_attack, original_control, {})
+        original_memo[memo_key] = OriginalRuns(original_attack, original_control, {})
         cached = original_memo[memo_key]
     evidence["original_control"] = original_control.outcome
     if original_control.outcome != "passed":

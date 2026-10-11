@@ -470,3 +470,30 @@ def identifiers_in(src: SourceFile, node: Node) -> set[str]:
             if (n.child_count == 0 or n.type == "variable_name") and not _is_property_position(n):
                 names.add(src.text_of(n).lstrip("$"))
     return names
+
+
+@dataclass
+class CallIndex:
+    all: list[Call]
+    functions: dict[int, list[Call]]
+    handlers: dict[int, list[Call]]
+
+
+def call_index(src: SourceFile) -> CallIndex:
+    """호출 목록을 한 번 순회하여 가장 가까운 함수·예외 처리기에 분류한다."""
+    def build():
+        result = CallIndex(list(iter_calls(src)), {}, {})
+        function_types = FUNCTION_TYPES.get(src.lang, set())
+        for call in result.all:
+            node = call.node.parent
+            handler_seen = False
+            while node is not None:
+                if not handler_seen and node.type in HANDLER_TYPES:
+                    result.handlers.setdefault(node.id, []).append(call)
+                    handler_seen = True
+                if node.type in function_types:
+                    result.functions.setdefault(node.id, []).append(call)
+                    break
+                node = node.parent
+        return result
+    return src.memo('call_index', build)

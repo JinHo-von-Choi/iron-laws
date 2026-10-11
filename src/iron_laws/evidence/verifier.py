@@ -16,6 +16,76 @@ from datetime import date
 from pathlib import Path, PurePosixPath
 from typing import Any
 
+
+@dataclass(frozen=True)
+class MappingOf:
+    value: object
+
+
+NUMBER = (int, float)
+STRINGS = [str]
+FINDING = {key: str for key in ("finding_id", "rule_id", "file_path", "fingerprint", "severity", "approval_status", "approval_id", "baseline_status", "confidence", "verification_grade")}
+FINDING.update(line_number=int, column=int)
+POINT = {key: str for key in ("id", "family", "path", "callee", "state", "evidence_kind", "reason")}
+POINT.update(line=int, column=int, in_scope=bool, finding=bool, finding_ids=STRINGS, suppressed_rules=STRINGS)
+FILE = {"path": str, "classification": str, "changed": bool}
+EXECUTION = {key: str for key in ("run_id", "code_digest", "config_hash", "contract_digest", "scan_status", "ruleset_hash")}
+EXECUTION.update(files_scanned=int, error_diagnostics=int)
+SUMMARY = {key: int for key in ("total_files_scanned", "total_violations", "critical_count", "high_count", "medium_count", "low_count", "evaluated_rule_language_pairs", "unverified_rule_language_pairs")}
+SUMMARY.update(is_passed=bool, scan_status=str, contract_status=str, contract_mode=str,
+               analysis_unknown_rate=NUMBER, unverified_rule_language_rate=NUMBER,
+               gates=MappingOf(NUMBER), gate_exceeded=STRINGS)
+SCOPE = {"mode": str, "changed_paths": STRINGS, "renames": [{"from": str, "to": str}]}
+LEDGER = {"run_id": str, "status": str, "contract_digest": str, "digests": MappingOf(str),
+          "points": [POINT], "files": [FILE], "blockers": STRINGS, "unclassified_changed_files": STRINGS,
+          "requirements": MappingOf({"required": bool, "block_on": STRINGS}),
+          "families": [{"family": str, "total": int, "in_scope": int, "by_state": MappingOf(int)}]}
+APPROVAL = {key: str for key in ("status", "finding_id", "path", "rule_id", "approved_fingerprint", "approval_id", "expires")}
+APPROVAL["policy"] = {"config_hash": str, "contract_digest": str}
+REPORT = {"schema_version": str, "summary": SUMMARY, "execution": EXECUTION, "coverage_ledger": LEDGER,
+          "violations": [FINDING], "diagnostics": [{"severity": str}], "approval_checks": [APPROVAL],
+          "metadata": {"scope": SCOPE, "config_hash": str, "config": {"fail_on": str}, "files_by_language": MappingOf(int)}}
+SCAN_EVIDENCE = {"run_id": str, "code_digest": str, "finding_ids": STRINGS, "fingerprints": STRINGS}
+RECEIPT = {"schema_version": str, "receipt_digest": str, "checks": [{"id": str, "result": str, "required": bool, "executed": bool, "limit_reached": bool}],
+           "verdict": {"overall": str}, "target": FINDING, "inputs": {}, "digests": MappingOf(str),
+           "evidence": {"original": SCAN_EVIDENCE, "candidate": SCAN_EVIDENCE}, "bypass_changes": [{}]}
+
+
+def _matches_type(value: object, spec: type | tuple[type, ...]) -> bool:
+    if spec is int:
+        return type(value) is int
+    if spec == NUMBER:
+        return type(value) in NUMBER and -float("inf") < value < float("inf")
+    return isinstance(value, spec)
+
+
+def shape_errors(value: object, spec: object, path: str = "$", *, optional: bool = False) -> list[str]:
+    """사용하는 필드만 검증한다. 선택 필드의 null과 미래 버전의 추가 필드는 허용한다."""
+    if value is None and optional:
+        return []
+    if isinstance(spec, MappingOf):
+        if not isinstance(value, dict):
+            return [f"{path}: 객체가 필요합니다"]
+        return [error for key, item in value.items() for error in shape_errors(item, spec.value, f"{path}.{key}")]
+    if isinstance(spec, dict):
+        if not isinstance(value, dict):
+            return [f"{path}: 객체가 필요합니다"]
+        errors = []
+        for key, child_spec in spec.items():
+            if key in value:
+                errors.extend(shape_errors(value[key], child_spec, f"{path}.{key}", optional=True))
+        if spec is POINT:
+            errors.extend(f"{path}.{key}: 필드가 필요합니다" for key in ("path", "line") if value.get(key) is None)
+        return errors
+    if isinstance(spec, list):
+        if not isinstance(value, list):
+            return [f"{path}: 목록이 필요합니다"]
+        return [error for index, item in enumerate(value) for error in shape_errors(item, spec[0], f"{path}[{index}]")]
+    if not _matches_type(value, spec):
+        return [f"{path}: 필드 타입이 올바르지 않습니다"]
+    return []
+
+
 SUPPORTED_REPORT_VERSIONS = ("1.3", "1.4")
 SUPPORTED_RECEIPT_VERSIONS = ("1",)
 
@@ -62,6 +132,13 @@ class _Collector:
             self.result.problems.append(Problem(code, message, where))
         return condition
 
+    def shape(self, data: object, spec: object) -> bool:
+        errors = shape_errors(data, spec)
+        if errors:
+            self.result.undeterminable = True
+            self.result.problems.extend(Problem("schema.shape", error) for error in errors)
+        return not errors
+
 
 def _digest_of(parts: dict[str, str]) -> str:
     return hashlib.sha256("|".join(f"{k}={parts[k]}" for k in sorted(parts)).encode()).hexdigest()[:12]
@@ -101,6 +178,8 @@ def verify_report(data: dict[str, Any], *, as_of: date | None = None, checkout: 
     """점검 보고서(JSON을 읽은 dict)의 불변식을 확인한다.
     as_of: 승인 만료 판단 기준일(기본 오늘). checkout: 다른 checkout 폴더. 주면 코드 지문을 다시 계산해 대조한다."""
     c = _Collector()
+    if not c.shape(data, REPORT):
+        return c.result
     as_of = as_of or date.today()
     version = data.get("schema_version")
     if version not in SUPPORTED_REPORT_VERSIONS:
@@ -386,6 +465,8 @@ def _check_checkout(c: _Collector, ledger: dict[str, Any], execution: dict[str, 
 def verify_receipt(data: dict[str, Any], *, report: dict[str, Any] | None = None) -> Verification:
     """검증 기록의 봉인·판정 도출·항목 일관성을 확인한다. 점검 보고서를 함께 주면 같은 실행의 근거인지도 대조한다."""
     c = _Collector()
+    if not c.shape(data, RECEIPT) or (report is not None and not c.shape(report, REPORT)):
+        return c.result
     version = data.get("schema_version")
     if version not in SUPPORTED_RECEIPT_VERSIONS:
         c.result.undeterminable = True
@@ -516,4 +597,3 @@ __all__ = [
     "verify_receipt",
     "verify_report",
 ]
-

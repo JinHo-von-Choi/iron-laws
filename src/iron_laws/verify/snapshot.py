@@ -105,12 +105,31 @@ def materialize(snapshot: Snapshot, destination: Path, read_only: bool = False) 
     return destination
 
 
-def make_writable(path: Path) -> None:
+def make_writable(path: Path) -> list[str]:
     """읽기 전용으로 만든 작업영역을 지울 수 있게 되돌린다."""
+    notes: list[str] = []
     for p in [path, *path.rglob("*")]:
         if p.is_symlink():
             continue
         try:
             p.chmod(p.stat().st_mode | 0o200 | (0o100 if p.is_dir() else 0))
-        except OSError:
-            continue
+        except OSError as error:
+            notes.append(f"권한 복구 실패: {type(error).__name__}")
+    return notes
+
+
+def cleanup_workspace(path: Path) -> list[str]:
+    """임시 작업영역을 제거하고 실패한 정리 단계의 사유를 반환한다."""
+    from iron_laws.core.redaction import limit, redact_text
+
+    if not path.exists():
+        return []
+    try:
+        notes = make_writable(path)
+    except OSError as error:
+        notes = [limit(redact_text(f"권한 복구 순회 실패: {type(error).__name__}: {error}"), 200)]
+    try:
+        shutil.rmtree(path)
+    except OSError as error:
+        notes.append(limit(redact_text(f"작업영역 삭제 실패: {type(error).__name__}: {error}"), 200))
+    return notes

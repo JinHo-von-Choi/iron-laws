@@ -9,6 +9,7 @@
 
 import json
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -430,19 +431,19 @@ def subprocess_run_cli(tmp_path: Path, *args: str, monkeypatch):
         "sys.argv = ['iron-laws', *sys.argv[1:]]\n"
         "main()\n"
     )
-    return subprocess.run(["python", str(script), *args], capture_output=True, text=True, encoding="utf-8", cwd=ROOT)
+    return subprocess.run([sys.executable, str(script), *args], capture_output=True, text=True, encoding="utf-8", cwd=ROOT)
 
 
 def test_json_and_sarif_stdout_has_no_human_messages(tmp_path: Path):
     (tmp_path / "a.py").write_text(SECRET)
     for fmt in ("json", "sarif"):
         proc = subprocess.run(
-            ["python", "-m", "iron_laws.cli", "audit", str(tmp_path), "--format", fmt], capture_output=True, text=True, encoding="utf-8", cwd=ROOT
+            [sys.executable, "-m", "iron_laws.cli", "audit", str(tmp_path), "--format", fmt], capture_output=True, text=True, encoding="utf-8", cwd=ROOT
         )
         assert proc.returncode == 1
         json.loads(proc.stdout)  # 사람이 읽는 메시지가 섞이면 여기서 실패한다
     proc = subprocess.run(
-        ["python", "-m", "iron_laws.cli", "audit", str(tmp_path / "없는 경로"), "--format", "json"], capture_output=True, text=True, encoding="utf-8", cwd=ROOT
+        [sys.executable, "-m", "iron_laws.cli", "audit", str(tmp_path / "없는 경로"), "--format", "json"], capture_output=True, text=True, encoding="utf-8", cwd=ROOT
     )
     assert proc.returncode == 2
     assert proc.stdout.strip() == ""

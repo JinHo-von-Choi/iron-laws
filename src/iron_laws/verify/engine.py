@@ -9,13 +9,13 @@
 작성일: 2026-10-04
 """
 
-import fnmatch
 import hashlib
 import platform
 import shutil
 import sys
 import tempfile
 import time
+import warnings
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -26,10 +26,13 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from iron_laws.core.config import ConfigError, IronLawsConfig, load_config
 from iron_laws.core.contract import Contract, contract_digest, default_contract, load_contract
-from iron_laws.core.models import AuditReport, Violation
-from iron_laws.core.scanner import SEVERITY_ORDER, AuditScanner, tool_version
+from iron_laws.core.models import AuditReport
+from iron_laws.core.scanner import AuditScanner, tool_version
 from iron_laws.verify.bypass import POLICY_FILES, TEST_INFRA_NAMES, BypassChange, detect_bypasses
-from iron_laws.verify.debt_delta import compare as compare_debt
+from iron_laws.verify.checks import FindingSelectionError as FindingSelectionError
+from iron_laws.verify.checks import _check
+from iron_laws.verify.checks import resolve_finding as resolve_finding
+from iron_laws.verify.comparison import ComparisonContext, compare_reports
 from iron_laws.verify.patchfile import apply_patch, inspect_patch
 from iron_laws.verify.receipt import CheckResult, Receipt, decide
 from iron_laws.verify.runner import (
@@ -39,7 +42,7 @@ from iron_laws.verify.runner import (
     RunResult,
     select_runner,
 )
-from iron_laws.verify.snapshot import Snapshot, make_writable, materialize, scan_tree
+from iron_laws.verify.snapshot import Snapshot, cleanup_workspace, materialize, scan_tree
 
 RUNNER_POLICY_FILE = ".iron-laws-runner.yml"
 DEFAULT_IMAGE = "python:3.13-slim"
@@ -96,31 +99,10 @@ class VerifyOptions:
         }
 
 
-class FindingSelectionError(ConfigError):
-    """지적을 하나로 정하지 못했을 때"""
 
 
-def resolve_finding(report: AuditReport, spec: str) -> Violation:
-    """지문 접두사, `RULE@경로:줄`, `RULE@경로`로 원본 지적 하나를 고른다."""
-    candidates: list[Violation]
-    if "@" in spec:
-        rule, _, location = spec.partition("@")
-        path, _, line = location.partition(":")
-        candidates = [
-            v for v in report.violations if v.rule_id.upper() == rule.upper() and v.file_path.as_posix() == path and (not line or str(v.line_number) == line)
-        ]
-    else:
-        candidates = [v for v in report.violations if v.fingerprint.startswith(spec)]
-    if not candidates:
-        raise FindingSelectionError(f"지정한 지적을 원본에서 찾지 못했습니다: {spec}")
-    if len(candidates) > 1:
-        shown = ", ".join(f"{v.rule_id}@{v.file_path.as_posix()}:{v.line_number}" for v in candidates[:5])
-        raise FindingSelectionError(f"지적이 여럿이라 하나로 정하지 못했습니다({len(candidates)}건): {shown}")
-    return candidates[0]
 
 
-def _check(id_: str, title: str, result: str, reason: str = "", required: bool = True, executed: bool = True, **evidence: Any) -> CheckResult:
-    return CheckResult(id=id_, title=title, result=result, reason=reason, required=required, executed=executed, evidence=evidence)  # type: ignore[arg-type]
 
 
 def _scan(root: Path, config: IronLawsConfig, contract: Contract, directive_filter=None) -> tuple[AuditReport, AuditScanner]:
@@ -128,15 +110,6 @@ def _scan(root: Path, config: IronLawsConfig, contract: Contract, directive_filt
     return scanner.scan(), scanner
 
 
-def _gaps_by_location(report: AuditReport) -> dict[tuple[str, str, str], int]:
-    gaps: dict[tuple[str, str, str], int] = {}
-    if report.coverage_ledger is None:
-        return gaps
-    for p in report.coverage_ledger.points:
-        if p.in_scope and p.state in ("unsupported", "unresolved", "budget_exceeded"):
-            key = (p.family, p.path, p.state)
-            gaps[key] = gaps.get(key, 0) + 1
-    return gaps
 
 
 def _restore_trusted_files(original: Path, candidate: Path, touched: list[str], policy_names: set[str]) -> list[str]:
@@ -169,11 +142,17 @@ def verify_patch(original: Path, patch_path: Path, options: VerifyOptions, runne
 
     work = Path(tempfile.mkdtemp(prefix="iron-laws-verify-"))
     checks: list[CheckResult] = []
+    receipt: Receipt | None = None
     try:
-        return _verify(original, patch_path, options, runner, work, checks)
+        receipt = _verify(original, patch_path, options, runner, work, checks)
+        return receipt
     finally:
-        make_writable(work)
-        shutil.rmtree(work, ignore_errors=True)
+        notes = cleanup_workspace(work)
+        if receipt is not None:
+            receipt.environment["workspace_cleanup"] = {"complete": not notes, "notes": notes}
+            receipt.seal()
+        elif notes:
+            warnings.warn("; ".join(notes), RuntimeWarning, stacklevel=2)
 
 
 def _verify(original: Path, patch_path: Path, options: VerifyOptions, runner: Runner | None, work: Path, checks: list[CheckResult]) -> Receipt:
@@ -296,123 +275,11 @@ def _verify(original: Path, patch_path: Path, options: VerifyOptions, runner: Ru
         )
     checks[-1].duration_s = scan_seconds
 
-    # ---- 5. 지적 변화 ----
-    # 줄이 바뀐 지적을 같은 지적으로 맺으려고 (규칙, 파일, 함수) 단위의 개수로 비교한다. 고친 줄의 모양이 바뀌어도 새 지적으로 세지 않는다.
-    def keyed(report: AuditReport) -> dict[tuple[str, str, str], list[Violation]]:
-        grouped: dict[tuple[str, str, str], list[Violation]] = {}
-        for v in report.violations:
-            grouped.setdefault((v.rule_id, v.file_path.as_posix(), v.scope_name), []).append(v)
-        return grouped
-
-    before_groups, after_groups = keyed(original_report), keyed(candidate_report)
-    new_findings: list[Violation] = []
-    resolved_groups: list[tuple[str, str, str]] = []
-    for key, items in after_groups.items():
-        extra = len(items) - len(before_groups.get(key, []))
-        if extra > 0:
-            new_findings.extend(items[-extra:])
-    for key, items in before_groups.items():
-        if len(after_groups.get(key, [])) < len(items):
-            resolved_groups.append(key)
-    if incomplete or not same_condition:
-        debt_delta: dict[str, Any] = {"status": "not_compared", "reason": "원본 또는 후보 점검이 끝까지 이루어지지 않았거나 조건이 달라 비교하지 않았다"}
-    else:
-        debt_delta = {"status": "compared", **compare_debt(original_report, candidate_report).to_dict()}
-    threshold = SEVERITY_ORDER[config.fail_on]
-    blocking_new = [v for v in new_findings if SEVERITY_ORDER[v.severity] >= threshold]
-    findings_summary = {
-        "original_total": len(original_report.violations),
-        "candidate_total": len(candidate_report.violations),
-        "resolved": [{"rule": r, "path": pth, "scope": sc} for r, pth, sc in resolved_groups],
-        "new": [{"rule": v.rule_id, "path": v.file_path.as_posix(), "line": v.line_number, "severity": v.severity.value, "finding_id": v.finding_id} for v in new_findings],
-        "untrusted_suppressions_ignored": sum(1 for d in candidate_report.diagnostics if "신뢰된 정책에 없던 억제" in d.message),
-    }
-    target_info: dict[str, Any] | None = None
-    if options.finding:
-        target = resolve_finding(original_report, options.finding)
-        target_info = {
-            "rule_id": target.rule_id,
-            "path": target.file_path.as_posix(),
-            "line": target.line_number,
-            "fingerprint": target.fingerprint,
-            "finding_id": target.finding_id,
-            "severity": target.severity.value,
-        }
-        target_key = (target.rule_id, target.file_path.as_posix(), target.scope_name)
-        resolved_entry = target_key if target_key in resolved_groups else None
-        removed_file = target.file_path.as_posix() not in candidate_snapshot.files
-        hiding = [b for b in bypasses if b.kind in ("ignore_added", "config_weakened", "policy_changed", "baseline_changed")]
-        ignored_new = findings_summary["untrusted_suppressions_ignored"] > 0
-        if removed_file:
-            checks.append(_check("target_resolved", "대상 지적 해소", "fail", "파일을 지워서 지적이 사라졌다. 수정으로 인정하지 않는다", target=target_info))
-        elif resolved_entry is None:
-            checks.append(_check("target_resolved", "대상 지적 해소", "fail", "후보에서도 같은 지적이 남아 있다", target=target_info))
-        elif hiding or ignored_new:
-            checks.append(
-                _check(
-                    "target_resolved",
-                    "대상 지적 해소",
-                    "fail",
-                    "지적이 사라졌지만 무시 주석·정책 변경이 함께 있어 수정으로 인정하지 않는다",
-                    target=target_info,
-                    hiding=[b.kind for b in hiding],
-                )
-            )
-        else:
-            checks.append(_check("target_resolved", "대상 지적 해소", "pass", target=target_info))
-    else:
-        checks.append(_check("target_resolved", "대상 지적 해소", "not_run", "대상 지적(--finding)을 지정하지 않았다", required=False, executed=False))
-    checks.append(
-        _check(
-            "no_new_findings",
-            "새 지적 없음(설정한 실패 기준 이상)",
-            "fail" if blocking_new else "pass",
-            f"새로 생긴 {config.fail_on.value} 이상 지적이 {len(blocking_new)}건 있다" if blocking_new else "",
-            new=findings_summary["new"][:20],
-        )
-    )
-
-    # ---- 6. 검사 공백 ----
-    original_gaps, candidate_gaps = _gaps_by_location(original_report), _gaps_by_location(candidate_report)
-    worse = {k: (original_gaps.get(k, 0), v) for k, v in candidate_gaps.items() if v > original_gaps.get(k, 0)}
-    coverage_summary = {
-        "original_status": original_report.coverage_ledger.status if original_report.coverage_ledger else None,
-        "candidate_status": candidate_report.coverage_ledger.status if candidate_report.coverage_ledger else None,
-        "original_gap_points": sum(original_gaps.values()),
-        "candidate_gap_points": sum(candidate_gaps.values()),
-        "new_gaps": [{"family": f, "path": p, "state": s, "before": b, "after": a} for (f, p, s), (b, a) in worse.items()],
-        "contract_digest": contract_digest(contract),
-    }
-    checks.append(
-        _check(
-            "coverage_not_worse",
-            "검사 공백이 늘지 않음",
-            "fail" if worse else "pass",
-            f"후보 변경으로 검사 공백이 {sum(a - b for b, a in worse.values())}곳 늘었다" if worse else "",
-            new_gaps=coverage_summary["new_gaps"][:20],
-        )
-    )
-
-    # ---- 7. 변경 범위 ----
-    extras = [f for f in info.files if not options.finding or f != target_info["path"]] if target_info else list(info.files)
-    outside = [f for f in info.files if options.allow_paths and not any(fnmatch.fnmatch(f, pat) for pat in options.allow_paths)]
-    scope_problems = []
-    if target_info and target_info["path"] not in info.files:
-        scope_problems.append("patch가 대상 지적이 있는 파일을 바꾸지 않았다")
-    if len(info.files) > options.max_files:
-        scope_problems.append(f"변경 파일이 {len(info.files)}개로 상한 {options.max_files}개를 넘는다")
-    if outside:
-        scope_problems.append(f"허용 경로 밖 파일을 바꿨다: {', '.join(outside[:3])}")
-    checks.append(
-        _check(
-            "change_scope",
-            "변경 범위(대상 파일 포함·파일 수·허용 경로)",
-            "fail" if scope_problems else "pass",
-            "; ".join(scope_problems),
-            files=info.files,
-            extra_files=extras[:20],
-        )
-    )
+    comparison = compare_reports(ComparisonContext(original_report, candidate_report, config, contract, candidate_snapshot,
+                                                   info.files, bypasses, options.finding, options.max_files,
+                                                   options.allow_paths, not incomplete and same_condition), checks)
+    findings_summary, coverage_summary = comparison.findings, comparison.coverage
+    target_info, debt_delta = comparison.target, comparison.debt_delta
 
     # ---- 8. 기존 시험(격리 실행) ----
     runner_obj = runner or select_runner(options.runner, options.image or runner_policy.image)
@@ -573,20 +440,27 @@ def regression_only(
 
     original = original.resolve()
     work = Path(tempfile.mkdtemp(prefix="iron-laws-regression-"))
+    result: CheckResult | None = None
     try:
         snapshot = scan_tree(original)
         orig_run = materialize(snapshot, work / "original-run")
         cand_run = materialize(snapshot, work / "candidate-run")
         info = inspect_patch(patch_path)
         if info.problems:
-            return _check("regression_test", "회귀시험", "fail", "patch가 안전하지 않다: " + "; ".join(info.problems[:2]))
+            result = _check("regression_test", "회귀시험", "fail", "patch가 안전하지 않다: " + "; ".join(info.problems[:2]))
+            return result
         ok, error = apply_patch(patch_path, cand_run)
         if not ok:
-            return _check("regression_test", "회귀시험", "fail", f"patch를 적용하지 못했다: {error}")
+            result = _check("regression_test", "회귀시험", "fail", f"patch를 적용하지 못했다: {error}")
+            return result
         policy, _ = load_runner_policy(orig_run)
         runner_obj = runner or select_runner(runner_pref, image or policy.image)
         _restore_trusted_files(original, cand_run, info.files, set(POLICY_FILES))
-        return run_regression_check(spec_path, orig_run, cand_run, work, runner_obj, limits, policy.allowed_commands, patch_path=patch_path, original_memo=original_memo)
+        result = run_regression_check(spec_path, orig_run, cand_run, work, runner_obj, limits, policy.allowed_commands, patch_path=patch_path, original_memo=original_memo)
+        return result
     finally:
-        make_writable(work)
-        shutil.rmtree(work, ignore_errors=True)
+        notes = cleanup_workspace(work)
+        if result is not None:
+            result.evidence["workspace_cleanup"] = {"complete": not notes, "notes": notes}
+        elif notes:
+            warnings.warn("; ".join(notes), RuntimeWarning, stacklevel=2)

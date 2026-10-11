@@ -5,6 +5,7 @@
 """
 # iron-laws: ignore-file[IL-302] 테스트 회피 구문을 탐지하는 패턴 정의
 
+import ast
 import re
 
 from tree_sitter import Node
@@ -12,6 +13,8 @@ from tree_sitter import Node
 from iron_laws.core.models import Confidence, IronLaw, Severity, Violation
 from iron_laws.engine.ast_tools import (
     body_statements,
+    call_index,
+    enclosing_function,
     handler_body,
     handler_header,
     has_logging,
@@ -23,6 +26,7 @@ from iron_laws.engine.ast_tools import (
     walk_no_nested_functions,
 )
 from iron_laws.engine.languages import JS_FAMILY, Lang
+from iron_laws.engine.python_ast import parse_python
 from iron_laws.engine.source import SourceFile
 from iron_laws.rules.base import BaseRule
 from iron_laws.standards import mois_ref
@@ -63,7 +67,23 @@ def uses_name(src: SourceFile, node: Node | None, name: str | None) -> bool:
     return re.search(rf"(?<![\w$]){re.escape(name)}(?!\w)", src.text_of(node)) is not None
 
 
+def records_failure(src: SourceFile, handler: Node, body: Node) -> bool:
+    """예외 자체 또는 명시적 실패 진단을 결과에 남기는 처리를 인정한다."""
+    var = caught_variable(src, handler)
+    text = src.text_of(body)
+    if var and re.search(r"\.append\([^\n]*\b" + re.escape(var) + r"\b", text):
+        return True
+    for node in walk_no_nested_functions(body, src.lang):
+        if node.type not in ("call", "call_expression", "invocation_expression"):
+            continue
+        call_text = src.text_of(node)
+        if re.search(r"\.append\(\s*(?:Diagnostic|Problem)\(", call_text) and re.search(r"severity\s*=\s*['\"](?:error|warning)['\"]|undeterminable\s*=\s*True", call_text):
+            return True
+    return False
+
+
 class SwallowedExceptionRule(BaseRule):
+    version = 2
     rule_id = "IL-301"
     name = "예외 은폐 (로그도 전파도 없는 오류 처리) 탐지"
     iron_law = IronLaw.LAW_3
@@ -103,7 +123,7 @@ class SwallowedExceptionRule(BaseRule):
         header = handler_header(src, handler)
         if src.lang is Lang.PYTHON and BENIGN_PY_EXCEPTIONS.search(header):
             return None
-        if has_throw(src, body) or has_logging(src, body):
+        if has_throw(src, body) or has_logging(src, body) or records_failure(src, handler, body):
             return None
         if re.search(r"\.interrupt\(\)|Thread\.currentThread", src.text_of(body)):
             return None
@@ -312,6 +332,7 @@ class SwallowedExceptionRule(BaseRule):
 
 
 class BroadExceptionRule(BaseRule):
+    version = 2
     rule_id = "IL-304"
     name = "부적절한 예외 처리 (포괄적 예외 처리) 탐지"
     iron_law = IronLaw.LAW_3
@@ -334,6 +355,14 @@ class BroadExceptionRule(BaseRule):
                 continue
             if body is not None and has_throw(src, body):
                 continue
+            if body is not None and records_failure(src, handler, body):
+                match = re.search(r"(\w+)\.append\(\s*Diagnostic\(", src.text_of(body))
+                fn = enclosing_function(handler, src.lang)
+                if match and fn is not None and re.search(r"severity\s*=\s*['\"]error['\"]", src.text_of(body)):
+                    name = match.group(1)
+                    returns = [n for n in walk_no_nested_functions(fn, src.lang) if n.type == "return_statement"]
+                    if any(re.search(r"\b" + re.escape(name) + r"\b", src.text_of(n)) for n in returns):
+                        continue
             found.append(self.at_node(src, handler, "포괄적 예외(Exception/Throwable/bare except)를 잡고 있습니다. 구체적인 예외 타입을 지정하십시오.", confidence=Confidence.REVIEW))
         if src.lang is Lang.JAVA and src.root is not None:
             for node in src.nodes:
@@ -386,9 +415,7 @@ class ErrorExposureRule(BaseRule):
                 var = caught_variable(src, handler)
                 if body is None or not var:
                     continue
-                for call in iter_calls(src):
-                    if not (body.start_byte <= call.node.start_byte < body.end_byte):
-                        continue
+                for call in call_index(src).handlers.get(handler.id, []):
                     if self.js_response.search(call.callee) and any(re.search(rf"\b{re.escape(var)}\.(stack|message)|\b{re.escape(var)}\b\s*$", src.text_of(a)) for a in call.args):
                         found.append(self.at_node(src, call.node, "오류 객체(메시지/스택)를 응답으로 내보냅니다."))
         if src.lang is Lang.GO:
@@ -468,6 +495,7 @@ ASSERT_RE = re.compile(
 
 
 class TestWithoutAssertionRule(BaseRule):
+    version = 2
     rule_id = "IL-306"
     name = "검증문(assert) 없는 테스트 탐지"
     iron_law = IronLaw.LAW_3
@@ -483,7 +511,7 @@ class TestWithoutAssertionRule(BaseRule):
         found = []
         if src.lang is Lang.PYTHON:
             for fn in iter_functions(src):
-                if fn.name.startswith("test") and fn.body is not None and not ASSERT_RE.search(src.text_of(fn.body)):
+                if fn.name.startswith("test") and fn.body is not None and not self._python_asserts(src, fn.start_line):
                     found.append(self.at_node(src, fn.node, f"테스트 {fn.name}에 검증문이 없습니다.", confidence=Confidence.REVIEW))
         elif src.lang in JS_FAMILY:
             for call in iter_calls(src):
@@ -502,6 +530,49 @@ class TestWithoutAssertionRule(BaseRule):
                 if re.match(r"Test[A-Z_0-9]", fn.name) and fn.body is not None and not ASSERT_RE.search(src.text_of(fn.body)) and "assert." not in src.text_of(fn.body) and "require." not in src.text_of(fn.body):
                     found.append(self.at_node(src, fn.node, f"테스트 {fn.name}에 검증이 없습니다.", confidence=Confidence.REVIEW))
         return found
+    @staticmethod
+    def _python_asserts(src: SourceFile, line: int) -> bool:
+        def compute():
+            tree = parse_python(src).tree
+            if tree is None:
+                return {}
+            functions = {}
+            for node in tree.body:
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    functions.setdefault(node.name, []).append(node)
+            def asserts(fn, seen, depth):
+                if fn.name in seen or depth > 4:
+                    return False
+                rebound = {arg.arg for arg in (*fn.args.posonlyargs, *fn.args.args, *fn.args.kwonlyargs)}
+                statements = list(_python_function_statements(fn))
+                rebound.update(n.id for n in statements if isinstance(n, ast.Name) and isinstance(n.ctx, (ast.Store, ast.Del)))
+                for node in statements:
+                    if isinstance(node, ast.Assert):
+                        return True
+                    if not isinstance(node, ast.Call):
+                        continue
+                    if isinstance(node.func, ast.Name) and node.func.id in functions:
+                        helpers = functions[node.func.id]
+                        if node.func.id not in rebound and len(helpers) == 1 and asserts(helpers[0], seen | {fn.name}, depth + 1):
+                            return True
+                        continue
+                    if ASSERT_RE.search(ast.unparse(node.func) + '('):
+                        return True
+                return False
+            return {fn.lineno: asserts(fn, set(), 0) for fn in ast.walk(tree) if isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef))}
+        return src.memo('python_test_assertions', compute).get(line, False)
+
+
+
+def _python_function_statements(node):
+    """로컬 함수 선언은 실행된 검증으로 세지 않는다."""
+    stack = list(node.body)
+    while stack:
+        item = stack.pop()
+        if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+            continue
+        yield item
+        stack.extend(ast.iter_child_nodes(item))
 
 
 class AuthBypassRule(BaseRule):
@@ -552,6 +623,7 @@ NULL_GUARD_RE = re.compile(
 
 
 class FailureAsDefaultRule(BaseRule):
+    version = 2
     rule_id = "IL-307"
     name = "검증·처리 실패를 null·기본값으로 대체하고 기록하지 않음"
     iron_law = IronLaw.LAW_3
@@ -565,10 +637,38 @@ class FailureAsDefaultRule(BaseRule):
     or_null = re.compile(r"(?i)(OrNull|_or_none|OrDefault|_or_default|OrEmpty)$")
     return_types = {"return_statement"}
 
+    @staticmethod
+    def _allowlist_success_lines(src: SourceFile) -> set[int]:
+        """None 반환 계약에서 허용 목록 성공과 뒤따르는 거절 예외가 명시된 경우만 인정한다."""
+        if src.lang is not Lang.PYTHON:
+            return set()
+        tree = parse_python(src).tree
+        if tree is None:
+            return set()
+        lines = set()
+        for fn in ast.walk(tree):
+            if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)) or not isinstance(fn.returns, ast.Constant) or fn.returns.value is not None:
+                continue
+            for guard, denial in zip(fn.body, fn.body[1:], strict=False):
+                if not isinstance(guard, ast.If) or guard.orelse or not isinstance(denial, ast.Raise):
+                    continue
+                test = guard.test
+                if not isinstance(test, ast.Compare) or len(test.ops) != 1 or not isinstance(test.ops[0], ast.In):
+                    continue
+                allowed = test.comparators[0]
+                if not isinstance(allowed, ast.Name) or not re.search(r"(?i)allow|permitted|authorized", allowed.id):
+                    continue
+                if len(guard.body) == 1 and isinstance(guard.body[0], ast.Return):
+                    value = guard.body[0].value
+                    if value is None or isinstance(value, ast.Constant) and value.value is None:
+                        lines.add(guard.lineno)
+        return lines
+
     def check(self, src: SourceFile) -> list[Violation]:
         found: list[Violation] = []
         if src.root is None or src.lang in (Lang.RUST, Lang.C, Lang.CPP):
             return found
+        allowlist_success = self._allowlist_success_lines(src)
         for fn in iter_functions(src):
             if fn.body is None:
                 continue
@@ -584,8 +684,16 @@ class FailureAsDefaultRule(BaseRule):
                 )
             if not self.sensitive_fn.search(fn.name):
                 continue
+            result_type = fn.node.child_by_field_name("return_type")
+            annotation = src.text_of(result_type) if result_type is not None else ""
+            analysis_result = bool(re.search(r"list\[(?:Violation|Problem)\]", annotation)) and not re.search(r"(?i)auth|pay|charge|transfer|token|credential|login|permission", fn.name)
             for node in walk_no_nested_functions(fn.body, src.lang):
                 if node.type in IF_TYPES:
+                    if node.start_point[0] + 1 in allowlist_success:
+                        continue
+                    block = node.child_by_field_name("consequence")
+                    if analysis_result and block is not None and src.text_of(block).strip() == "return []":
+                        continue
                     violation = self._check_branch(src, fn.name, node)
                     if violation is not None:
                         found.append(violation)
@@ -597,7 +705,9 @@ class FailureAsDefaultRule(BaseRule):
         if cond is None or block is None:
             return None
         cond_text = src.text_of(cond).strip().strip("()").strip()
-        if NULL_GUARD_RE.match(cond_text):
+        critical = re.search(r"(?i)auth|pay|charge|transfer|token|credential|login|permission", fn_name)
+        explicit_null = re.search(r"\b(?:null|None|nil|undefined)\b", cond_text)
+        if NULL_GUARD_RE.match(cond_text) and (not critical or explicit_null):
             return None  # 단순 null 전파 가드는 실패 대체로 보지 않는다
         stmts = body_statements(block) if block.type in ("block", "statement_block", "compound_statement") else [block]
         if len(stmts) != 1 or stmts[0].type not in self.return_types:
@@ -615,6 +725,7 @@ class FailureAsDefaultRule(BaseRule):
 
 
 class ValidationMessageMismatchRule(BaseRule):
+    version = 2
     rule_id = "IL-531"
     name = "입력 검증 조건과 오류 메시지의 불일치 의심"
     iron_law = IronLaw.LAW_3
@@ -636,6 +747,10 @@ class ValidationMessageMismatchRule(BaseRule):
             cond = node.child_by_field_name("condition")
             block = node.child_by_field_name("consequence")
             if cond is None or block is None:
+                continue
+            # 검사기의 발견 목록에 추가하는 경고는 사용자 입력을 거부하는 메시지가 아니다.
+            block_text = src.text_of(block)
+            if re.search(r"\.append\(.*(?:at_node|at_line|report)\(", block_text, re.DOTALL) and not has_throw(src, block):
                 continue
             cond_text = src.text_of(cond)
             numbers = {n.replace("_", "").replace(",", "") for n in self.number_re.findall(cond_text)}

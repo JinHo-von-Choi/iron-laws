@@ -16,6 +16,7 @@ from statistics import median
 from typing import Any
 
 from iron_laws.core.config import ConfigError
+from iron_laws.core.pilot_records import validate_record
 
 PILOT_FILE = ".iron-laws-pilot.jsonl"
 ARMS = ("baseline", "bundle")
@@ -38,17 +39,19 @@ class PilotStore:
             if not line.strip():
                 continue
             try:
-                rows.append(json.loads(line))
+                rows.append(validate_record(json.loads(line), number))
             except json.JSONDecodeError as e:
                 raise ConfigError(f"파일럿 기록 {number}번째 줄을 읽을 수 없습니다: {e}") from e
         return rows
 
     def append(self, record: dict[str, Any]) -> None:
+        validate_record(record, 1)
         with self.path.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n")
 
     def records_rewrite_last(self, record: dict[str, Any]) -> None:
         """방금 덧붙인 마지막 줄에 필드를 더해 다시 쓴다(기록을 지우지 않고 마지막 줄만 같은 사건의 완결본으로 바꾼다)."""
+        validate_record(record, 1)
         lines = self.path.read_text(encoding="utf-8").splitlines()
         lines[-1] = json.dumps(record, ensure_ascii=False, sort_keys=True)
         self.path.write_text("\n".join(lines) + "\n", encoding="utf-8")

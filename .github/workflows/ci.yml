@@ -41,6 +41,25 @@ jobs:
       - name: Run Self-Audit (Iron Laws Check)
         run: uv run iron-laws check . --fail-on HIGH
 
+      - name: Record self-audit trust metrics (report mode)
+        run: |
+          mkdir -p "$RUNNER_TEMP/iron-laws-trust"
+          uv run iron-laws audit . --format json -o "$RUNNER_TEMP/iron-laws-trust/audit.json"
+          uv run python .github/scripts/trust_report.py "$RUNNER_TEMP/iron-laws-trust/audit.json" "$RUNNER_TEMP/iron-laws-trust/metrics.json"
+
+      - name: Enforce verified fixed scope
+        run: |
+          uv run iron-laws audit tests/fixtures/trust_scope --contract tests/fixtures/trust_scope/contract.yml --max-analysis-unknown-rate 0 --max-unverified-rule-language-rate 0 --format json -o "$RUNNER_TEMP/iron-laws-trust/fixed-scope.json"
+          uv run iron-laws evidence verify "$RUNNER_TEMP/iron-laws-trust/fixed-scope.json"
+
+      - name: Upload trust reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trust-python-${{ matrix.python-version }}
+          path: ${{ runner.temp }}/iron-laws-trust/
+          if-no-files-found: ignore
+
   smoke:
     name: Wheel smoke (${{ matrix.os }}, Python ${{ matrix.python-version }})
     runs-on: ${{ matrix.os }}

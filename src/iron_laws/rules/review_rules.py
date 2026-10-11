@@ -288,6 +288,7 @@ class RuntimeUse:
     src: SourceFile
     line: int
     label: str
+    role: str = "fixed"
 
 
 CHANGELOG_DOC_RE = re.compile(r"(?i)(change|release|history|news|migration|upgrade|todo|roadmap)")
@@ -301,10 +302,14 @@ def _java_major(raw: str) -> int:
     raw = raw.strip()
     if raw.startswith("1."):
         return int(raw.split(".")[1])
-    return int(re.match(r"\d+", raw).group(0))
+    match = re.match(r"\d+", raw)
+    if match is None:
+        raise ValueError("숫자로 시작하지 않는 Java 버전")
+    return int(match.group(0))
 
 
 class VersionRule(AiRule):
+    version = 2
     rule_id = "AI-121"
     name = "런타임·프레임워크 버전 표기 불일치와 정책 위반"
     iron_law = IronLaw.LAW_5
@@ -374,16 +379,32 @@ class VersionRule(AiRule):
                 continue
             for idx, line in enumerate(src.lines, start=1):
                 m = pattern.search(line)
-                if not m or "$" in line:
+                matrix = kind == "actions" and re.search(r"(?:python-version|java-version|node-version)\s*:\s*\[", line)
+                if (not m and not matrix) or "$" in line:
                     continue
-                groups = [g for g in m.groups() if g]
+                if matrix:
+                    key = {"Python": "python-version", "Java": "java-version", "Node.js": "node-version"}[runtime]
+                    if key not in line:
+                        continue
+                    groups = re.findall(r"3\.\d+" if runtime == "Python" else r"\b\d{1,2}\b", line)
+                    role = "supported"
+                else:
+                    groups = [g for g in m.groups() if g]
+                    role = "fixed"
+                    if kind == "doc":
+                        tail = line[m.end():]
+                        if re.match(r"\s*(?:\+|이상|or later|and above|or newer)", tail, re.I) or re.search(r"(?:>=|최소|minimum|at least)\s*(?:Python|Java|JDK|Node(?:\.js)?)?\s*$", line[:m.start()], re.I):
+                            role = "minimum"
+                        elif re.match(r"\s*(?:/|,)\s*\d", tail):
+                            role = "supported"
+                            groups = re.findall(r"3\.\d+" if runtime == "Python" else r"\b\d{1,2}\b", line[m.start():])
                 for raw in groups:
                     try:
                         value = (_java_major(raw.replace("_", ".")),) if runtime == "Java" else _vt(raw)
                     except (ValueError, AttributeError):  # iron-laws: ignore[IL-301] 숫자가 아닌 표기는 버전으로 보지 않는다
                         continue
                     if value and not (runtime == "Java" and value[0] < 6):
-                        uses.append(RuntimeUse(value, src, idx, f"{src.path.as_posix()}:{idx}"))
+                        uses.append(RuntimeUse(value, src, idx, f"{src.path.as_posix()}:{idx}", role))
         return uses
 
     @staticmethod
@@ -398,13 +419,20 @@ class VersionRule(AiRule):
     def _mismatch(self, runtime: str, uses: list[RuntimeUse]) -> list[Violation]:
         if not uses:
             return []
+        fixed = [u for u in uses if u.role == "fixed"]
+        selected = [u for u in fixed if self._kind_of(u.src) != "doc"]
+        minimum = [u for u in uses if u.role == "minimum"]
+        support_groups: dict[str, set[tuple[int, ...]]] = {}
+        for u in uses:
+            if u.role == "supported":
+                support_groups.setdefault(u.label, set()).add(u.version)
+        mismatch = len({u.version for u in fixed}) > 1
+        mismatch |= any(u.version < lower.version for u in selected for lower in minimum)
+        mismatch |= any(u.version not in allowed for u in selected for allowed in support_groups.values())
+        if not mismatch:
+            return []
         non_doc = [u for u in uses if self._kind_of(u.src) != "doc"]
         docs = [u for u in uses if self._kind_of(u.src) == "doc"]
-        versions = {u.version for u in non_doc} | {u.version for u in docs}
-        if len(versions) <= 1:
-            return []
-        if not non_doc and len({u.version for u in docs}) <= 1:
-            return []
         shown = ", ".join(f"{'.'.join(map(str, u.version))}({u.label})" for u in sorted(uses, key=lambda x: x.label)[:6])
         anchor = sorted(non_doc or docs, key=lambda x: x.label)[0]
         return [

@@ -22,6 +22,7 @@ from iron_laws.engine.source import detect_kind
 ROOT = Path(__file__).resolve().parent.parent
 TARGET = ROOT / "src" / "iron_laws" / "standards" / "data" / "support_fixtures.json"
 CASE_SOURCES = [
+    ("tests.test_self_audit_support_cases", "CASES"),
     ("tests.test_rule_cases", "CASES"),
     ("tests.test_ai_arch_typing_cases", "CASES"),
     ("tests.test_regressions", "CASES"),

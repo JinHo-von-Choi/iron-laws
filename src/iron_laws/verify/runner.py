@@ -25,6 +25,7 @@ DEFAULT_ALLOWED_COMMANDS = [["python", "-m", "pytest"], ["python", "-m", "unitte
 SHELL_NAMES = frozenset({"sh", "bash", "zsh", "dash", "ksh", "fish", "cmd", "cmd.exe", "powershell", "powershell.exe", "pwsh"})
 ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
 EXCERPT_CHARS = 2000
+CLEANUP_TIMEOUT_S = 10.0
 
 
 @dataclass
@@ -51,6 +52,12 @@ class RunResult:
     attempts: int = 0
     excerpt: str = ""
     counts: dict[str, int] = field(default_factory=dict)  # 출력에서 읽은 시험 건수. 비신뢰 출력이므로 판정이 아니라 참고(0건 시험·skip 증가 탐지)에만 쓴다
+    notes: list[str] = field(default_factory=list)
+
+
+@dataclass
+class CleanupResult:
+    complete: bool = True
     notes: list[str] = field(default_factory=list)
 
 
@@ -102,8 +109,8 @@ class Runner(ABC):
     def image_info(self) -> tuple[str, str]:
         return "", ""
 
-    def kill(self, container_name: str) -> None:
-        return None
+    def kill(self, container_name: str) -> CleanupResult:
+        return CleanupResult()
 
     def run(self, workdir: Path, argv: list[str], limits: RunLimits, allowed: list[list[str]] | None = None) -> RunResult:
         result = RunResult(status="isolation_unavailable", backend=self.name, command=list(argv))
@@ -168,7 +175,10 @@ class Runner(ABC):
                 timed_out = True
                 break
         if timed_out or over.is_set():
-            self.kill(name)
+            cleanup = self.kill(name)
+            result.notes.extend(cleanup.notes)
+            if not cleanup.complete:
+                result.notes.append("컨테이너 중지·삭제를 확인하지 못했습니다")
             proc.kill()
         proc.wait()
         reader.join(timeout=5)
@@ -229,13 +239,27 @@ class DockerRunner(Runner):
     def image_info(self) -> tuple[str, str]:
         return self.image, self._image_id
 
-    def kill(self, container_name: str) -> None:
-        """상한에 닿은 컨테이너를 정리한다. 정리 명령이 늦어져도 검증 전체가 멈추지 않게 오류를 삼키되 기록은 호출부가 남긴다."""
+    def kill(self, container_name: str) -> CleanupResult:
+        """총 정리 시간 안에 중지·삭제를 시도하고 마지막 삭제의 확인 여부를 돌려준다."""
+        result = CleanupResult(complete=False)
+        deadline = time.monotonic() + CLEANUP_TIMEOUT_S
         for command in (["docker", "kill", container_name], ["docker", "rm", "-f", container_name]):
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                result.notes.append("컨테이너 정리 시간 상한에 도달했습니다")
+                break
             try:
-                subprocess.run(command, capture_output=True, timeout=30, check=False)  # noqa: S603
-            except (OSError, subprocess.SubprocessError):
+                completed = subprocess.run(command, capture_output=True, timeout=remaining, check=False)  # noqa: S603
+            except (OSError, subprocess.SubprocessError) as error:
+                result.notes.append(limit(redact_text(f"컨테이너 {command[1]} 실패: {type(error).__name__}: {error}"), 200))
                 continue
+            stderr = completed.stderr.decode("utf-8", errors="replace") if isinstance(completed.stderr, bytes) else completed.stderr or ""
+            absent = "no such container" in stderr.lower()
+            if command[1] == "rm":
+                result.complete = completed.returncode == 0 or absent
+            if completed.returncode != 0 and not absent:
+                result.notes.append(f"컨테이너 {command[1]} 종료코드 {completed.returncode}")
+        return result
 
     def build_command(self, workdir: Path, argv: list[str], limits: RunLimits, container_name: str) -> list[str]:
         return [

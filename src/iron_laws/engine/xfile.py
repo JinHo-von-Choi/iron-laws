@@ -19,6 +19,8 @@ class ProjectIndex:
     files: dict[str, SourceFile]
     budget: int = DEFAULT_LOOKUP_BUDGET
     modules: dict[str, list[str]] = field(default_factory=dict)
+    java_files: dict[str, SourceFile] = field(default_factory=dict)
+    _java_class_paths: dict[str, list[str]] | None = None
     limit_hits: int = 0
     resolved: int = 0
     _resolve_cache: dict[tuple[str, str, int], list] = field(default_factory=dict)
@@ -27,10 +29,50 @@ class ProjectIndex:
     def build(cls, sources: list[SourceFile], budget: int = DEFAULT_LOOKUP_BUDGET) -> "ProjectIndex":
         files = {s.path.as_posix(): s for s in sources if s.lang is Lang.PYTHON}
         index = cls(files, budget)
+        index.java_files = {s.path.as_posix(): s for s in sources if s.lang is Lang.JAVA}
         for rel in files:
             for name in _module_names(rel):
                 index.modules.setdefault(name, []).append(rel)
         return index
+
+    def resolve_java_static(self, src: SourceFile, callee: str, argc: int):
+        """유일한 프로젝트 클래스의 static 메서드만 해석한다. 객체·중복 클래스는 보류한다."""
+        from iron_laws.engine.ast_tools import iter_functions
+        if src.lang is not Lang.JAVA or "." not in callee:
+            return []
+        owner, method = callee.rsplit(".", 1)
+        if not owner[:1].isupper() or "." in owner:
+            return []
+        key = (src.path.as_posix(), "java-static:" + callee, argc)
+        if key in self._resolve_cache:
+            return self._resolve_cache[key]
+        if self.budget <= 0:
+            self.limit_hits += 1
+            return []
+        self.budget -= 1
+        if self._java_class_paths is None:
+            self._java_class_paths = {}
+            for path, source in self.java_files.items():
+                for node in source.nodes:
+                    if node.type == "class_declaration":
+                        name = node.child_by_field_name("name")
+                        if name is not None:
+                            self._java_class_paths.setdefault(source.text_of(name), []).append(path)
+        paths = self._java_class_paths.get(owner, [])
+        result = []
+        if len(paths) == 1:
+            source = self.java_files[paths[0]]
+            classes = [n for n in source.nodes if n.type == "class_declaration" and source.text_of(n.child_by_field_name("name")) == owner]
+            for fn in iter_functions(source):
+                if fn.name != method or len(fn.params) != argc or fn.node.parent != classes[0].child_by_field_name("body"):
+                    continue
+                modifiers = next((n for n in fn.node.named_children if n.type == "modifiers"), None)
+                if modifiers is not None and "static" in source.text_of(modifiers).split():
+                    result.append((source, fn))
+            if len(result) != 1:
+                result = []
+        self._resolve_cache[key] = result
+        return result
 
     def lookup_module(self, name: str, from_path: str) -> str | None:
         candidates = self.modules.get(name, [])

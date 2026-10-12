@@ -7,6 +7,7 @@ from tree_sitter import Node
 from iron_laws.core.models import Confidence, IronLaw, Severity, Violation
 from iron_laws.engine.ast_tools import (
     Call,
+    enclosing_function,
     is_literal,
     iter_calls,
 )
@@ -78,7 +79,16 @@ class XssRule(BaseRule):
             return found
         found.extend(self._dom_assignments(src))
         found.extend(self._jsx(src))
+        writers = self._response_writers(src)
         for call in iter_calls(src):
+            target, _, method = call.callee.rpartition(".")
+            scope = enclosing_function(call.node, src.lang) if src.lang is Lang.JAVA else None
+            if scope is not None and (scope.start_byte, target) in writers and method in ("print", "println", "write", "append", "printf", "format") and call.args:
+                if self._json_response(src, scope, call.node):
+                    continue  # JSON으로 내보내는 응답은 브라우저가 HTML로 해석하지 않는다
+                if any(not is_literal(arg) and self._unsafe_html_flow(src, arg) is Flow.TAINTED for arg in call.args):
+                    found.append(self.at_node(src, call.node, f"외부 입력이 이스케이프 없이 응답 출력 스트림({target})으로 출력됩니다."))
+                continue
             if src.lang in JS_FAMILY and self.js_html_calls.search(call.callee):
                 if re.search(r"(^|\.)(write|writeln)$", call.callee) and not call.callee.startswith("document."):
                     continue
@@ -100,6 +110,8 @@ class XssRule(BaseRule):
                     if i >= len(call.args):
                         continue
                     arg = call.args[i]
+                    if src.lang is Lang.JAVA and (scope := enclosing_function(call.node, src.lang)) is not None and self._json_response(src, scope, call.node):
+                        break
                     if self._unsafe_html_flow(src, arg) is Flow.TAINTED and self._htmlish(src, arg, call.callee):
                         found.append(self.at_node(src, call.node, f"외부 입력이 이스케이프 없이 {call.callee}로 응답에 출력됩니다."))
                         break
@@ -107,6 +119,38 @@ class XssRule(BaseRule):
         found.extend(self._php_echo(src))
         found.extend(self._python_return_html(src))
         return found
+
+    RESPONSE_STREAM_RE = re.compile(r"\b\w*(?:[rR]esp|[rR]esponse)\w*\.(getWriter|getOutputStream)\s*\(\s*\)")
+
+    JSON_CONTENT_RE = re.compile(r"setContentType\s*\(\s*(?:\"application/json|MediaType\.APPLICATION_JSON)|setHeader\s*\(\s*\"Content-Type\"\s*,\s*\"application/json")
+
+    def _json_response(self, src: SourceFile, scope: Node, at: Node) -> bool:
+        """출력(at)보다 앞서, 그 출력과 같은 경로에서 무조건 응답 콘텐츠 유형을 JSON으로 정한다.
+        주석·일반 문자열이 아니라 설정 호출만 보며, 다른 분기에서만 JSON을 정하면 인정하지 않는다"""
+        from iron_laws.rules.guards import executes_unconditionally, shared_scope
+
+        json_calls = src.memo("json_content_calls", lambda: [c.node for c in iter_calls(src) if self.JSON_CONTENT_RE.search(src.code_of(c.node))])
+        return any(
+            scope.start_byte <= node.start_byte and node.end_byte <= at.start_byte and executes_unconditionally(node, shared_scope(node, at, scope))
+            for node in json_calls
+        )
+
+    def _response_writers(self, src: SourceFile) -> set[tuple[int, str]]:
+        """Java에서 응답 객체의 getWriter()·getOutputStream()을 (감싸서라도) 담은 (함수 시작 위치, 변수 이름).
+        그 함수 안에서 그 변수의 print·write는 응답 출력이다. 다른 함수의 같은 이름 변수(로그 파일 writer 등)와 섞지 않는다"""
+        if src.lang is not Lang.JAVA or src.root is None:
+            return set()
+        names: set[tuple[int, str]] = set()
+        for node in src.nodes:
+            if node.type not in ("variable_declarator", "assignment_expression"):
+                continue
+            left = node.child_by_field_name("name") or node.child_by_field_name("left")
+            right = node.child_by_field_name("value") or node.child_by_field_name("right")
+            if left is not None and right is not None and left.type == "identifier" and self.RESPONSE_STREAM_RE.search(src.text_of(right)):
+                scope = enclosing_function(node, src.lang)
+                if scope is not None:
+                    names.add((scope.start_byte, src.text_of(left)))
+        return names
 
     def _htmlish(self, src: SourceFile, arg: Node, callee: str) -> bool:
         if re.search(r"Markup|mark_safe|render_template_string|Html\.Raw|HtmlString|template\.HTML|getWriter|Response\.Write|Fprint|WriteString|^res\.|^response\.|^reply\.", callee):

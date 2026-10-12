@@ -1,0 +1,58 @@
+id: cwe-top25-2025
+title: 2025 CWE Top 25 Most Dangerous Software Weaknesses
+edition: "2025"
+source_url: https://cwe.mitre.org/top25/archive/2025/2025_cwe_top25.html
+retrieved_at: "2026-10-12"
+sha256: cdbc113bff65a406b26ce32301e5254416ffb9da5b380fe4621f9e2c9e8f8833
+items:
+  - {id: CWE-79, name: "Cross-site Scripting", rank: 1}
+  - {id: CWE-89, name: "SQL Injection", rank: 2}
+  - {id: CWE-352, name: "Cross-Site Request Forgery (CSRF)", rank: 3}
+  - {id: CWE-862, name: "Missing Authorization", rank: 4}
+  - {id: CWE-787, name: "Out-of-bounds Write", rank: 5}
+  - {id: CWE-22, name: "Path Traversal", rank: 6}
+  - {id: CWE-416, name: "Use After Free", rank: 7}
+  - {id: CWE-125, name: "Out-of-bounds Read", rank: 8}
+  - {id: CWE-78, name: "OS Command Injection", rank: 9}
+  - {id: CWE-94, name: "Code Injection", rank: 10}
+  - {id: CWE-120, name: "Classic Buffer Overflow", rank: 11}
+  - {id: CWE-434, name: "Unrestricted Upload of File with Dangerous Type", rank: 12}
+  - {id: CWE-476, name: "NULL Pointer Dereference", rank: 13}
+  - {id: CWE-121, name: "Stack-based Buffer Overflow", rank: 14}
+  - {id: CWE-502, name: "Deserialization of Untrusted Data", rank: 15}
+  - {id: CWE-122, name: "Heap-based Buffer Overflow", rank: 16}
+  - {id: CWE-863, name: "Incorrect Authorization", rank: 17}
+  - {id: CWE-20, name: "Improper Input Validation", rank: 18}
+  - {id: CWE-284, name: "Improper Access Control", rank: 19}
+  - {id: CWE-200, name: "Exposure of Sensitive Information to an Unauthorized Actor", rank: 20}
+  - {id: CWE-306, name: "Missing Authentication for Critical Function", rank: 21}
+  - {id: CWE-918, name: "Server-Side Request Forgery (SSRF)", rank: 22}
+  - {id: CWE-77, name: "Command Injection", rank: 23}
+  - {id: CWE-639, name: "Authorization Bypass Through User-Controlled Key", rank: 24}
+  - {id: CWE-770, name: "Allocation of Resources Without Limits or Throttling", rank: 25}
+# 규칙의 행안부 항목 CWE와 같은 CWE, 또는 규칙이 직접 다루는 하위 CWE만 대응한다.
+mapping:
+  IL-505: [CWE-79]
+  IL-501: [CWE-89]
+  IL-510: [CWE-352]
+  AI-113: [CWE-639, CWE-862]
+  AI-122: [CWE-863]
+  IL-514: [CWE-787, CWE-125, CWE-120, CWE-121, CWE-122]
+  IL-502: [CWE-22]
+  IL-528: [CWE-416]
+  IL-504: [CWE-78, CWE-77]
+  IL-503: [CWE-94]
+  IL-513: [CWE-434]
+  IL-530: [CWE-434]
+  IL-519: [CWE-476]
+  IL-515: [CWE-502]
+  IL-531: [CWE-20]
+  IL-114: [CWE-284]
+  IL-305: [CWE-200]
+  AI-112: [CWE-200]
+  IL-525: [CWE-306]
+  IL-303: [CWE-306, CWE-862]
+  IL-506: [CWE-918]
+  AI-114: [CWE-770]
+verified_edition: null
+verified_sha256: null

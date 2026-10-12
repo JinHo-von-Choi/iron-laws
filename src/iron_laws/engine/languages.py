@@ -23,6 +23,7 @@ class Lang(StrEnum):
     PHP = "php"
     C = "c"
     CPP = "cpp"
+    KOTLIN = "kotlin"
 
 
 JS_FAMILY = frozenset({Lang.JAVASCRIPT, Lang.TYPESCRIPT, Lang.TSX})
@@ -52,6 +53,8 @@ EXTENSION_TO_LANG: dict[str, Lang] = {
     ".cxx": Lang.CPP,
     ".hpp": Lang.CPP,
     ".hh": Lang.CPP,
+    ".kt": Lang.KOTLIN,
+    ".kts": Lang.KOTLIN,
 }
 
 
@@ -67,6 +70,7 @@ def get_parser(lang: Lang) -> Parser:
     import tree_sitter_go
     import tree_sitter_java
     import tree_sitter_javascript
+    import tree_sitter_kotlin
     import tree_sitter_php
     import tree_sitter_python
     import tree_sitter_rust
@@ -78,6 +82,7 @@ def get_parser(lang: Lang) -> Parser:
         Lang.TYPESCRIPT: tree_sitter_typescript.language_typescript,
         Lang.TSX: tree_sitter_typescript.language_tsx,
         Lang.JAVA: tree_sitter_java.language,
+        Lang.KOTLIN: tree_sitter_kotlin.language,
         Lang.CSHARP: tree_sitter_c_sharp.language,
         Lang.GO: tree_sitter_go.language,
         Lang.RUST: tree_sitter_rust.language,

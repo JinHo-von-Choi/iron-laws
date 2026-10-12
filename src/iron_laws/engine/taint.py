@@ -9,34 +9,38 @@
 """
 
 import re
+from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import StrEnum
 
 from tree_sitter import Node
 
-from iron_laws.engine import xfile
+from iron_laws.engine import xfile, xfile_js
 from iron_laws.engine.ast_tools import (
     CALL_TYPES,
     FUNCTION_TYPES,
     NESTING_TYPES,
     STRING_TYPES,
+    _is_property_position,
     enclosing_function,
+    function_parts,
     has_interpolation,
     identifiers_in,
     iter_calls,
     iter_functions,
     walk,
 )
-from iron_laws.engine.languages import Lang
+from iron_laws.engine.languages import JS_FAMILY, Lang
 from iron_laws.engine.source import SourceFile
 
 WEB_SOURCE_RE = re.compile(
     r"""(?x)
     \brequest\.(args|form|values|json|data|files|cookies|headers|GET|POST|query_params|
                 path_params|get_json|get_data|environ|META|FILES|body|query|params|url|path)\b
-    | \brequest\.(getParameter\w*|getHeader\w*|getQueryString|getCookies|getInputStream|getReader|getPart\w*|getPathInfo|getPathTranslated|getRequestURI|getRequestURL|getContentType|getRemoteHost)\b
+    | \b(?:request|req|\w+Request|\w+Req|p[A-Z]?[rR]eq\w*)\.(getParameter\w*|getHeader\w*|getQueryString|getCookies|getInputStream|getReader|getPart\w*|getPathInfo|getPathTranslated|getRequestURI|getRequestURL|getContentType|getRemoteHost)\b
     | \breq\.(query|body|params|cookies|headers|url|originalUrl|path|files|file|hostname)\b
     | \bctx\.(query|request|params|req)\b
+    | \bcall\.(parameters|receiveParameters|receiveText|receive)\b | \bcall\.request\.(queryParameters|headers|cookies)\b
     | \bRequest\.(Query|Form|Headers|Cookies|Body|QueryString|Params|Path|Url|RawUrl|Files)\b
     | \bHttpContext\.Request\b
     | \$_(GET|POST|REQUEST|COOKIE|FILES|SERVER|ENV)\b
@@ -46,7 +50,29 @@ WEB_SOURCE_RE = re.compile(
     | \bwindow\.location\b | \blocation\.(search|hash|href)\b | \bdocument\.(cookie|URL|referrer)\b
     | \.searchParams\b | \bURLSearchParams\b | \bFromQuery\b | \bFromBody\b | \bFromRoute\b | \bFromForm\b
     | \bweb::(Query|Path|Json|Form)\b | \bquery_params\b | \bpath_params\b
+    | \b\w*[eE]xchange\.(getRelativePath|getRequestPath|getRequestURI|getQueryString|getQueryParameters|getPathParameters|getRequestHeaders)\s*\(
+    | \b\w*(?:[rR]equest|[cC]ontext|ctx|rc)\.(getPathParameter|getQueryParameter|normalisedPath|normalizedPath|pathParam|queryParam)\s*\(
+    | \b\w*(?:[cC]ontext|ctx|rc)\.request\(\)\.(path|uri|getParam|params|absoluteURI)\s*\(
     """,
+)
+# 압축 파일 항목 이름(`ZipEntry.getName()` 등): 항목 이름에 `../`나 절대 경로가 들어 있을 수 있어 압축을 푸는 쪽에서는 외부 입력이다(Zip Slip).
+# 이름이 흔한 메서드라 압축·메일 API를 가져온 파일에서만 적용한다
+ARCHIVE_IMPORT_RE = re.compile(
+    r"\bimport\s+(?:static\s+)?(?:java\.util\.(?:zip|jar)|org\.apache\.commons\.compress|net\.lingala\.zip4j|org\.codehaus\.plexus\.archiver"
+    r"|org\.apache\.tools\.(?:zip|tar)|javax\.mail|jakarta\.mail|org\.rauschig|de\.schlichtherle)"
+    r"|^\s*(?:import\s+(?:zipfile|tarfile)\b|from\s+(?:zipfile|tarfile)\s+import)"
+    r"|require\(\s*['\"](?:adm-zip|yauzl|unzipper|jszip|tar|tar-stream)['\"]\s*\)|from\s+['\"](?:adm-zip|yauzl|unzipper|jszip|tar|tar-stream)['\"]",
+    re.MULTILINE,
+)
+ARCHIVE_SOURCE_RE = re.compile(
+    r"""(?x)
+    \.(getNextEntry|getNextJarEntry|getNextTarEntry|getNextZipEntry)\s*\(
+    | \b(?:\w*(?:[eE]ntry|[eE]ntries|[hH]eader)|je|ze|te)\.(getName|getFileName)\s*\(
+    | \.nextElement\s*\(
+    | \b\w*[pP]art\w*\.getFileName\s*\(
+    | \.(namelist|infolist|getmembers|getnames)\s*\(
+    | \b(?:\w*[eE]ntry|member|zinfo|zip_info|info|tarinfo)\.(entryName|fileName|filename|name|path)\b
+    """
 )
 CLI_SOURCE_RE = re.compile(
     r"""(?x)
@@ -77,12 +103,19 @@ ASSIGN_TYPES = {
     "foreach_statement",
     "for_statement",
     "range_clause",
+    "property_declaration",
 }
 AUGMENTED_TYPES = ("augmented_assignment", "augmented_assignment_expression", "compound_assignment_expr")
 LOOP_ASSIGN_TYPES = {"enhanced_for_statement", "for_in_statement", "foreach_statement", "for_statement", "range_clause"}
 
 
 def _target_and_value(node: Node) -> tuple[Node | None, Node | None]:
+    if node.type == "property_declaration":  # Kotlin val x = 식 (필드 이름이 없다)
+        target = next((c for c in node.named_children if c.type == "variable_declaration"), None)
+        value = node.named_children[-1] if node.named_children and node.named_children[-1].type not in ("variable_declaration", "user_type", "modifiers") else None
+        return target, value
+    if node.type == "assignment" and node.child_by_field_name("left") is None and len(node.named_children) == 2:
+        return node.named_children[0], node.named_children[1]  # Kotlin 대입
     if node.type in LOOP_ASSIGN_TYPES:
         loop_var = node.child_by_field_name("name") or node.child_by_field_name("left")
         iterable = node.child_by_field_name("value") or node.child_by_field_name("right")
@@ -104,8 +137,174 @@ def _target_and_value(node: Node) -> tuple[Node | None, Node | None]:
     return left, right
 
 
+# ---------------------------------------------------------------------------
+# 접근 경로: 오염 상태의 이름은 변수(`obj`)이거나 변수에 한 단계를 붙인 경로(`obj.field`, `map[key]`)다.
+# 필드·상수 키 한 단계까지만 구분하고, 그보다 깊거나 키가 상수가 아니면 객체 전체로 본다.
+# 경로를 읽을 때: 그 경로나 객체 전체가 오염이면 오염. 객체를 통째로 쓸 때: 객체 전체나 그 필드 하나라도 오염이면 오염.
+# ---------------------------------------------------------------------------
+
+# (노드 형식, 객체 필드, 속성 필드)
+_FIELD_ACCESS = {
+    "attribute": ("object", "attribute"),
+    "member_expression": ("object", "property"),
+    "field_access": ("object", "field"),
+    "member_access_expression": ("expression", "name"),
+    "selector_expression": ("operand", "field"),
+    "field_expression": ("argument", "field"),
+}
+_INDEX_ACCESS = {
+    "subscript": ("value", "subscript"),
+    "subscript_expression": ("object", "index"),
+    "array_access": ("array", "index"),
+    "element_access_expression": ("expression", "subscript"),
+    "index_expression": ("operand", "index"),
+}
+_ROOT_TYPES = {"identifier", "variable_name", "this", "self", "this_expression"}
+COLLECTION_GET = frozenset({"get", "getOrDefault", "getProperty"})
+COLLECTION_PUT = frozenset({"put", "set", "setdefault", "setProperty", "putIfAbsent"})
+
+
+def _constant_key(src: SourceFile, node: Node | None) -> str | None:
+    if node is None:
+        return None
+    if node.type in ("argument_list", "bracketed_argument_list") and len(node.named_children) == 1:
+        node = node.named_children[0]
+    if node.type in ("integer", "number", "decimal_integer_literal", "integer_literal", "int_literal"):
+        # Python에서는 d[1]과 d["1"]이 다른 칸이다. JavaScript 등은 숫자 키가 문자열 키와 같은 칸이라 그대로 둔다
+        if src.lang is Lang.PYTHON:
+            try:
+                return "\x00int:" + str(int(src.text_of(node), 0))  # 0x1·1_0 같은 표기를 값으로 맞추고, 문자열 키와 겹치지 않게 한다
+            except ValueError:  # iron-laws: ignore[IL-301] 값으로 바꿀 수 없는 표기(예: 0으로 시작하는 정수)는 원문 표기를 키로 쓴다
+                return "\x00int:" + src.text_of(node)
+        return src.text_of(node)
+    if node.type in STRING_TYPES and not has_interpolation(node):
+        text = src.text_of(node)
+        return text[1:-1] if len(text) >= 2 and text[0] in "'\"`" else None
+    return None
+
+
+def _root_name(src: SourceFile, node: Node) -> str | None:
+    if node.type in _ROOT_TYPES or (node.type == "identifier" and node.child_count == 0):
+        return src.text_of(node).lstrip("$")
+    return None
+
+
+def access_path(src: SourceFile, node: Node) -> tuple[str, bool] | None:
+    """(경로, 정확한지). `obj.f`·`d['k']` → ('obj.f', True)·('d[k]', True). 더 깊거나 키가 상수가 아니면 (객체 루트, False)"""
+    root = _root_name(src, node)
+    if root is not None:
+        return root, True
+    spec = _FIELD_ACCESS.get(node.type)
+    kind = "."
+    if spec is None:
+        spec = _INDEX_ACCESS.get(node.type)
+        kind = "["
+    if spec is None:
+        return None
+    obj = node.child_by_field_name(spec[0])
+    if obj is None:
+        return None
+    inner = access_path(src, obj)
+    if inner is None:
+        return None
+    base, exact = inner
+    if not exact or "." in base or "[" in base:
+        return base.split(".", 1)[0].split("[", 1)[0], False
+    if kind == ".":
+        prop = node.child_by_field_name(spec[1])
+        return (f"{base}.{src.text_of(prop)}", True) if prop is not None else (base, False)
+    key = _constant_key(src, node.child_by_field_name(spec[1]) or (node.named_children[1] if len(node.named_children) > 1 else None))
+    if key is None:
+        return base, False
+    return (f"{base}.{key}" if src.lang in JS_FAMILY else f"{base}[{key}]"), True
+
+
+def path_root(name: str) -> str:
+    return name.split(".", 1)[0].split("[", 1)[0]
+
+
+def tainted_roots(names) -> set[str]:
+    """오염 상태의 경로들을 변수 이름으로(증거 표시용)"""
+    return {path_root(n) for n in names}
+
+
+def _path_hit(path: str, whole_use: bool, names: set[str]) -> bool:
+    if path in names:
+        return True
+    root = path_root(path)
+    if root != path and root in names:
+        return True
+    if whole_use:
+        return any(n.startswith(path + ".") or n.startswith(path + "[") for n in names)
+    return False
+
+
+def _reads(src: SourceFile, node: Node, skip=None) -> list[tuple[str, bool]]:
+    """식이 읽는 (경로, 객체 통째로 쓰는지). 메서드 호출의 수신 객체는 통째로 쓰는 것으로 본다(게터가 필드를 돌려줄 수 있다).
+    상수 키 조회(`d.get('k')`)는 그 경로만 읽는다."""
+    found: list[tuple[str, bool]] = []
+    stack = [node]
+    while stack:
+        n = stack.pop()
+        if skip is not None and skip(n):
+            continue
+        parts = _call_parts(src, n) if src.lang is not None else None
+        if parts is not None and "." in parts[0]:
+            method = parts[0].rsplit(".", 1)[-1]
+            if n.type in ("method_invocation", "member_call_expression"):
+                receiver = n.child_by_field_name("object")  # Java·PHP: 수신 객체가 호출 노드의 object 필드에 있다
+            else:
+                fn = n.child_by_field_name("function")
+                receiver = fn.child_by_field_name(_FIELD_ACCESS[fn.type][0]) if fn is not None and fn.type in _FIELD_ACCESS else None
+            receiver_path = access_path(src, receiver) if receiver is not None else None
+            if receiver_path is not None and receiver_path[1] and method in COLLECTION_GET and parts[1]:
+                key = _constant_key(src, parts[1][0])
+                if key is not None and "." not in receiver_path[0] and "[" not in receiver_path[0]:
+                    found.append((f"{receiver_path[0]}[{key}]", False))
+                    stack.extend(parts[1][1:])
+                    continue
+            if receiver_path is not None:
+                found.append((receiver_path[0], True))
+                stack.extend(parts[1])
+                continue
+        path = access_path(src, n) if n.type in _FIELD_ACCESS or n.type in _INDEX_ACCESS else None
+        if path is not None:
+            found.append((path[0], not path[1] or path[0] == path_root(path[0])))
+            spec = _INDEX_ACCESS.get(n.type)
+            if spec is not None:  # 상수가 아닌 첨자 식 안의 변수도 읽는다
+                index = n.child_by_field_name(spec[1])
+                if index is not None:
+                    stack.append(index)
+            continue
+        if n.type in ("identifier", "variable_name", "property_identifier", "field_identifier"):
+            if (n.child_count == 0 or n.type == "variable_name") and not _is_property_position(n):
+                found.append((src.text_of(n).lstrip("$"), True))
+            continue
+        if n.type == "string_literal" and src.lang is Lang.KOTLIN:  # "$name" 단순 템플릿
+            found += [(m, True) for m in re.findall(r"(?<!\\)\$([A-Za-z_]\w*)", src.text_of(n))]
+        stack.extend(n.children)
+    return found
+
+
+def reads_tainted(src: SourceFile, node: Node, names: set[str], skip=None) -> bool:
+    if not names:
+        return False
+    return any(_path_hit(path, whole, names) for path, whole in _reads(src, node, skip))
+
+
 def _target_names(src: SourceFile, target: Node) -> set[str]:
-    return identifiers_in(src, target) if target.type != "member_expression" else set()
+    """정의 추적용: 변수 전체에 값을 넣는 대입의 변수 이름(필드·첨자 대입은 변수 정의가 아니다)"""
+    return identifiers_in(src, target) if target.type not in _FIELD_ACCESS and target.type not in _INDEX_ACCESS else set()
+
+
+def _target_paths(src: SourceFile, target: Node) -> tuple[set[str], bool]:
+    """대입 대상의 경로와, 이 대입이 대상의 이전 값을 덮어쓰는지(강한 갱신). 필드·상수 키는 그 경로만, 그 밖의 첨자는 객체 전체에 약하게 더한다."""
+    if target.type in _FIELD_ACCESS or target.type in _INDEX_ACCESS:
+        path = access_path(src, target)
+        if path is None:
+            return set(), False
+        return {path[0]}, path[1]
+    return identifiers_in(src, target), True
 
 
 _STRING_FRAGMENT_TYPES = frozenset({"string_fragment", "string_content", "string_value", "escape_sequence", "string_literal_content"})
@@ -133,15 +332,47 @@ def _text_without_plain_strings(src: SourceFile, node: Node) -> str:
     return buf.decode("utf-8", errors="replace")
 
 
+# 규칙이 잠시 더하는 소스 종류(예: LLM 응답 ai_response). 흐름 해석 캐시 키에 종류 이름이 들어가 기본 해석과 섞이지 않는다
+_EXTRA_SOURCE: re.Pattern[str] | None = None
+_EXTRA_KIND = ""
+
+
+@contextmanager
+def extra_sources(pattern: re.Pattern[str], kind: str):
+    """이 블록 안의 오염 판정에 pattern에 맞는 식을 외부 입력으로 더한다."""
+    global _EXTRA_SOURCE, _EXTRA_KIND
+    saved = (_EXTRA_SOURCE, _EXTRA_KIND)
+    _EXTRA_SOURCE, _EXTRA_KIND = pattern, kind
+    try:
+        yield
+    finally:
+        _EXTRA_SOURCE, _EXTRA_KIND = saved
+
+
+def archive_file(src: SourceFile) -> bool:
+    """압축·메일 첨부 API를 가져온 파일인가(압축 항목 이름을 외부 입력으로 볼 파일)"""
+    return src.memo("archive_imports", lambda: bool(ARCHIVE_IMPORT_RE.search(src.code_text)))
+
+
+def _source_in(text: str, cli: bool, lang: Lang | None = None, archive: bool = False) -> bool:
+    custom = CUSTOM_SOURCES.get(lang) if lang is not None else None
+    return bool(
+        WEB_SOURCE_RE.search(text)
+        or (archive and ARCHIVE_SOURCE_RE.search(text))
+        or (cli and CLI_SOURCE_RE.search(text))
+        or (_EXTRA_SOURCE is not None and _EXTRA_SOURCE.search(text))
+        or (custom is not None and custom.search(text))
+    )
+
+
 def expr_has_source(src: SourceFile, node: Node, cli: bool = False) -> bool:
     text = src.text_of(node)
-    if not (WEB_SOURCE_RE.search(text) or (cli and CLI_SOURCE_RE.search(text))):
+    if not _source_in(text, cli, src.lang, archive_file(src)):
         return False
     if src.root is None:
         return True
     # 원문에서 입력 원천처럼 보이는 글자가 보이면, 그것이 문자열 리터럴 안의 글자인지 코드인지 가려서 다시 본다
-    code = _text_without_plain_strings(src, node)
-    return bool(WEB_SOURCE_RE.search(code)) or (cli and bool(CLI_SOURCE_RE.search(code)))
+    return _source_in(_text_without_plain_strings(src, node), cli, src.lang, archive_file(src))
 
 
 # ---------------------------------------------------------------------------
@@ -202,7 +433,22 @@ _HTML_ONLY_RE = re.compile(
 )
 
 
-def sanitizer_name_matches(callee: str, ctx: Ctx) -> bool:
+# 사람이 검토하고 양성·음성 예제로 확인한 명세(core/custom_spec.py)가 더하는 소스와 정제 함수. 점검 시작 때 한 번 정한다.
+# 명세 항목은 적힌 언어에만 적용한다(언어 → 소스 정규식, (언어, 문맥) → 정제 함수 이름 정규식)
+CUSTOM_SOURCES: dict[Lang, re.Pattern[str]] = {}
+CUSTOM_SANITIZERS: dict[tuple[Lang, Ctx], re.Pattern[str]] = {}
+CUSTOM_KIND = ""
+
+
+def set_custom_spec(sources: dict, sanitizers: dict, kind: str) -> None:
+    global CUSTOM_SOURCES, CUSTOM_SANITIZERS, CUSTOM_KIND
+    CUSTOM_SOURCES, CUSTOM_SANITIZERS, CUSTOM_KIND = dict(sources), dict(sanitizers), kind
+
+
+def sanitizer_name_matches(callee: str, ctx: Ctx, lang: Lang | None = None) -> bool:
+    custom = CUSTOM_SANITIZERS.get((lang, ctx)) if lang is not None else None
+    if custom is not None and custom.search(callee):
+        return True
     if ctx is Ctx.ANY:
         return bool(SANITIZER_FN_RE.search(callee))
     if ctx is not Ctx.HTML and _HTML_ONLY_RE.search(callee):
@@ -228,6 +474,14 @@ CONDITIONAL_TYPES = NESTING_TYPES | {
 _IN_PROGRESS: set[tuple[str, int, frozenset[str], Ctx]] = set()
 _DEPTH = 0
 MAX_HELPER_DEPTH = 4
+_CUTS: list[tuple[str, int, frozenset[str], Ctx]] = []  # 재귀로 끊은 함수 키. 끊긴 결과는 호출 경로에 따라 달라지므로 캐시하지 않는다
+_POINT_ACTIVE = False
+
+
+class TaintResult(StrEnum):
+    TAINTED = "tainted"
+    CLEAN = "clean"
+    UNKNOWN = "unknown"  # 깊이·예산 한도로 끝까지 따라가지 못했다. 깨끗하다고 보지 않는다
 
 
 def _call_parts(src: SourceFile, node: Node):
@@ -272,12 +526,93 @@ def resolve_helper(src: SourceFile, callee: str, argc: int):
     return [fn for fn in _function_index(src).get(last, []) if len(_positional_params(src, fn)) == argc]
 
 
+def _in_class(fn) -> bool:
+    parent = fn.node.parent
+    while parent is not None:
+        if parent.type == "class_definition":
+            return True
+        parent = parent.parent
+    return False
+
+
+def _java_local_classes(src: SourceFile) -> set[str]:
+    def find() -> set[str]:
+        names = set()
+        for node in src.nodes:
+            if node.type in ("class_declaration", "interface_declaration", "enum_declaration", "record_declaration"):
+                ident = node.child_by_field_name("name")
+                if ident is not None:
+                    names.add(src.text_of(ident))
+        return names
+
+    return src.memo("java_local_classes", find)
+
+
+_PARAM_TYPES = {"parameters", "formal_parameters", "lambda_parameters"}
+_LOCAL_BIND_TYPES = {"assignment", "variable_declarator", "for_statement", "for_in_statement"}
+
+
+def _scoped_names(src: SourceFile) -> set[str]:
+    """함수 안에서 묶이는 이름(매개변수, 지역 대입·선언). 이 이름이 import 이름과 같으면 가림이 생길 수 있다."""
+
+    def find() -> set[str]:
+        names: set[str] = set()
+        functions = FUNCTION_TYPES.get(src.lang, set()) if src.lang else set()
+        for node in src.nodes:
+            if node.type in _PARAM_TYPES and node.parent is not None and node.parent.type in functions | {"lambda"}:
+                for child in node.named_children:
+                    name = param_name(src, child) if child.type not in ("identifier",) else src.text_of(child)
+                    if name:
+                        names.add(name)
+            elif node.type in _LOCAL_BIND_TYPES and enclosing_function(node, src.lang) is not None:
+                target = node.child_by_field_name("left") or node.child_by_field_name("name")
+                if target is not None:
+                    names |= identifiers_in(src, target)
+        return names
+
+    return src.memo("scoped_names", find)
+
+
+def _module_rebinds(src: SourceFile, name: str) -> bool:
+    """모듈 최상위에서 name에 값을 대입하면 그 이름이 가리키는 함수를 정할 수 없다."""
+    if src.root is None:
+        return False
+    for stmt in src.root.named_children:
+        node = stmt.named_children[0] if stmt.type == "expression_statement" and stmt.named_children else stmt
+        if node.type in ("assignment", "augmented_assignment"):
+            left = node.child_by_field_name("left")
+            targets = [left] if left is not None and left.type == "identifier" else (left.named_children if left is not None and left.type in ("pattern_list", "tuple_pattern", "list_pattern") else [])
+            if any(t.type == "identifier" and src.text_of(t) == name for t in targets):
+                return True
+    return False
+
+
 def resolve_any(src: SourceFile, callee: str, argc: int) -> list[tuple[SourceFile, object]]:
-    """같은 파일 함수를 먼저, 없으면 프로젝트의 다른 파일(Python 시범 지원)에서 호출 대상을 찾는다."""
+    """호출 대상 함수 후보. Python은 이름의 바인딩을 먼저 본다: import로 묶인 이름이면 import 대상,
+    같은 파일 정의면 그 함수, 둘 다 있으면 양쪽을 모두 후보로 둔다(어느 쪽이든 오염을 돌려주면 오염).
+    모듈 최상위에서 이름을 다시 대입하면 대상을 정할 수 없어 후보를 내지 않는다. 다른 언어는 같은 파일 함수가 우선이다."""
     local = [(src, fn) for fn in resolve_helper(src, callee, argc)]
-    if local:
+    if src.lang is Lang.JAVA and "." in callee:
+        receiver = callee.rsplit(".", 1)[0]
+        if receiver[:1].isupper() and receiver not in _java_local_classes(src):
+            return xfile.resolve_external(src, callee, argc)  # 다른 클래스의 static 호출은 같은 이름의 이 파일 메서드가 아니다
+    head = callee.split(".", 1)[0]
+    if src.lang in JS_FAMILY:
+        if head in _scoped_names(src) and head in xfile_js.imports(src):
+            return []  # 매개변수·지역 변수가 import 이름을 가리면 어느 쪽이 호출되는지 정할 수 없다
+        return local or xfile.resolve_external(src, callee, argc)
+    if src.lang is not Lang.PYTHON:
+        return local or xfile.resolve_external(src, callee, argc)
+    if head in _scoped_names(src) and head in xfile.imported_names(src):
+        return []
+    if "." not in callee:
+        if _module_rebinds(src, callee):
+            return []
+        local = [(s, fn) for s, fn in local if not _in_class(fn)]  # 메서드는 맨 이름 호출로 불리지 않는다
+    if local and head not in xfile.imported_names(src):
         return local
-    return xfile.resolve_external(src, callee, argc)
+    external = xfile.resolve_external(src, callee, argc)
+    return local + [t for t in external if t not in local]
 
 
 # ---------------------------------------------------------------------------
@@ -326,6 +661,7 @@ LOOP_TYPES = {
 TRY_TYPES = {"try_statement", "try_expression"}
 MARK_SUFFIXES = ("statement", "declaration", "_clause", "_arm", "_case", "_rule", "_section", "block")
 SCOPE_ROOT_TYPES = {"module", "program", "source_file", "translation_unit", "compilation_unit"}
+STATEMENT_PARENTS = SCOPE_ROOT_TYPES | {"statements", "block", "lambda_literal"}  # 블록·람다 바로 아래의 문장(Kotlin은 문장 노드 이름이 따로 없다)
 
 State = frozenset[str] | None  # None은 이 경로가 끝났음(return·throw)을 뜻한다
 
@@ -364,7 +700,7 @@ class _Flow:
         self.before[self.scope.id] = initial
         is_function = self.scope.type in self.fn_types
         if is_function:
-            body = self.scope.child_by_field_name("body")
+            body = function_parts(self.src, self.scope)[1]
             if body is None:
                 return Analysis(self.before, self.returns)
             if body.type not in ("block", "statement_block", "compound_statement"):
@@ -390,15 +726,22 @@ class _Flow:
     def _annotated(self) -> frozenset[str]:
         if self.scope.type not in self.fn_types:
             return frozenset()
-        params = self.scope.child_by_field_name("parameters")
+        params = function_parts(self.src, self.scope)[0]
         if params is None:
             declarator = self.scope.child_by_field_name("declarator")
             params = declarator.child_by_field_name("parameters") if declarator is not None else None
         if params is None:
             return frozenset()
         names: set[str] = set()
-        for n in params.named_children:
-            if ANNOTATED_PARAM_RE.search(self.src.text_of(n)):
+        children = params.named_children
+        for i, n in enumerate(children):
+            if not ANNOTATED_PARAM_RE.search(self.src.text_of(n)):
+                continue
+            if n.type == "parameter_modifiers" and i + 1 < len(children):  # Kotlin: 애너테이션이 매개변수 앞 형제 노드에 있다
+                name = next((c for c in children[i + 1].named_children if c.type == "identifier"), None)
+                if name is not None:
+                    names.add(self.src.text_of(name))
+            else:
                 names |= identifiers_in(self.src, n)
         return frozenset(names)
 
@@ -406,7 +749,7 @@ class _Flow:
     def _mark(self, node: Node, state: frozenset[str]) -> None:
         if node.id in self.before:
             self.before[node.id] = self.before[node.id] | state
-        elif node.type.endswith(MARK_SUFFIXES) or (node.parent is not None and node.parent.type in SCOPE_ROOT_TYPES):
+        elif node.type.endswith(MARK_SUFFIXES) or (node.parent is not None and node.parent.type in STATEMENT_PARENTS):
             self.before[node.id] = state
 
     # -- 실행 --
@@ -585,6 +928,13 @@ class _Flow:
             if parts and "." in parts[0] and parts[0].rsplit(".", 1)[-1] in MUTATING_METHODS:
                 receiver = parts[0].rsplit(".", 1)[0]
                 m = re.match(r"[A-Za-z_$][\w$]*", receiver)
+                method = parts[0].rsplit(".", 1)[-1]
+                key = _constant_key(self.src, parts[1][0]) if method in COLLECTION_PUT and len(parts[1]) >= 2 and re.fullmatch(r"[A-Za-z_$][\w$]*", receiver) else None
+                if key is not None:
+                    path = f"{receiver.lstrip('$')}[{key}]"
+                    if any(expr_tainted(self.src, a, set(state), self.cli, self.ctx) for a in parts[1][1:]):
+                        return state | {path}
+                    return state - {path}  # 상수 키에 깨끗한 값을 넣으면 그 키는 깨끗하다
                 if m and any(expr_tainted(self.src, a, set(state), self.cli, self.ctx) for a in parts[1]):
                     return state | {m.group(0).lstrip("$")}
         return state
@@ -595,7 +945,7 @@ class _Flow:
         left, right = _target_and_value(node)
         if left is None or right is None:
             return state
-        names = _target_names(self.src, left)
+        names, strong = _target_paths(self.src, left)
         if not names:
             return state
         if node.type in LOOP_ASSIGN_TYPES and self.src.lang is Lang.PYTHON:
@@ -608,17 +958,47 @@ class _Flow:
                     names = names - {first.group(1)}  # enumerate의 첫 값(순번)은 정수다
         if expr_tainted(self.src, right, set(state), self.cli, self.ctx):
             return state | names
-        if kill:
-            return state - names
+        if kill and strong:
+            # 변수 전체를 새 값으로 바꾸면 그 변수의 필드 경로도 함께 지운다
+            whole = {n for n in names if n == path_root(n)}
+            return frozenset(n for n in state if n not in names and path_root(n) not in whole)
         return state
 
 
-def _analysis(src: SourceFile, scope: Node, cli: bool, seeds: frozenset[str], ctx: Ctx) -> Analysis:
+def _analysis(src: SourceFile, scope: Node, cli: bool, seeds: frozenset[str], ctx: Ctx, own=None) -> Analysis:
+    """흐름 해석 결과. 남은 깊이에 따라 결과가 달라지므로 깊이를 키에 넣는다.
+    캐시에는 해석에 든 비용과 한도 도달 횟수를 함께 두고, 다시 쓸 때 같은 비용을 치른다. 그래서 같은 관심 지점은
+    앞서 무엇을 분석했는지와 무관하게 같은 결과를 낸다. 예산이 바닥났거나 바깥 함수의 재귀를 끊은 결과는 캐시하지 않는다."""
     cache = src.__dict__.setdefault("_taint_cache", {})
-    key = (scope.id, cli, seeds, ctx)
-    if key not in cache:
-        cache[key] = _Flow(src, scope, cli, seeds, ctx).run()
-    return cache[key]
+    key = (scope.id, cli, seeds, ctx, _DEPTH, _EXTRA_KIND, CUSTOM_KIND)
+    index = xfile.get_index()
+    if key in cache:
+        analysis, cost, limits = cache[key]
+        if index is not None:
+            for limit in limits:
+                index.note(limit)
+            if index.metering and cost:
+                index.spend(cost)
+        return analysis
+    mark = len(_CUTS)
+    charged = index.charged if index is not None else 0
+    limits: set = set()
+    if index is not None:
+        index._collectors.append(limits)
+    try:
+        analysis = _Flow(src, scope, cli, seeds, ctx).run()
+    finally:
+        if index is not None:
+            index._collectors.pop()
+    if index is not None and index.exhausted:
+        return analysis
+    if set(_CUTS[mark:]) - {own}:
+        return analysis
+    if index is None:
+        cache[key] = (analysis, 0, frozenset())
+    else:
+        cache[key] = (analysis, index.charged - charged, frozenset(limits))
+    return analysis
 
 
 def taint_state(
@@ -642,19 +1022,26 @@ def taint_state(
     return frozenset()
 
 
-def _returns_tainted(src: SourceFile, fn_node: Node, seeds: frozenset[str], cli: bool, ctx: Ctx = Ctx.ANY) -> bool:
+def _returns_tainted(src: SourceFile, fn_node: Node, seeds: frozenset[str], cli: bool, ctx: Ctx = Ctx.ANY) -> TaintResult:
     global _DEPTH
     key = (src.path.as_posix(), fn_node.id, seeds, ctx)
     if key in _IN_PROGRESS:
-        return True  # 재귀는 보수적으로 오염으로 본다
+        # 오염된 인자가 재귀로 넘어가면 보수적으로 오염으로 본다. 오염된 인자 없이 도는 재귀(디렉터리 순회 등)는 '오염 없음'에서 시작해
+        # 다른 반환 경로의 오염을 따른다(최소 고정점). 끊긴 결과는 호출 경로에 따라 달라 캐시하지 않는다
+        _CUTS.append(key)
+        return TaintResult.TAINTED if seeds else TaintResult.CLEAN
     if _DEPTH >= MAX_HELPER_DEPTH:
-        xfile.note_limit()
-        return False
+        xfile.note_limit(src.path.as_posix(), fn_node.start_byte, "depth")
+        return TaintResult.UNKNOWN
+    index = xfile.get_index()
     _IN_PROGRESS.add(key)
     _DEPTH += 1
     try:
-        analysis = _analysis(src, fn_node, cli, seeds, ctx)
-        return any(expr_tainted(src, expr, set(state), cli, ctx) for expr, state in analysis.returns)
+        analysis = _analysis(src, fn_node, cli, seeds, ctx, own=key)
+        tainted = any(expr_tainted(src, expr, set(state), cli, ctx) for expr, state in analysis.returns)
+        if index is not None and index.exhausted:
+            return TaintResult.UNKNOWN
+        return TaintResult.TAINTED if tainted else TaintResult.CLEAN
     finally:
         _DEPTH -= 1
         _IN_PROGRESS.discard(key)
@@ -667,58 +1054,84 @@ def _returns_tainted(src: SourceFile, fn_node: Node, seeds: frozenset[str], cli:
 
 def _call_is_clean(src: SourceFile, parts, names: set[str], cli: bool, ctx: Ctx, by_name: bool = True) -> bool | None:
     """호출 결과가 외부 입력을 담지 않는지 판정한다. 프로젝트에 정의된 함수는 이름이 아니라 본문 동작을 따른다.
-    True=깨끗함, False=오염된 값을 돌려줌, None=판단 근거 없음"""
+    True=깨끗함, False=오염된 값을 돌려줌, None=판단 근거 없음
+    가장 바깥 호출 하나가 관심 지점이며, 그 안의 함수 간·파일 간 해석은 지점마다 같은 예산을 쓴다."""
+    global _POINT_ACTIVE
+    index = xfile.get_index()
+    if _POINT_ACTIVE:
+        return _call_is_clean_in_point(src, parts, names, cli, ctx, by_name)
+    _POINT_ACTIVE = True
+    start = index.limit_hits if index is not None else 0
+    point = (src.path.as_posix(), parts[1][0].start_byte if parts[1] else 0, "budget:" + parts[0])
+    if index is not None:
+        index.begin_point()
+    try:
+        return _call_is_clean_in_point(src, parts, names, cli, ctx, by_name)
+    finally:
+        _POINT_ACTIVE = False
+        _CUTS.clear()
+        if index is not None:
+            exhausted = index.exhausted
+            index.end_point()
+            if exhausted:
+                index.limit_hits = start  # 예산 소진은 지점마다 한 번만 센다. 소진 전 기록은 분석 순서에 따라 달라진다
+                index.note(point)
+
+
+def _call_is_clean_in_point(src: SourceFile, parts, names: set[str], cli: bool, ctx: Ctx, by_name: bool) -> bool | None:
     callee, args = parts
     helpers = resolve_any(src, callee, len(args))
+    index = xfile.get_index()
+    if index is not None and index.exhausted:
+        return None
     if helpers:
-        return not _helper_returns_tainted(src, helpers, args, names, cli, ctx)
-    if by_name and sanitizer_name_matches(callee, ctx):
+        result = _helper_returns_tainted(src, helpers, args, names, cli, ctx)
+        if result is TaintResult.UNKNOWN:
+            return None  # 끝까지 따라가지 못한 함수는 깨끗하다고 보지 않고, 인자의 오염이 결과로 전해진다고 본다
+        return result is TaintResult.CLEAN
+    if archive_file(src) and (
+        ARCHIVE_SOURCE_RE.search(callee + "(")
+        or (re.search(r"\.(getName|getFileName)$", callee) and callee.rsplit(".", 1)[0] in names)
+    ):
+        return False  # 압축 항목 이름(`entry.getName()`)은 이름이 정제 함수처럼 보여도 `../`가 든 외부 입력이다
+    if by_name and sanitizer_name_matches(callee, ctx, src.lang):
         return True
     if not by_name and _UNIVERSAL_RE.search(callee):
         return True  # 중첩된 호출이라도 len()·int() 같은 값의 종류를 바꾸는 호출은 문자열 주입 경로가 아니다
     return None
 
 
-def _helper_returns_tainted(src: SourceFile, helpers, args: list[Node], names: set[str], cli: bool, ctx: Ctx) -> bool:
+def _helper_returns_tainted(src: SourceFile, helpers, args: list[Node], names: set[str], cli: bool, ctx: Ctx) -> TaintResult:
+    outcome = TaintResult.CLEAN
     for hsrc, fn in helpers:
         params = _positional_params(hsrc, fn)
-        seeds = frozenset(
-            param_name(hsrc, p)
-            for p, a in zip(params, args, strict=False)
-            if expr_has_source(src, a, cli) or (identifiers_in(src, a) & names)
-        )
-        if _returns_tainted(hsrc, fn.node, seeds, cli, ctx):
-            return True
-    return False
+        # 인자 자리의 식도 같은 기준으로 판정한다: 인자가 오염된 값을 돌려주는 다른 함수 호출이어도 매개변수가 오염된다
+        seeds = frozenset(param_name(hsrc, p) for p, a in zip(params, args, strict=False) if expr_tainted(src, a, names, cli, ctx))
+        result = _returns_tainted(hsrc, fn.node, seeds, cli, ctx)
+        if result is TaintResult.TAINTED:
+            return result
+        if result is TaintResult.UNKNOWN:
+            outcome = result
+    return outcome
 
 
-def _clean_ranges(src: SourceFile, node: Node, names: set[str], cli: bool, ctx: Ctx) -> list[tuple[int, int]]:
-    """식 안에 중첩된, 결과가 깨끗한 호출(프로젝트에 정의된 함수)의 바이트 범위"""
+def _clean_ranges(src: SourceFile, node: Node, names: set[str], cli: bool, ctx: Ctx) -> list[tuple[int, int]] | None:
+    """식 안에 중첩된, 결과가 깨끗한 호출(프로젝트에 정의된 함수)의 바이트 범위.
+    중첩된 프로젝트 함수 호출이 오염된 값을 돌려주면(함수 안에서 외부 입력을 읽는 경우 포함) None"""
     ranges: list[tuple[int, int]] = []
     stack = list(node.children)
     while stack:
         n = stack.pop()
         parts = _call_parts(src, n)
         # 도달하는 문맥이 정해져 있으면(셸·경로·SQL 등) 그 문맥에 유효한 정제 함수 호출은 중첩되어 있어도 그 호출 범위만 깨끗하다. 문맥을 모르면(ANY) 이름만으로 인정하지 않는다
-        if parts is not None and _call_is_clean(src, parts, names, cli, ctx, by_name=ctx is not Ctx.ANY):
+        clean = _call_is_clean(src, parts, names, cli, ctx, by_name=ctx is not Ctx.ANY) if parts is not None else None
+        if clean:
             ranges.append((n.start_byte, n.end_byte))
             continue
+        if clean is False:
+            return None
         stack.extend(n.children)
     return ranges
-
-
-def _identifiers_outside(src: SourceFile, node: Node, ranges: list[tuple[int, int]]) -> set[str]:
-    def inside(n: Node) -> bool:
-        return any(a <= n.start_byte and n.end_byte <= b for a, b in ranges)
-
-    names: set[str] = set()
-    for n in walk(node):
-        if inside(n):
-            continue
-        if n.type in ("identifier", "variable_name", "property_identifier", "field_identifier"):
-            if n.child_count == 0 or n.type == "variable_name":
-                names |= identifiers_in(src, n)
-    return names
 
 
 def expr_tainted(src: SourceFile, node: Node, names: set[str], cli: bool = False, ctx: Ctx = Ctx.ANY) -> bool:
@@ -729,18 +1142,20 @@ def expr_tainted(src: SourceFile, node: Node, names: set[str], cli: bool = False
         if clean is not None:
             return not clean
     ranges = _clean_ranges(src, node, names, cli, ctx)
+    if ranges is None:
+        return True
     if ranges:
         buf = bytearray(src.data[node.start_byte : node.end_byte])
         for a, b in ranges:
             for i in range(max(a, node.start_byte) - node.start_byte, min(b, node.end_byte) - node.start_byte):
                 buf[i] = 32
         remaining = buf.decode("utf-8", errors="replace")
-        if WEB_SOURCE_RE.search(remaining) or (cli and CLI_SOURCE_RE.search(remaining)):
+        if _source_in(remaining, cli, src.lang, archive_file(src)):
             return True
-        return bool(_identifiers_outside(src, node, ranges) & names)
+        return reads_tainted(src, node, names, skip=lambda n: any(a <= n.start_byte and n.end_byte <= b for a, b in ranges))
     if expr_has_source(src, node, cli):
         return True
-    return bool(identifiers_in(src, node) & names)
+    return reads_tainted(src, node, names)
 
 
 def is_tainted(

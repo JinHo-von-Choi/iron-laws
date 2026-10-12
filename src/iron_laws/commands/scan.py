@@ -20,9 +20,11 @@ from iron_laws.commands.common import (
     MaxUnknownOpt,
     MaxUnverifiedOpt,
     MetricsOpt,
+    PackageIndexOpt,
     PathArg,
     ReportFormat,
     SearchParentsOpt,
+    TriageOpt,
     _build_scanner,
     _check_completion,
     _emit_report,
@@ -64,15 +66,25 @@ def check_command(
     metrics: Path | None = MetricsOpt,
     max_unknown: float | None = MaxUnknownOpt,
     max_unverified: float | None = MaxUnverifiedOpt,
+    package_index: Path | None = PackageIndexOpt,
+    triage_model: str | None = TriageOpt,
 ):
     """
     프로젝트의 보안 약점과 품질 결함을 신속 진단합니다. (CI/CD 적합)
     """
-    scanner = _build_scanner(path, config, search_parents, baseline, changed_since, respect_gitignore, contract, contract_mode, approvals, gates=_gates(max_unknown, max_unverified))
+    scanner = _build_scanner(path, config, search_parents, baseline, changed_since, respect_gitignore, contract, contract_mode, approvals, gates=_gates(max_unknown, max_unverified), package_index=package_index)
     if fail_on is not None:
         scanner.config.fail_on = fail_on
         scanner.fail_on_source = "명령행 옵션"
     report = _timed_scan(scanner, metrics, "check")
+    if triage_model:
+        from iron_laws.core.triage import TriageError, apply_triage
+
+        try:
+            attached = apply_triage(report, path, triage_model, getattr(scanner, "_secrets", set()))
+            err.print(f"[dim]LLM 검토 의견 {attached}건을 붙였습니다(판정은 바꾸지 않았습니다).[/dim]")
+        except TriageError as e:
+            err.print(f"[yellow]{escape(str(e))} 검토 의견 없이 계속합니다.[/yellow]")
     print_console_report(report, limit)
     _check_completion(report, allow_empty)
 
@@ -96,7 +108,7 @@ def audit_command(
         ReportFormat.CONSOLE,
         "--format",
         case_sensitive=False,
-        help="출력 형식 (console, markdown, json, sarif, prompt, review)",
+        help="출력 형식 (console, markdown, json, sarif, prompt, review, gitlab-codequality, mois-report)",
     ),
     limit: int = typer.Option(DEFAULT_LIMIT, "--limit", min=0, help="console/prompt 형식의 최대 지적 수 (0이면 전부)"),
     allow_empty: bool = AllowEmptyOpt,
@@ -111,12 +123,22 @@ def audit_command(
     metrics: Path | None = MetricsOpt,
     max_unknown: float | None = MaxUnknownOpt,
     max_unverified: float | None = MaxUnverifiedOpt,
+    package_index: Path | None = PackageIndexOpt,
+    triage_model: str | None = TriageOpt,
 ):
     """
     점검을 수행하고 보고서를 발행합니다. markdown 보고서에는 행안부 구현단계 49개 항목별 점검 현황이 포함됩니다.
     """
-    scanner = _build_scanner(path, config, search_parents, baseline, changed_since, respect_gitignore, contract, contract_mode, approvals, gates=_gates(max_unknown, max_unverified))
+    scanner = _build_scanner(path, config, search_parents, baseline, changed_since, respect_gitignore, contract, contract_mode, approvals, gates=_gates(max_unknown, max_unverified), package_index=package_index)
     report = _timed_scan(scanner, metrics, "audit")
+    if triage_model:
+        from iron_laws.core.triage import TriageError, apply_triage
+
+        try:
+            attached = apply_triage(report, path, triage_model, getattr(scanner, "_secrets", set()))
+            err.print(f"[dim]LLM 검토 의견 {attached}건을 붙였습니다(판정은 바꾸지 않았습니다).[/dim]")
+        except TriageError as e:
+            err.print(f"[yellow]{escape(str(e))} 검토 의견 없이 계속합니다.[/yellow]")
     if report.summary.scan_status == "empty" and not allow_empty:
         _check_completion(report, allow_empty)
     _emit_report(report, scanner, report_format, output, limit)

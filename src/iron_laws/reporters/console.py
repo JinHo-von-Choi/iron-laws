@@ -73,6 +73,31 @@ def _print_ledger(report: AuditReport) -> None:
         console.print(Text(f"  … 외 {len(ledger.blockers) - 5}건", style="dim"))
 
 
+FIRST_STEPS_THRESHOLD = 30
+_SEVERITY_ORDER = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3}
+
+
+def first_steps(report: AuditReport) -> list:
+    """지적이 많을 때 먼저 볼 3개: 심각도가 높고 외부 입력 도달이 확정된 것부터"""
+    if report.summary.total_violations <= FIRST_STEPS_THRESHOLD:
+        return []
+    ranked = sorted(report.violations, key=lambda v: (_SEVERITY_ORDER.get(v.severity.value, 9), v.confidence.value != "CONFIRMED", v.file_path.as_posix(), v.line_number))
+    return ranked[:3]
+
+
+def _first_steps(report: AuditReport) -> None:
+    picks = first_steps(report)
+    if not picks:
+        return
+    lines = Text()
+    lines.append(f"지적이 {report.summary.total_violations}건입니다. 먼저 아래 3건부터 고치십시오.\n", style="bold")
+    for i, v in enumerate(picks, start=1):
+        lines.append(f"{i}. [{v.severity.value}] {v.rule_id} {v.file_path.as_posix()}:{v.line_number} ", style="bold")
+        lines.append(f"{v.plain or v.message}\n")
+    lines.append(f"다음 명령: iron-laws fix-prompt {report.target_path} --limit 3   (코딩 AI에 붙여넣을 수정 지시문)", style="cyan")
+    console.print(Panel(lines, title="먼저 할 일", expand=True))
+
+
 def print_console_report(report: AuditReport, limit: int = DEFAULT_LIMIT) -> None:
     console.print()
     title_text = Text("오철칙 (五鐵則) SW 개발보안 점검 리포트", style="bold white on blue", justify="center")
@@ -111,6 +136,7 @@ def print_console_report(report: AuditReport, limit: int = DEFAULT_LIMIT) -> Non
         result_text,
     )
     console.print(summary_table)
+    _first_steps(report)
     meta = report.metadata
     if meta.get("config_source"):
         console.print(Text(f"설정: {meta['config_source']} (fail_on={meta.get('config', {}).get('fail_on', '?')}, 출처: {meta.get('fail_on_source', '기본값')})", style="dim"))

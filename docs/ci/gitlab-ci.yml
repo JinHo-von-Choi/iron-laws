@@ -1,0 +1,12 @@
+# 오철칙 점검을 GitLab merge request의 Code Quality 위젯에 표시한다.
+iron-laws:
+  stage: test
+  image: python:3.13-slim
+  script:
+    - pip install iron-laws
+    - iron-laws audit . --format gitlab-codequality --limit 0 -o gl-code-quality-report.json || true
+    - iron-laws check . --limit 20
+  artifacts:
+    when: always
+    reports:
+      codequality: gl-code-quality-report.json

@@ -120,6 +120,12 @@ def markdown(data: dict[str, Any]) -> str:
             for f in lock["findings"]:
                 ids = ", ".join(h["id"] for h in f["advisories"][:3]) + (f" 외 {len(f['advisories']) - 3}건" if len(f["advisories"]) > 3 else "")
                 out.append(f"| {f['package']} | {f['version']} | {_kind(f)} | {f['severity']} | {ids} | {_action(f)} |")
+            reach_lines = [
+                f"- 도달성 {f['package']} {h['id']}: {h['reachability']['status']} — {h['reachability']['reason']}" + (f" ({', '.join(h['reachability']['locations'][:3])})" if h["reachability"]["locations"] else "")
+                for f in lock["findings"] for h in f["advisories"] if h.get("reachability")
+            ]
+            if reach_lines:
+                out += ["", *reach_lines]
         for u in lock["undetermined"]:
             out.append(f"- 판정 불가: {u['package']} {u['version']} - {u['reason']}")
         out.append("")
@@ -147,3 +153,13 @@ def prompt(data: dict[str, Any]) -> str:
 
 def to_json(data: dict[str, Any]) -> str:
     return json.dumps(data, ensure_ascii=False, indent=2)
+
+
+def attach_reachability(data: dict[str, Any], sources) -> None:
+    """권고마다 도달성(reachable / no_evidence / undetermined)을 붙인다."""
+    from iron_laws.deps.reach import reachability
+
+    for f in all_findings(data):
+        for adv in f["advisories"]:
+            reach = reachability(sources, f["ecosystem"], f["package"], adv.get("symbols") or [])
+            adv["reachability"] = {"status": reach.status, "reason": reach.reason, "locations": reach.locations}

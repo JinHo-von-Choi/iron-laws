@@ -1,0 +1,5 @@
+rule: IL-504
+expected: clean
+file: app.py
+issue: ""
+note: 셸을 거치지 않는 인자 배열 호출은 명령 삽입 경로가 아니다

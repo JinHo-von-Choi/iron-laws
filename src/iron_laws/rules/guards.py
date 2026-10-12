@@ -62,6 +62,23 @@ def executes_unconditionally(node: Node, scope: Node) -> bool:
     return True
 
 
+def shared_scope(a: Node, b: Node, scope: Node) -> Node:
+    """a와 b를 함께 감싸는 가장 가까운 노드(없으면 scope). 반복문 안에서 항목마다 하는 검사는 그 반복 본문을 기준으로
+    무조건 실행되는지 본다. 검사가 싱크와 다른 분기 안에 있으면 이 노드까지 올라가는 길에 조건이 끼어 인정되지 않는다."""
+    ancestors = set()
+    current = b
+    while current is not None and current.id != scope.id:
+        ancestors.add(current.id)
+        current = current.parent
+    current = a.parent
+    while current is not None and current.id != scope.id:
+        if current.id in ancestors:
+            # 두 노드가 같은 조건문의 서로 다른 분기에 있으면 그 조건문 바깥을 기준으로 삼아, 분기 안의 노드가 조건부임을 드러낸다
+            return current.parent if current.type in CONDITIONAL_TYPES and current.parent is not None else current
+        current = current.parent
+    return scope
+
+
 def redefined_between(src: SourceFile, scope: Node, name: str, start: int, end: int) -> bool:
     """[start, end) 사이에서 name에 새 값이 대입되는지(증분 대입 포함). 검증한 값이 싱크까지 같은 값인지 본다."""
     for value in definitions(src, scope, name):

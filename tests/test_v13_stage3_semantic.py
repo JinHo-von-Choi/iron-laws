@@ -11,7 +11,12 @@
 import pytest
 
 from tests.semantic_corpus import DEV_APPROVAL, DEV_OUTPUT, DEV_SCAN, OPERATORS
-from tests.semantic_eval import evaluate_approvals, evaluate_output, evaluate_scan
+from tests.semantic_eval import (
+    evaluate_approvals,
+    evaluate_cross_file,
+    evaluate_output,
+    evaluate_scan,
+)
 from tests.semantic_holdout import HOLDOUT_APPROVAL, HOLDOUT_OUTPUT, HOLDOUT_SCAN
 
 # 평가용 실행에서 실패해 엔진을 고치고 개발용으로 옮긴 사례. 같은 유형의 새 평가용 사례로 바꿨으므로 그 유형은 독립 평가가 아니다.
@@ -96,3 +101,14 @@ def test_suppression_and_masking_cases_hold_in_every_format(tmp_factory):
     for cases in (DEV_OUTPUT, HOLDOUT_OUTPUT):
         result = evaluate_output(cases, tmp_factory)
         assert result["mishandled"] == 0, result["details"]
+
+
+def test_cross_file_variants_are_all_killed_without_blocking_benign_code(tmp_factory):
+    """외부 입력을 다른 파일 함수(한 단계·두 파일 사슬)에 통과시킨 위험 변형을 모두 잡고, 정상 변형은 막지 않는다."""
+    for cases in (DEV_SCAN, HOLDOUT_SCAN):
+        metrics = evaluate_cross_file(cases, tmp_factory)
+        summary = metrics.summary()
+        failures = [(o.case_id, o.form, o.operator, o.verdict) for o in metrics.failures()]
+        assert summary["variants"]["risky"] > 0 and summary["variants"]["benign"] > 0
+        assert summary["kill_rate"] == 1.0, failures
+        assert summary["benign_blocked"] == 0, failures

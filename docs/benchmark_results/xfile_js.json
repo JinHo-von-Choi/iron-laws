@@ -1,0 +1,52 @@
+{
+  "tool_version": "1.6.0 출시 전 개발 판",
+  "method": "파일 간 해석이 없는 1.5.0과 이 판을 같은 장비에서 점검해, 달라진 보안 규칙 지적을 모두 직접 분류했다(각 50건 상한). 처리 시간은 작업 프로세스 1개, 3회 중앙값.",
+  "projects": {
+    "juice-shop": {
+      "commit": "0e6d909b7466e76bc8deabf2fdb62bc5c849961f",
+      "seconds": {
+        "before": 50.2,
+        "after": 55.01,
+        "ratio": 1.1
+      },
+      "cross_file": {
+        "resolved_calls": 431,
+        "resolution_gaps": 0,
+        "resolution_gap_rate": 0.0
+      },
+      "new": [],
+      "removed": [
+        {
+          "rule": "IL-511",
+          "path": "routes/updateUserProfile.ts",
+          "line": 42,
+          "severity": "MEDIUM",
+          "verdict": "FP 제거",
+          "reason": "res.cookie 값은 security.authorize(lib/insecurity.ts)의 RS256 JWT라 개행이 들어갈 수 없다. 파일 간 해석으로 반환값이 jwt.sign임을 확인했다."
+        },
+        {
+          "rule": "IL-533",
+          "path": "routes/deluxe.ts",
+          "line": 43,
+          "severity": "MEDIUM",
+          "verdict": "FP 제거",
+          "reason": "조회 조건 값 security.deluxeToken(user.email)은 HMAC 16진 문자열을 돌려줘 객체 연산자 주입이 불가능하다."
+        }
+      ]
+    },
+    "NodeGoat": {
+      "commit": "c5cb68a7084e4ae7dcc60e6a98768720a81841e8",
+      "seconds": {
+        "before": 0.84,
+        "after": 0.82
+      },
+      "cross_file": {
+        "resolved_calls": 1,
+        "resolution_gaps": 0,
+        "resolution_gap_rate": 0.0
+      },
+      "new": [],
+      "removed": []
+    }
+  }
+}

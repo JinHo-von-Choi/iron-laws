@@ -1,0 +1,66 @@
+{
+  "method": "의미 변형 사례집의 Python·JavaScript·TypeScript·Java 사례(위험·정상 짝)와, 위험 사례의 외부 입력 읽기를 다른 파일 함수로 옮긴 우회 변형을 세 도구로 점검했다. 사례 주 파일의 지적 중 사례 규칙의 CWE와 같은 것만 탐지로 센다. 오철칙은 확정 지적만 탐지로 센다.",
+  "limitations": [
+    "개발용 사례는 오철칙을 만들며 맞춘 사례라 오철칙에 유리하다. 공정한 비교는 평가용(holdout)이다.",
+    "사례는 합성 코드 조각이라 프레임워크 연결(Express 앱 생성, Django URL 연결, Spring 컨트롤러 등록 등)이 빠진 경우가 많다. CodeQL은 이런 연결로 외부 입력 원천을 인식하므로 JavaScript 0건, Java 1건으로 실제 성능보다 낮게 나온다.",
+    "Semgrep 규칙은 실행 시점의 레지스트리 p/default이며 고정되지 않는다."
+  ],
+  "cases": 106,
+  "results": {
+    "iron-laws": {
+      "tool": "iron-laws",
+      "version": "1.6.0 출시 전 개발 판",
+      "config": "기본 규칙(확정 지적만 탐지로 셈)",
+      "seconds": 1.6,
+      "all": {
+        "risky_detected": "36/36",
+        "benign_flagged": "0/36",
+        "bypass_rejected": "34/34",
+        "missed_but_surfaced_as_unknown": "0/0"
+      },
+      "holdout": {
+        "risky_detected": "9/9",
+        "benign_flagged": "0/9",
+        "bypass_rejected": "7/7",
+        "missed_but_surfaced_as_unknown": "0/0"
+      }
+    },
+    "semgrep": {
+      "tool": "semgrep",
+      "version": "1.180.0",
+      "config": "p/default(레지스트리, 실행 시점 규칙)",
+      "seconds": 9.4,
+      "errors": 0,
+      "all": {
+        "risky_detected": "28/36",
+        "benign_flagged": "17/36",
+        "bypass_rejected": "8/34",
+        "missed_but_surfaced_as_unknown": "0/8"
+      },
+      "holdout": {
+        "risky_detected": "5/9",
+        "benign_flagged": "2/9",
+        "bypass_rejected": "2/7",
+        "missed_but_surfaced_as_unknown": "0/4"
+      }
+    },
+    "codeql": {
+      "tool": "codeql",
+      "version": "2.27.2",
+      "config": "<언어>-security-extended.qls(번들 기본 쿼리팩), Java는 build-mode=none",
+      "seconds": 125.3,
+      "all": {
+        "risky_detected": "19/36",
+        "benign_flagged": "11/36",
+        "bypass_rejected": "19/34",
+        "missed_but_surfaced_as_unknown": "0/17"
+      },
+      "holdout": {
+        "risky_detected": "0/9",
+        "benign_flagged": "1/9",
+        "bypass_rejected": "0/7",
+        "missed_but_surfaced_as_unknown": "0/9"
+      }
+    }
+  }
+}

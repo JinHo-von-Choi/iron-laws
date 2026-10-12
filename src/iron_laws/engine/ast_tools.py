@@ -22,6 +22,7 @@ FUNCTION_TYPES: dict[Lang, set[str]] = {
     Lang.PHP: {"function_definition", "method_declaration"},
     Lang.C: {"function_definition"},
     Lang.CPP: {"function_definition"},
+    Lang.KOTLIN: {"function_declaration", "anonymous_function"},
 }
 for _lang in JS_FAMILY:
     FUNCTION_TYPES[_lang] = {
@@ -47,6 +48,7 @@ CALL_TYPES: dict[Lang, set[str]] = {
     },
     Lang.C: {"call_expression"},
     Lang.CPP: {"call_expression"},
+    Lang.KOTLIN: {"call_expression"},
 }
 for _lang in JS_FAMILY:
     CALL_TYPES[_lang] = {"call_expression", "new_expression"}
@@ -173,7 +175,7 @@ def _args_of(node: Node) -> list[Node]:
     args_node = node.child_by_field_name("arguments")
     if args_node is None:
         for child in node.children:
-            if child.type in ("arguments", "argument_list", "token_tree"):
+            if child.type in ("arguments", "argument_list", "token_tree", "value_arguments"):
                 args_node = child
                 break
     if args_node is None:
@@ -215,7 +217,21 @@ def _callee_text(src: SourceFile, node: Node) -> str:
         macro = node.child_by_field_name("macro")
         return f"{src.text_of(macro)}!" if macro is not None else ""
     fn = node.child_by_field_name("function")
+    if fn is None and src.lang is Lang.KOTLIN and node.named_children:
+        fn = node.named_children[0]  # Kotlin 호출 식은 필드 이름이 없고 첫 자식이 호출 대상이다
     return src.text_of(fn) if fn is not None else ""
+
+
+def function_parts(src: SourceFile, node: Node) -> tuple[Node | None, Node | None]:
+    """(매개변수 목록 노드, 본문 노드). Kotlin은 필드 이름이 없어 자식 형식으로 찾는다."""
+    params = node.child_by_field_name("parameters")
+    body = node.child_by_field_name("body")
+    if src.lang is Lang.KOTLIN:
+        params = params or next((c for c in node.named_children if c.type == "function_value_parameters"), None)
+        if body is None:
+            fb = next((c for c in node.named_children if c.type == "function_body"), None)
+            body = fb.named_children[0] if fb is not None and fb.named_children else None
+    return params, body
 
 
 def iter_calls(src: SourceFile) -> Iterator[Call]:
@@ -271,13 +287,13 @@ def _collect_functions(src: SourceFile) -> list[Func]:
     for node in src.nodes:
         if node.type not in types:
             continue
-        params_node = node.child_by_field_name("parameters")
+        params_node, body_node = function_parts(src, node)
         if params_node is None and src.lang in C_FAMILY:
             declarator = node.child_by_field_name("declarator")
             if declarator is not None:
                 params_node = declarator.child_by_field_name("parameters")
-        params = [p for p in (params_node.named_children if params_node else []) if "comment" not in p.type]
-        functions.append(Func(node, _function_name(src, node), params, node.child_by_field_name("body"), src.lang))
+        params = [p for p in (params_node.named_children if params_node else []) if "comment" not in p.type and p.type != "parameter_modifiers"]
+        functions.append(Func(node, _function_name(src, node), params, body_node, src.lang))
     return functions
 
 
@@ -371,6 +387,8 @@ INTERPOLATION_TYPES = {"interpolation", "template_substitution", "interpolation_
 
 
 def has_interpolation(node: Node) -> bool:
+    if node.type == "string_literal" and any(c.type == "string_content" and c.text == b"$" for c in node.children):
+        return True  # Kotlin 단순 템플릿 "$name"은 별도 노드가 아니라 문자열 내용으로 들어온다
     for n in walk(node):
         if n is node:
             continue
@@ -455,6 +473,8 @@ def _is_property_position(node: Node) -> bool:
     parent = node.parent
     if parent is None:
         return False
+    if parent.type == "navigation_expression":  # Kotlin a.b: 첫 자식만 값이다
+        return bool(parent.named_children) and parent.named_children[0].id != node.id
     field = PROPERTY_FIELDS.get(parent.type)
     if field is None:
         return False

@@ -39,6 +39,7 @@ SECRET_NAME = (
 ASSIGN_QUOTED_RE = re.compile(
     rf"""(?ix)
     (?P<name>[A-Za-z0-9_.\-\[\]'"]*{SECRET_NAME}[A-Za-z0-9_\-\]'"]*)
+    (?:\s*:\s*[A-Za-z_][\w.]*(?:<[\w.,\s]*>)?\??(?=\s*=[^=>]))?   # 형식 표기(TS·Python·Kotlin): password: string = "..."
     \s*(?::=|[:=]|=>)\s*
     (?:b|r|u|f)?(?P<q>["'])(?P<value>[^"'\n]{{4,}})(?P=q)"""
 )
@@ -181,6 +182,10 @@ class HardcodedSecretRule(BaseRule):
             return False  # 문자열 결합·코드 조각이거나 한글 등 사람이 읽는 문구
         if re.fullmatch(r"[A-Z][A-Z0-9_]{4,}", value):
             return False  # 환경변수 이름을 담은 상수
+        if re.search(r"(?i)bypass|compass|passthrough|passive|pass(?:ed|es|ing|age)(?![a-z])", name) and not re.search(r"(?i)password|passwd|pwd", name):
+            return False  # bypass·passed처럼 pass가 다른 단어의 일부인 이름
+        if re.fullmatch(r"\d+\s*/\s*\d+", value) or re.fullmatch(r"[^{}]*(\{[^{}]*\}[^{}]*)+", value) and not re.sub(r"\{[^{}]*\}", "", value).strip(" /:-_"):
+            return False  # 34/34 같은 비율, f-string 자리표시자만 있는 값
         strong = re.search(r"(?i)(pass(word|wd)?|pwd|passcode)$", name) is not None
         if not strong and re.fullmatch(r"[A-Za-z][A-Za-z_\-]{3,}", value) and not re.search(r"\d", value) and len(value) < 24:
             return False  # 숫자·기호 없는 단어형 값은 키·토큰 이름 상수로 본다

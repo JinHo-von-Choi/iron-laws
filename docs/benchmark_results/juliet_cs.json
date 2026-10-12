@@ -1,0 +1,424 @@
+{
+  "tool_version": "1.6.0 출시 전 개발 판",
+  "dataset": "Juliet Test Suite for C# 1.3",
+  "dataset_sha256": "2e6dbac4741fb020a0b1c2db69e98aed165987df2bd70bd51f7c8c5302c8e8f8",
+  "command": "benchmarks/juliet.py cs <압축.zip> <푼 폴더>",
+  "cwe_rule_map": {
+    "CWE-23": [
+      "IL-502"
+    ],
+    "CWE-36": [
+      "IL-502"
+    ],
+    "CWE-78": [
+      "IL-504"
+    ],
+    "CWE-79": [
+      "IL-505"
+    ],
+    "CWE-80": [
+      "IL-505"
+    ],
+    "CWE-81": [
+      "IL-505"
+    ],
+    "CWE-83": [
+      "IL-505"
+    ],
+    "CWE-89": [
+      "IL-501"
+    ],
+    "CWE-90": [
+      "IL-508"
+    ],
+    "CWE-94": [
+      "IL-503"
+    ],
+    "CWE-95": [
+      "IL-503"
+    ],
+    "CWE-113": [
+      "IL-511"
+    ],
+    "CWE-121": [
+      "IL-514"
+    ],
+    "CWE-122": [
+      "IL-514"
+    ],
+    "CWE-124": [
+      "IL-514"
+    ],
+    "CWE-126": [
+      "IL-514"
+    ],
+    "CWE-127": [
+      "IL-514"
+    ],
+    "CWE-134": [
+      "IL-514"
+    ],
+    "CWE-190": [
+      "IL-514"
+    ],
+    "CWE-209": [
+      "IL-305"
+    ],
+    "CWE-242": [
+      "IL-524"
+    ],
+    "CWE-247": [
+      "IL-523"
+    ],
+    "CWE-259": [
+      "IL-101"
+    ],
+    "CWE-312": [
+      "IL-109"
+    ],
+    "CWE-319": [
+      "IL-109"
+    ],
+    "CWE-321": [
+      "IL-101"
+    ],
+    "CWE-327": [
+      "IL-102"
+    ],
+    "CWE-328": [
+      "IL-102"
+    ],
+    "CWE-338": [
+      "IL-104"
+    ],
+    "CWE-367": [
+      "IL-516"
+    ],
+    "CWE-390": [
+      "IL-301"
+    ],
+    "CWE-401": [
+      "IL-518"
+    ],
+    "CWE-404": [
+      "IL-518"
+    ],
+    "CWE-416": [
+      "IL-528"
+    ],
+    "CWE-457": [
+      "IL-529"
+    ],
+    "CWE-476": [
+      "IL-519"
+    ],
+    "CWE-502": [
+      "IL-515"
+    ],
+    "CWE-539": [
+      "IL-112"
+    ],
+    "CWE-601": [
+      "IL-507"
+    ],
+    "CWE-611": [
+      "IL-509"
+    ],
+    "CWE-615": [
+      "IL-111"
+    ],
+    "CWE-643": [
+      "IL-527"
+    ],
+    "CWE-676": [
+      "IL-524"
+    ],
+    "CWE-732": [
+      "IL-114"
+    ],
+    "CWE-759": [
+      "IL-107"
+    ],
+    "CWE-772": [
+      "IL-518"
+    ],
+    "CWE-775": [
+      "IL-518"
+    ],
+    "CWE-835": [
+      "IL-517"
+    ]
+  },
+  "categories": {
+    "CWE113_HTTP_Response_Splitting": {
+      "files": 1651,
+      "TP": 0,
+      "FN": 999,
+      "FP": 0,
+      "TN": 999,
+      "TPR": 0.0,
+      "FPR": 0.0
+    },
+    "CWE134_Externally_Controlled_Format_String": {
+      "files": 856,
+      "TP": 0,
+      "FN": 518,
+      "FP": 0,
+      "TN": 518,
+      "TPR": 0.0,
+      "FPR": 0.0
+    },
+    "CWE190_Integer_Overflow": {
+      "files": 6053,
+      "TP": 0,
+      "FN": 3663,
+      "FP": 0,
+      "TN": 3663,
+      "TPR": 0.0,
+      "FPR": 0.0
+    },
+    "CWE209_Information_Leak_Error": {
+      "files": 36,
+      "TP": 0,
+      "FN": 34,
+      "FP": 0,
+      "TN": 34,
+      "TPR": 0.0,
+      "FPR": 0.0
+    },
+    "CWE23_Relative_Path_Traversal": {
+      "files": 602,
+      "TP": 0,
+      "FN": 370,
+      "FP": 0,
+      "TN": 370,
+      "TPR": 0.0,
+      "FPR": 0.0
+    },
+    "CWE259_Hard_Coded_Password": {
+      "files": 122,
+      "TP": 0,
+      "FN": 74,
+      "FP": 0,
+      "TN": 74,
+      "TPR": 0.0,
+      "FPR": 0.0
+    },
+    "CWE319_Cleartext_Tx_Sensitive_Info": {
+      "files": 246,
+      "TP": 0,
+      "FN": 148,
+      "FP": 0,
+      "TN": 148,
+      "TPR": 0.0,
+      "FPR": 0.0
+    },
+    "CWE321_Hard_Coded_Cryptographic_Key": {
+      "files": 62,
+      "TP": 0,
+      "FN": 37,
+      "FP": 0,
+      "TN": 37,
+      "TPR": 0.0,
+      "FPR": 0.0
+    },
+    "CWE327_Use_Broken_Crypto": {
+      "files": 36,
+      "TP": 34,
+      "FN": 0,
+      "FP": 0,
+      "TN": 34,
+      "TPR": 1.0,
+      "FPR": 0.0
+    },
+    "CWE328_Reversible_One_Way_Hash": {
+      "files": 36,
+      "TP": 0,
+      "FN": 34,
+      "FP": 0,
+      "TN": 34,
+      "TPR": 0.0,
+      "FPR": 0.0
+    },
+    "CWE338_Weak_PRNG": {
+      "files": 19,
+      "TP": 0,
+      "FN": 17,
+      "FP": 0,
+      "TN": 17,
+      "TPR": 0.0,
+      "FPR": 0.0
+    },
+    "CWE36_Absolute_Path_Traversal": {
+      "files": 602,
+      "TP": 0,
+      "FN": 370,
+      "FP": 0,
+      "TN": 370,
+      "TPR": 0.0,
+      "FPR": 0.0
+    },
+    "CWE390_Error_Without_Action": {
+      "files": 36,
+      "TP": 0,
+      "FN": 34,
+      "FP": 0,
+      "TN": 34,
+      "TPR": 0.0,
+      "FPR": 0.0
+    },
+    "CWE404_Improper_Resource_Shutdown": {
+      "files": 6,
+      "TP": 0,
+      "FN": 4,
+      "FP": 0,
+      "TN": 4,
+      "TPR": 0.0,
+      "FPR": 0.0
+    },
+    "CWE476_NULL_Pointer_Dereference": {
+      "files": 295,
+      "TP": 0,
+      "FN": 198,
+      "FP": 0,
+      "TN": 198,
+      "TPR": 0.0,
+      "FPR": 0.0
+    },
+    "CWE539_Information_Exposure_Through_Persistent_Cookie": {
+      "files": 19,
+      "TP": 17,
+      "FN": 0,
+      "FP": 17,
+      "TN": 0,
+      "TPR": 1.0,
+      "FPR": 1.0
+    },
+    "CWE601_Open_Redirect": {
+      "files": 542,
+      "TP": 0,
+      "FN": 333,
+      "FP": 0,
+      "TN": 333,
+      "TPR": 0.0,
+      "FPR": 0.0
+    },
+    "CWE615_Info_Exposure_by_Comment": {
+      "files": 19,
+      "TP": 0,
+      "FN": 17,
+      "FP": 0,
+      "TN": 17,
+      "TPR": 0.0,
+      "FPR": 0.0
+    },
+    "CWE643_Xpath_Injection": {
+      "files": 612,
+      "TP": 0,
+      "FN": 370,
+      "FP": 0,
+      "TN": 370,
+      "TPR": 0.0,
+      "FPR": 0.0
+    },
+    "CWE759_Unsalted_One_Way_Hash": {
+      "files": 19,
+      "TP": 0,
+      "FN": 17,
+      "FP": 0,
+      "TN": 17,
+      "TPR": 0.0,
+      "FPR": 0.0
+    },
+    "CWE772_Missing_Release_of_Resource": {
+      "files": 4,
+      "TP": 0,
+      "FN": 2,
+      "FP": 0,
+      "TN": 2,
+      "TPR": 0.0,
+      "FPR": 0.0
+    },
+    "CWE775_Missing_Release_of_File_Descriptor_or_Handle": {
+      "files": 3,
+      "TP": 0,
+      "FN": 1,
+      "FP": 0,
+      "TN": 1,
+      "TPR": 0.0,
+      "FPR": 0.0
+    },
+    "CWE78_OS_Command_Injection": {
+      "files": 602,
+      "TP": 0,
+      "FN": 370,
+      "FP": 0,
+      "TN": 370,
+      "TPR": 0.0,
+      "FPR": 0.0
+    },
+    "CWE80_XSS": {
+      "files": 1084,
+      "TP": 0,
+      "FN": 666,
+      "FP": 0,
+      "TN": 666,
+      "TPR": 0.0,
+      "FPR": 0.0
+    },
+    "CWE81_XSS_Error_Message": {
+      "files": 542,
+      "TP": 0,
+      "FN": 333,
+      "FP": 0,
+      "TN": 333,
+      "TPR": 0.0,
+      "FPR": 0.0
+    },
+    "CWE835_Infinite_Loop": {
+      "files": 8,
+      "TP": 0,
+      "FN": 6,
+      "FP": 0,
+      "TN": 6,
+      "TPR": 0.0,
+      "FPR": 0.0
+    },
+    "CWE83_XSS_Attribute": {
+      "files": 542,
+      "TP": 0,
+      "FN": 333,
+      "FP": 0,
+      "TN": 333,
+      "TPR": 0.0,
+      "FPR": 0.0
+    },
+    "CWE89_SQL_Injection": {
+      "files": 1651,
+      "TP": 0,
+      "FN": 999,
+      "FP": 0,
+      "TN": 999,
+      "TPR": 0.0,
+      "FPR": 0.0
+    },
+    "CWE90_LDAP_Injection": {
+      "files": 602,
+      "TP": 0,
+      "FN": 370,
+      "FP": 0,
+      "TN": 370,
+      "TPR": 0.0,
+      "FPR": 0.0
+    },
+    "CWE94_Improper_Control_of_Generation_of_Code": {
+      "files": 612,
+      "TP": 0,
+      "FN": 370,
+      "FP": 0,
+      "TN": 370,
+      "TPR": 0.0,
+      "FPR": 0.0
+    }
+  }
+}

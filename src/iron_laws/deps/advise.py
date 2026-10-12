@@ -24,6 +24,7 @@ class AdvisoryHit:
     severity: str
     summary: str
     fixed_in: list[str]  # 이 권고에서 설치 버전이 속한 구간을 닫는 fixed 버전(없으면 빈 목록)
+    symbols: list[str] = field(default_factory=list)  # 권고가 알려 준 영향 함수
 
 
 @dataclass
@@ -86,7 +87,8 @@ def _merge(hits: list[tuple[Advisory, Affected]], version) -> list[AdvisoryHit]:
         for _, affected in g["items"]:
             fixed.extend(_covering_fixes(affected, version))
         aliases = sorted(g["names"] - {primary.id})
-        merged.append(AdvisoryHit(primary.id, aliases, severity, primary.summary, sorted(set(fixed), key=lambda v: parse_version(primary_ecosystem(g), v) or 0)))
+        symbols = sorted({sym for _, affected in g["items"] for sym in affected.symbols})
+        merged.append(AdvisoryHit(primary.id, aliases, severity, primary.summary, sorted(set(fixed), key=lambda v: parse_version(primary_ecosystem(g), v) or 0), symbols))
     return merged
 
 

@@ -27,7 +27,7 @@ from iron_laws.engine.xfile import note_limit
 
 PY = frozenset({Lang.PYTHON})
 JS = frozenset(JS_FAMILY)
-JAVA = frozenset({Lang.JAVA})
+JAVA = frozenset({Lang.JAVA, Lang.KOTLIN})  # Kotlin은 JVM 표준 라이브러리 싱크를 그대로 쓴다
 CS = frozenset({Lang.CSHARP})
 GO = frozenset({Lang.GO})
 RUST = frozenset({Lang.RUST})
@@ -192,7 +192,7 @@ def sink_hits(
                 merged[root_call.node.id] = Hit(proxy, root_arg, flow, via=where)
         # 이 함수가 오염된 매개변수를 다시 다른 도우미 함수로 넘기면 한 단계 더 따라간다
         if depth >= MAX_CHAIN_DEPTH:
-            note_limit()
+            note_limit(hsrc.path.as_posix(), fn.node.start_byte, "chain")
             continue
         for _call, _arg, hsrc2, fn2, name2 in _helper_entries(hsrc, inner_calls, cli, ctx, seeds):
             work.append((root_call, root_arg, hsrc2, fn2, name2, depth + 1))

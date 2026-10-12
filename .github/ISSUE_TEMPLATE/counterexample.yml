@@ -1,0 +1,35 @@
+name: 반례 제보(오탐·미탐)
+description: 오철칙이 잘못 지적했거나(오탐) 놓친(미탐) 코드를 알려 주세요
+title: "[반례] "
+labels: ["counterexample"]
+body:
+  - type: dropdown
+    id: kind
+    attributes:
+      label: 종류
+      options: ["오탐(지적이 잘못됨)", "미탐(위험을 놓침)"]
+    validations: {required: true}
+  - type: input
+    id: rule
+    attributes:
+      label: 규칙 ID
+      placeholder: IL-504
+    validations: {required: true}
+  - type: input
+    id: version
+    attributes:
+      label: 오철칙 버전
+      placeholder: "iron-laws --version 출력"
+    validations: {required: true}
+  - type: textarea
+    id: code
+    attributes:
+      label: 최소 재현 코드
+      description: 외부에 공개해도 되는 코드만 붙여 주세요. 비밀값·사내 주소는 지워 주세요.
+      render: text
+    validations: {required: true}
+  - type: textarea
+    id: expected
+    attributes:
+      label: 기대한 판정과 이유
+    validations: {required: true}

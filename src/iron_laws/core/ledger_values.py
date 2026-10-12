@@ -113,7 +113,7 @@ class _Closed:
         call = index.get(node.id)
         if call is None or resolve_any(self.src, call.callee, len(call.args)):
             return False
-        return sanitizer_name_matches(call.callee, self.taint_ctx)
+        return sanitizer_name_matches(call.callee, self.taint_ctx, self.src.lang)
 
     def _identifier(self, node: Node, depth: int, seen: frozenset[int]) -> tuple[bool, str]:
         name = self.src.text_of(node)
@@ -214,7 +214,7 @@ class _Closed:
                 if not ok:
                     return False, reason
             return (True, "") if args_ok[0] else args_ok
-        if sanitizer_name_matches(callee, self.taint_ctx):
+        if sanitizer_name_matches(callee, self.taint_ctx, self.src.lang):
             return True, ""
         last = callee.rsplit(".", 1)[-1]
         if callee in PURE_CALLS or (("." in callee) and last in STR_METHODS):

@@ -1,0 +1,30 @@
+id: owasp-asi-2026
+title: OWASP Top 10 for Agentic Applications 2026
+edition: "2026"
+source_url: https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/
+retrieved_at: "2026-10-12"
+sha256: d4af4b39c5a35e880c153362b7e9df1461e94e743497e92f09b7e0e8f21c64aa
+items:
+  - {id: ASI01, name: Agent Goal Hijack}
+  - {id: ASI02, name: Tool Misuse and Exploitation}
+  - {id: ASI03, name: Identity and Privilege Abuse}
+  - {id: ASI04, name: Agentic Supply Chain Vulnerabilities}
+  - {id: ASI05, name: Unexpected Code Execution}
+  - {id: ASI06, name: Memory and Context Poisoning}
+  - {id: ASI07, name: Insecure Inter-Agent Communication}
+  - {id: ASI08, name: Cascading Failures}
+  - {id: ASI09, name: Human-Agent Trust Exploitation}
+  - {id: ASI10, name: Rogue Agents}
+# 에이전트 공격면과 직접 닿는 규칙만 대응한다. 사람이 원문과 대조해 확인하면 verified_edition·verified_sha256을 채운다.
+mapping:
+  AIA-101: [ASI01, ASI04]
+  AIA-102: [ASI02, ASI03, ASI04]
+  AIA-106: [ASI04, ASI05]
+  IL-503: [ASI05]
+  IL-504: [ASI05]
+  AI-111: [ASI04]
+  AIA-103: [ASI05]
+  AIA-104: [ASI01]
+  AIA-105: [ASI02, ASI04]
+verified_edition: null
+verified_sha256: null

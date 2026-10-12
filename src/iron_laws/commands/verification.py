@@ -96,6 +96,7 @@ def verify_patch_command(
     regression: Path | None = typer.Option(None, "--regression", help="결함을 구별하는 회귀시험 명세(검토·확정된 것)"),
     out: Path | None = typer.Option(None, "--out", "-o", help="검증 기록(Receipt) JSON 저장 경로"),
     replay: Path | None = typer.Option(None, "--replay", help="이전 Receipt를 같은 입력·조건으로 깨끗한 작업영역에서 다시 실행해 결과가 재현되는지 확인"),
+    sign: str | None = typer.Option(None, "--sign", help="검증 기록에 서명합니다: ssh:<개인키 경로>. --out 파일 옆에 .sig를 남깁니다"),
 ):
     """
     AI가 만든 patch를 원본과 같은 정책·조건으로 검증하고 승인 근거(Receipt)를 남깁니다.
@@ -165,6 +166,18 @@ def verify_patch_command(
     if out:
         out.write_text(receipt.model_dump_json(indent=2) + "\n", encoding="utf-8")
         err.print(f"[green]검증 기록 저장: {out}[/green]")
+        if sign:
+            from iron_laws.evidence.signing import SigningError, sign_file
+
+            try:
+                sig = sign_file(out, Path(sign.removeprefix("ssh:")))
+            except SigningError as e:
+                err.print(f"[bold red]서명 오류: {escape(str(e))}[/bold red]")
+                raise typer.Exit(2) from e
+            err.print(f"[green]서명 저장: {sig}[/green]")
+    elif sign:
+        err.print("[bold red]--sign은 --out으로 기록 파일을 남길 때만 쓸 수 있습니다.[/bold red]")
+        raise typer.Exit(2)
     raise typer.Exit({"verified": 0, "failed": 1, "undeterminable": 2}[receipt.verdict.overall])
 
 
@@ -175,6 +188,7 @@ def evidence_verify_command(
     checkout: Path | None = typer.Option(None, "--checkout", help="다른 checkout 폴더. 주면 그 코드의 지문이 보고서가 점검한 코드와 같은지 다시 계산합니다"),
     as_of: str | None = typer.Option(None, "--as-of", help="승인 만료 판단 기준일(YYYY-MM-DD). 기본은 오늘"),
     json_output: bool = typer.Option(False, "--json", help="JSON으로 출력"),
+    allowed_signers: Path | None = typer.Option(None, "--allowed-signers", help="OpenSSH 허용 서명자 목록. 주면 대상 파일 옆의 .sig 서명도 확인합니다(없거나 맞지 않으면 모순으로 셉니다)"),
 ):
     """
     보고서·검증 기록의 구조적 모순(없는 지적을 가리킴, 근거 없는 충족, 차단 사유와 상태 불일치, 설명할 수 없는 통과, 만료·다른 코드의 승인 재사용)을 찾습니다.
@@ -197,6 +211,15 @@ def evidence_verify_command(
     else:
         result = verify_report(data, as_of=when, checkout=checkout)
         kind = "점검 보고서"
+    if allowed_signers is not None:
+        from iron_laws.evidence.signing import SigningError, verify_file
+        from iron_laws.evidence.verifier import Problem
+
+        try:
+            signer = verify_file(target, allowed_signers)
+            result.notes.append(f"서명 확인: {signer}")
+        except SigningError as e:
+            result.problems.append(Problem("signature.invalid", str(e)))
     if json_output:
         payload = {
             "kind": kind,

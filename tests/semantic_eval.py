@@ -20,7 +20,14 @@ from iron_laws.reporters.json_reporter import generate_json_report
 from iron_laws.reporters.markdown import generate_markdown_report
 from iron_laws.reporters.prompt import generate_fix_prompt
 from iron_laws.reporters.sarif import generate_sarif_report
-from tests.semantic_corpus import OPERATORS, ApprovalCase, OutputCase, ScanCase, render
+from tests.semantic_corpus import (
+    CROSS_FILE_OPERATORS,
+    OPERATORS,
+    ApprovalCase,
+    OutputCase,
+    ScanCase,
+    render,
+)
 from tests.test_stage5_approvals import BASE, RULE, apply_variant, approve, make
 
 TmpFactory = Callable[[str], Path]
@@ -90,11 +97,11 @@ class ScanMetrics:
         return [o for o in self.outcomes if (o.form == "risky" and o.verdict != "confirmed") or (o.form == "benign" and o.verdict == "confirmed")]
 
 
-def _verdict(root: Path, case: ScanCase, code: str) -> tuple[str, float]:
+def _verdict(root: Path, case: ScanCase, code: str, extra: dict[str, str] | None = None) -> tuple[str, float]:
     started = time.perf_counter()
     root.mkdir(parents=True, exist_ok=True)
     (root / f"app{case.ext}").write_text(code, encoding="utf-8")
-    for name, content in case.files.items():
+    for name, content in {**case.files, **(extra or {})}.items():
         (root / name).write_text(content, encoding="utf-8")
     violations = [v for v in AuditScanner(root).scan().violations if v.rule_id == case.rule]
     elapsed = time.perf_counter() - started
@@ -110,6 +117,55 @@ def evaluate_scan(cases: list[ScanCase], tmp: TmpFactory) -> ScanMetrics:
             for operator in ("original", *OPERATORS):
                 text = render(code, case.ext, None if operator == "original" else operator)
                 verdict, seconds = _verdict(tmp(f"{case.id}_{form}_{operator}"), case, text)
+                metrics.outcomes.append(Outcome(case.id, form, operator, verdict, seconds))
+    return metrics
+
+
+@dataclass
+class CrossFileMetrics:
+    outcomes: list[Outcome] = field(default_factory=list)
+    not_applicable: int = 0
+
+    def summary(self) -> dict:
+        risky = [o for o in self.outcomes if o.form == "risky"]
+        benign = [o for o in self.outcomes if o.form == "benign"]
+        killed = sum(1 for o in risky if o.verdict == "confirmed")
+        by_operator: dict[str, dict[str, int]] = {}
+        for o in self.outcomes:
+            row = by_operator.setdefault(o.operator, {"risky": 0, "killed": 0, "benign": 0, "benign_blocked": 0})
+            row[o.form] += 1
+            if o.form == "risky":
+                row["killed"] += o.verdict == "confirmed"
+            else:
+                row["benign_blocked"] += o.verdict == "confirmed"
+        return {
+            "variants": {"risky": len(risky), "benign": len(benign)},
+            "not_applicable": self.not_applicable,
+            "kill_rate": round(killed / len(risky), 4) if risky else 0.0,  # 잡아낸 위험 변형 수 / 만든 위험 변형 수
+            "risk_miss": len(risky) - killed,
+            "benign_blocked": sum(1 for o in benign if o.verdict == "confirmed"),
+            "by_operator": by_operator,
+        }
+
+    def failures(self) -> list[Outcome]:
+        return [o for o in self.outcomes if (o.form == "risky" and o.verdict != "confirmed") or (o.form == "benign" and o.verdict == "confirmed")]
+
+
+def evaluate_cross_file(cases: list[ScanCase], tmp: TmpFactory) -> CrossFileMetrics:
+    """파일 경계를 넘는 변형으로 kill-rate를 잰다. 원본에서 이미 위험을 놓치거나 정상을 막는 사례는 변형의 효과가 아니므로 뺀다."""
+    metrics = CrossFileMetrics()
+    for case in cases:
+        for form, code in (("benign", case.benign), ("risky", case.risky)):
+            original, _ = _verdict(tmp(f"xf_{case.id}_{form}_original"), case, render(code, case.ext))
+            if (form == "risky") != (original == "confirmed"):
+                continue
+            for operator, transform in CROSS_FILE_OPERATORS.items():
+                variant = transform(render(code, case.ext), case.ext)
+                if variant is None:
+                    metrics.not_applicable += 1
+                    continue
+                text, files = variant
+                verdict, seconds = _verdict(tmp(f"xf_{case.id}_{form}_{operator}"), case, text, files)
                 metrics.outcomes.append(Outcome(case.id, form, operator, verdict, seconds))
     return metrics
 

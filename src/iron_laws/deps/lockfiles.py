@@ -13,8 +13,6 @@ import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
-import yaml
-
 from iron_laws.deps.versions import normalize_name
 
 LOCK_FILE_NAMES = ("uv.lock", "poetry.lock", "package-lock.json", "pnpm-lock.yaml")
@@ -119,85 +117,33 @@ def parse_requirements(path: Path) -> LockInfo:
     return LockInfo(path.as_posix(), "requirements", "PyPI", list(packages.values()), {"versions": True, "direct_transitive": False, "graph": False}, ["requirements 파일에는 의존 관계가 없어 직접·전이를 알 수 없습니다."])
 
 
-def _npm_name(key: str) -> str:
-    return key.rsplit("node_modules/", 1)[-1]
+def _from_graph(path: Path, kind: str, caps: dict[str, bool], notes: list[str] | None = None) -> LockInfo:
+    """버전 단위 그래프(graph.py)로 패키지 목록과 부모(이 패키지를 의존으로 가진 패키지 이름)를 만든다. 같은 이름의 여러 버전은 각각 둔다."""
+    from iron_laws.deps.graph import build_graph
+
+    graph = build_graph(path)
+    parents: dict[str, set[str]] = {}
+    for parent, children in graph.edges.items():
+        for child in children:
+            parents.setdefault(child, set()).add(graph.nodes[parent].name)
+    packages = []
+    for node in graph.nodes.values():
+        direct = node.direct if node.direct is not None else (False if caps["direct_transitive"] else None)
+        packages.append(Package(node.ecosystem, node.name, node.version, direct=direct, dev=node.dev, source_file=path.name, parents=parents.get(node.id, set())))
+    return LockInfo(path.as_posix(), kind, graph.ecosystem, packages, caps, notes or [])
 
 
 def parse_package_lock(path: Path) -> LockInfo:
     data = json.loads(path.read_text(encoding="utf-8"))
-    packages: dict[str, Package] = {}
-    edges: dict[str, set[str]] = {}
-    direct: set[str] = set()
-    entries = data.get("packages")
-    if isinstance(entries, dict):  # lockfileVersion 2·3
-        root = entries.get("") or {}
-        for section in ("dependencies", "devDependencies", "optionalDependencies", "peerDependencies"):
-            direct |= set(root.get(section) or {})
-        for key, item in entries.items():
-            if key == "" or not isinstance(item, dict) or not item.get("version") or item.get("link"):
-                continue
-            name = item.get("name") or _npm_name(key)
-            pkg = packages.setdefault(name, Package("npm", name, str(item["version"]), dev=bool(item.get("dev")), source_file=path.name))
-            if str(item["version"]) != pkg.version:  # 같은 이름의 여러 버전(중첩 설치)은 가장 먼저 만난 것을 대표로 두고 나머지는 별도 항목으로 둔다
-                packages[f"{name}@{item['version']}"] = Package("npm", name, str(item["version"]), dev=bool(item.get("dev")), source_file=path.name)
-            edges.setdefault(name, set()).update((item.get("dependencies") or {}).keys())
-        caps = {"versions": True, "direct_transitive": True, "graph": True}
-    else:  # lockfileVersion 1
-        def walk(deps: dict, parent: str | None) -> None:
-            for name, item in deps.items():
-                if not isinstance(item, dict) or not item.get("version"):
-                    continue
-                packages.setdefault(name, Package("npm", name, str(item["version"]), dev=bool(item.get("dev")), source_file=path.name))
-                edges.setdefault(name, set()).update((item.get("requires") or {}).keys())
-                if isinstance(item.get("dependencies"), dict):
-                    walk(item["dependencies"], name)
-
-        walk(data.get("dependencies") or {}, None)
-        manifest = path.parent / "package.json"
-        if manifest.is_file():
-            pj = json.loads(manifest.read_text(encoding="utf-8"))
-            for section in ("dependencies", "devDependencies", "optionalDependencies"):
-                direct |= set(pj.get(section) or {})
-        caps = {"versions": True, "direct_transitive": bool(direct), "graph": True}
-    by_name = {k: v for k, v in packages.items() if "@" not in k[1:]}
-    _mark_parents(by_name, edges)
-    for pkg in packages.values():
-        pkg.direct = (pkg.name in direct) if caps["direct_transitive"] else None
-    return LockInfo(path.as_posix(), "package-lock.json", "npm", list(packages.values()), caps)
-
-
-def _pnpm_key(key: str) -> tuple[str, str] | None:
-    key = key.lstrip("/").split("(", 1)[0]
-    if "@" not in key[1:]:
-        return None
-    name, version = key.rsplit("@", 1)
-    return (name, version) if name and version else None
+    if isinstance(data.get("packages"), dict):  # lockfileVersion 2·3
+        return _from_graph(path, "package-lock.json", {"versions": True, "direct_transitive": True, "graph": True})
+    manifest = path.parent / "package.json"
+    known = manifest.is_file() and any(json.loads(manifest.read_text(encoding="utf-8")).get(s) for s in ("dependencies", "devDependencies", "optionalDependencies"))
+    return _from_graph(path, "package-lock.json", {"versions": True, "direct_transitive": bool(known), "graph": True})
 
 
 def parse_pnpm_lock(path: Path) -> LockInfo:
-    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    packages: dict[str, Package] = {}
-    edges: dict[str, set[str]] = {}
-    direct: set[str] = set()
-    importers = data.get("importers") or {".": {k: data.get(k) for k in ("dependencies", "devDependencies", "optionalDependencies")}}
-    for importer in importers.values():
-        for section in ("dependencies", "devDependencies", "optionalDependencies"):
-            direct |= set((importer or {}).get(section) or {})
-    for key, item in (data.get("packages") or {}).items():
-        parsed = _pnpm_key(str(key))
-        if parsed is None:
-            continue
-        name, version = parsed
-        packages.setdefault(name, Package("npm", name, version, dev=bool((item or {}).get("dev")), source_file=path.name))
-        edges.setdefault(name, set()).update(((item or {}).get("dependencies") or {}).keys())
-    for key, item in (data.get("snapshots") or {}).items():
-        parsed = _pnpm_key(str(key))
-        if parsed:
-            edges.setdefault(parsed[0], set()).update(((item or {}).get("dependencies") or {}).keys())
-    _mark_parents(packages, edges)
-    for pkg in packages.values():
-        pkg.direct = pkg.name in direct
-    return LockInfo(path.as_posix(), "pnpm-lock.yaml", "npm", list(packages.values()), {"versions": True, "direct_transitive": True, "graph": True})
+    return _from_graph(path, "pnpm-lock.yaml", {"versions": True, "direct_transitive": True, "graph": True})
 
 
 PARSERS = {"uv.lock": parse_uv_lock, "poetry.lock": parse_poetry_lock, "package-lock.json": parse_package_lock, "pnpm-lock.yaml": parse_pnpm_lock}

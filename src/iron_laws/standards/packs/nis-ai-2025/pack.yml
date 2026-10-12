@@ -1,0 +1,216 @@
+# 원문: 국가정보원 발간자료 '국가·공공기관 AI보안 가이드북'(2025-12, 파일 20251216 최종본 sha256 59bbca8c3f3ec12d6da023f3d59a4403ce13e5b9ef5be37bfd15f8a49f398aa4)
+# 항목: 제1장 보안위협 T01~T15, 제3장 에이전틱 AI 보안위협 A01~A11, 제2장 보안대책 M01~M30, 제3장 에이전틱 AI 보안대책 A-M01~A-M17(피지컬 AI 대책은 소스코드 점검 대상이 아니라 넣지 않았다)
+id: nis-ai-2025
+title: 국가정보원 국가·공공기관 AI보안 가이드북
+edition: 2025-12
+source_url: https://www.nis.go.kr/AF/1_7_7_1.do
+retrieved_at: '2026-10-12'
+sha256: 594bcf573e201d49c1b2d63400e09bcaf5962d999eb1b4303f2fe9fafd40deda
+items:
+- id: T01
+  name: 학습데이터 오염
+- id: T02
+  name: 비인가 민감정보 학습
+- id: T03
+  name: AI 백도어 삽입
+- id: T04
+  name: 학습데이터 추출
+- id: T05
+  name: 학습데이터 비인가자 접근
+- id: T06
+  name: AI모델 추출
+- id: T07
+  name: 민감정보 입력·유출
+- id: T08
+  name: 프롬프트 인젝션
+- id: T09
+  name: 회피 공격
+- id: T10
+  name: 통신구간 공격
+- id: T11
+  name: 서비스 거부 공격
+- id: T12
+  name: 사고·이상행위 모니터링 체계 부재
+- id: T13
+  name: AI시스템 권한관리 부실
+- id: T14
+  name: 공급망 공격
+- id: T15
+  name: 용역업체 보안관리 부실
+- id: A01
+  name: 학습데이터 오염(에이전틱)
+- id: A02
+  name: AI 메모리 오염
+- id: A03
+  name: 잘못된 도구 사용
+- id: A04
+  name: AI의 무단 권한 침해
+- id: A05
+  name: 자원 과부하
+- id: A06
+  name: AI의 목표 조작
+- id: A07
+  name: AI의 잘못된 행동 수행
+- id: A08
+  name: AI로 인한 사고·이상행위 탐지 불가
+- id: A09
+  name: 과도한 인간 개입 유발로 과부하 발생
+- id: A10
+  name: AI 에이전트 간 통신 공격
+- id: A11
+  name: 구성요소 취약점으로 인한 악성행위 수행
+- id: M01
+  name: 신뢰할 수 있는 출처의 데이터 활용
+- id: M02
+  name: 신뢰할 수 있는 출처의 AI모델·라이브러리 활용
+- id: M03
+  name: 데이터 검사
+- id: M04
+  name: 데이터 암호화
+- id: M05
+  name: 데이터 접근통제
+- id: M06
+  name: 민감정보 사용 사전 승인
+- id: M07
+  name: 보안등급에 맞는 학습데이터 구성·활용
+- id: M08
+  name: 데이터 로깅·모니터링
+- id: M09
+  name: AI시스템 로깅·모니터링
+- id: M10
+  name: 데이터 수집 명세서 관리
+- id: M11
+  name: AI시스템 구성요소 명세서 관리
+- id: M12
+  name: AI시스템 구성요소 무결성 검증
+- id: M13
+  name: 입·출력 필터링
+- id: M14
+  name: 입력 길이·형식 제한
+- id: M15
+  name: 가드레일 다중화
+- id: M16
+  name: AI모델 구조·가중치 유출 방지
+- id: M17
+  name: AI시스템 경계보안 강화
+- id: M18
+  name: AI시스템 통신구간 보호
+- id: M19
+  name: 과도한 권한 부여 제한
+- id: M20
+  name: 민감 명령 승인 절차 마련
+- id: M21
+  name: 비상대응 체계 마련
+- id: M22
+  name: 설명 가능한 AI 구성
+- id: M23
+  name: AI모델 대상 적대적 모의공격 수행
+- id: M24
+  name: AI모델에 적대적 공격유형 학습
+- id: M25
+  name: AI시스템 구성요소 취약점 점검 및 보안업데이트
+- id: M26
+  name: AI모델 복구
+- id: M27
+  name: 요청 속도 제한
+- id: M28
+  name: AI시스템 구성요소 완전 삭제
+- id: M29
+  name: 용역업체 보안관리
+- id: M30
+  name: 사용자 교육 및 보안정책 수립
+- id: A-M01
+  name: 데이터 검사(에이전틱)
+- id: A-M02
+  name: 메모리 검사
+- id: A-M03
+  name: 입·출력 필터링(에이전틱)
+- id: A-M04
+  name: 화이트리스트 기반 도구 사용
+- id: A-M05
+  name: 에이전틱 AI 로깅·모니터링
+- id: A-M06
+  name: 미승인 에이전트 권한 위임 차단
+- id: A-M07
+  name: AI 에이전트 자동 중단
+- id: A-M08
+  name: AI 에이전트 간 악성행위 전파 차단
+- id: A-M09
+  name: AI 에이전트 목표 검증
+- id: A-M10
+  name: 입·출력 결과 검증
+- id: A-M11
+  name: 과도한 권한 부여 제한(에이전틱)
+- id: A-M12
+  name: 민감 명령 승인 절차 마련(에이전틱)
+- id: A-M13
+  name: 민감 명령 승인 요청 임계값 설정
+- id: A-M14
+  name: 설명 가능한 AI 구성(에이전틱)
+- id: A-M15
+  name: AI 에이전트 신원 확인
+- id: A-M16
+  name: 에이전틱 AI 통신구간 보호
+- id: A-M17
+  name: 에이전틱 AI 구성요소 취약점 점검
+mapping:
+  AIA-101:
+  - T08
+  - T14
+  - A02
+  - A06
+  - A-M03
+  AIA-102:
+  - T13
+  - T14
+  - A04
+  - A10
+  - M12
+  - M19
+  - A-M15
+  - A-M16
+  AIA-103:
+  - T08
+  - A03
+  - A07
+  - M13
+  - M20
+  - A-M03
+  - A-M04
+  - A-M10
+  - A-M12
+  AIA-104:
+  - T08
+  - A06
+  - M13
+  - A-M09
+  AIA-105:
+  - T08
+  - T14
+  - A03
+  - A-M03
+  - A-M04
+  AIA-106:
+  - T03
+  - T14
+  - M02
+  - M12
+  AIA-107:
+  - T13
+  - M17
+  - M19
+  AIA-108:
+  - T11
+  - A05
+  - M14
+  - M27
+  AIA-109:
+  - T07
+  - M06
+  - M13
+  AI-111:
+  - T14
+  - M11
+  - M25
+verified_edition: null
+verified_sha256: null

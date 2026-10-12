@@ -1,0 +1,21 @@
+name: realworld-loop
+on:
+  schedule:
+    - cron: "0 3 * * 1"
+  workflow_dispatch:
+jobs:
+  loop:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync
+      - id: loop
+        run: uv run python benchmarks/realworld_loop.py work --fetch
+        continue-on-error: true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: realworld-triage
+          path: work/triage.md
+      - if: steps.loop.outcome == 'failure'
+        run: echo "고정 커밋 실제 프로젝트의 보안 지적이 달라졌습니다. triage.md를 분류하십시오." && exit 1

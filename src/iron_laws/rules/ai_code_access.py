@@ -3,8 +3,6 @@
 
 import re
 
-from tree_sitter import Node
-
 from iron_laws.core.models import Confidence, IronLaw, RuleLayer, Severity, Violation
 from iron_laws.engine.ast_tools import (
     enclosing_function,
@@ -12,19 +10,14 @@ from iron_laws.engine.ast_tools import (
     is_literal,
     is_string_node,
     iter_calls,
-    iter_functions,
-    string_value,
     walk,
 )
 from iron_laws.engine.languages import JS_FAMILY, Lang
 from iron_laws.engine.project import ProjectContext
+from iron_laws.engine.routes import discover_routes
 from iron_laws.engine.source import SourceFile
 from iron_laws.engine.taint import is_tainted
 from iron_laws.rules.ai_code_common import (
-    AUTH_MARKER,
-    PUBLIC_PATH,
-    ROUTE_DECORATOR,
-    SENSITIVE_PATH,
     AiRule,
 )
 from iron_laws.rules.base import BaseRule
@@ -213,127 +206,26 @@ class UnauthenticatedEndpointRule(BaseRule):
     plain = "데이터를 바꾸거나 관리자·사용자 정보를 다루는 API에 '로그인 확인'이 없으면 로그인하지 않은 누구나 그 기능을 호출할 수 있습니다. AI는 화면 기능만 만들고 서버 쪽 인증을 빼먹는 경우가 많습니다."
     how_to_fix = "쓰기·관리·개인정보 API에는 인증 미들웨어/데코레이터를 붙이고, 서버에서 사용자와 권한을 확인하세요. 예: @login_required / app.post('/x', authenticate, handler) / @PreAuthorize / [Authorize]"
     languages = None
+    last_routes: list[dict] = []
 
     def check(self, src: SourceFile) -> list[Violation]:
         return []
 
     def check_project(self, project: ProjectContext) -> list[Violation]:
+        """라우트 접근통제 행렬(engine/routes.py)에서 중요 기능 라우트의 인증 근거가 없거나(no) 정할 수 없는(unknown) 것을 알린다."""
         found = []
-        all_text = "\n".join(f.code_text for f in project.source_files())
-        spring_secured = bool(re.search(r"SecurityFilterChain|@EnableWebSecurity|WebSecurityConfigurerAdapter|authorizeHttpRequests|authorizeRequests", all_text))
-        dotnet_global = bool(re.search(r"FallbackPolicy|AuthorizeFilter|RequireAuthorization\(\)|UseAuthorization", all_text)) and bool(re.search(r"FallbackPolicy|AuthorizeFilter|AddAuthorizationBuilder", all_text))
-        for src in project.source_files():
-            if src.lang is Lang.PYTHON:
-                found.extend(self._python(src))
-            elif src.lang in JS_FAMILY:
-                found.extend(self._express(src))
-            elif src.lang is Lang.JAVA and not spring_secured:
-                found.extend(self._spring(src))
-            elif src.lang is Lang.CSHARP and not dotnet_global:
-                found.extend(self._aspnet(src))
-        return found
-
-    def _sensitive(self, method: str, path: str) -> bool:
-        if PUBLIC_PATH.match(path.lstrip("/")) and not SENSITIVE_PATH.search(path):
-            return False
-        if re.match(r"(?i)^/?(login|logout|register|signup|signin|auth|health|ping|webhook|callback|oauth|token|refresh|forgot|reset)\b", path):
-            return False
-        return method.lower() in ("post", "put", "patch", "delete") or bool(SENSITIVE_PATH.search(path))
-
-    @staticmethod
-    def _head(src: SourceFile, fn) -> str:
-        end = fn.body.start_byte if fn.body is not None else fn.node.end_byte
-        return src.data[fn.node.start_byte : end].decode("utf-8", errors="replace")
-
-    def _make(self, src: SourceFile, node: Node, what: str) -> Violation:
-        return self.at_node(src, node, f"{what}에 인증·권한 확인이 보이지 않습니다. 로그인하지 않은 사용자도 호출할 수 있는지 확인하십시오.", confidence=Confidence.REVIEW)
-
-    def _python(self, src: SourceFile) -> list[Violation]:
-        found = []
-        assert src.root is not None
-        for node in src.nodes:
-            if node.type != "decorated_definition":
+        by_path = {f.path.as_posix(): f for f in project.source_files()}
+        routes = discover_routes(list(project.source_files()))
+        self.last_routes = [r.as_row() for r in routes]
+        for route in routes:
+            if not route.sensitive or route.auth == "yes":
                 continue
-            decorators = [c for c in node.named_children if c.type == "decorator"]
-            definition = node.child_by_field_name("definition")
-            if definition is None or definition.type != "function_definition":
-                continue
-            route = next((d for d in decorators if ROUTE_DECORATOR.search(src.text_of(d))), None)
-            if route is None:
-                continue
-            rtext = src.text_of(route)
-            m = re.search(r"\(\s*[rbf]?['\"]([^'\"]*)['\"]", rtext)
-            path = m.group(1) if m else ""
-            method_m = re.search(r"@\s*(?:\w+\.)*(get|post|put|patch|delete)\b", rtext)
-            methods = [method_m.group(1)] if method_m else [x.lower() for x in re.findall(r"['\"](GET|POST|PUT|PATCH|DELETE)['\"]", rtext)] or ["get"]
-            if not any(self._sensitive(mm, path) for mm in methods):
-                continue
-            scope = src.code_of(node)
-            if AUTH_MARKER.search(scope):
-                continue
-            found.append(self._make(src, definition, f"{' '.join(m.upper() for m in methods)} {path or '(경로 미상)'} 핸들러"))
-        return found
-
-    def _express(self, src: SourceFile) -> list[Violation]:
-        found = []
-        for call in iter_calls(src):
-            m = re.match(r"^(?:app|router|api|server|r|route)\.(get|post|put|patch|delete)$", call.callee)
-            if not m or len(call.args) < 2:
-                continue
-            path_arg = call.args[0]
-            if path_arg.type not in ("string", "template_string"):
-                continue
-            path = string_value(src, path_arg)
-            if not self._sensitive(m.group(1), path):
-                continue
-            scope = src.code_of(call.node)
-            if AUTH_MARKER.search(scope):
-                continue
-            file_has_global = re.search(r"(?:app|router)\.use\(\s*(?:['\"][^'\"]*['\"]\s*,\s*)?(?:\w*auth\w*|passport\.authenticate|jwt\w*|protect|verifyToken)", src.code_text, re.IGNORECASE)
-            if file_has_global:
-                continue
-            found.append(self._make(src, call.node, f"{m.group(1).upper()} {path} 라우트"))
-        return found
-
-    def _spring(self, src: SourceFile) -> list[Violation]:
-        found = []
-        if "@RestController" not in src.text and "@Controller" not in src.text:
-            return found
-        class_secured = bool(re.search(r"@(PreAuthorize|Secured|RolesAllowed)", src.text.split("class ", 1)[0]))
-        if class_secured:
-            return found
-        for fn in iter_functions(src):
-            text = src.code_of(fn.node)
-            head = self._head(src, fn)
-            m = re.search(r"@(Get|Post|Put|Patch|Delete|Request)Mapping(?:\(([^)]*)\))?", head)
-            if not m:
-                continue
-            method = m.group(1)
-            path_m = re.search(r"\"([^\"]*)\"", m.group(2) or "")
-            path = path_m.group(1) if path_m else ""
-            if not self._sensitive("get" if method in ("Get", "Request") else method.lower(), path):
-                continue
-            if re.search(r"@(PreAuthorize|Secured|RolesAllowed)|Principal|Authentication|SecurityContext", text):
-                continue
-            found.append(self._make(src, fn.node, f"{method.upper()} {path} 컨트롤러 메서드"))
-        return found
-
-    def _aspnet(self, src: SourceFile) -> list[Violation]:
-        found = []
-        if not re.search(r":\s*(Controller|ControllerBase)\b|\[ApiController\]", src.text):
-            return found
-        if re.search(r"\[Authorize\b", src.text.split("class ", 1)[0]):
-            return found
-        for fn in iter_functions(src):
-            text = src.code_of(fn.node)
-            head = self._head(src, fn)
-            m = re.search(r"\[Http(Get|Post|Put|Patch|Delete)(?:\(\s*\"([^\"]*)\"\s*\))?\]", head)
-            if not m:
-                continue
-            if re.search(r"\[Authorize|\[AllowAnonymous\]|User\.Identity|HttpContext\.User", text):
-                continue
-            if self._sensitive(m.group(1).lower(), m.group(2) or fn.name):
-                found.append(self._make(src, fn.node, f"{m.group(1).upper()} {fn.name} 액션"))
+            src = by_path[route.file]
+            where = f"{route.method} {route.path} 라우트"
+            if route.auth == "no":
+                found.append(self.at_node(src, route.node, f"{where}에 인증·권한 확인이 보이지 않습니다({route.auth_reason}). 로그인하지 않은 사용자도 호출할 수 있는지 확인하십시오.", confidence=Confidence.REVIEW))
+            else:
+                found.append(self.at_node(src, route.node, f"{where}에 인증이 적용되는지 정할 수 없습니다({route.auth_reason}). 전역 설정이 이 경로를 보호하는지 확인하십시오.", severity=Severity.LOW, confidence=Confidence.REVIEW))
         return found
 
 

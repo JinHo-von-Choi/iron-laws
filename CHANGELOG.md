@@ -5,6 +5,9 @@
 
 ## [Unreleased]
 
+### Added
+- `--format mois-report`의 출력 파일을 `.hwpx`로 주면 한글 문서(HWPX)로 쓴다. 선택 의존성 `iron-laws[hwpx]`(python-hwpx)이며 한글 프로그램 없이 만든다.
+
 ### Changed
 - OWASP Top 10:2025, OWASP Top 10 for Agentic Applications 2026, 2025 CWE Top 25, 국가정보원 AI보안 가이드북(2025) 팩의 대응표를 각 판본 원문과 대조해 확인했다. 보고서와 `iron-laws coverage --standard`에 확인된 대응으로 표시된다.
 

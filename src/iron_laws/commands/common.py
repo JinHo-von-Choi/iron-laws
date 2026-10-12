@@ -300,11 +300,16 @@ def _emit_report(
     elif report_format is ReportFormat.SARIF:
         _write_or_print(generate_sarif_report(report, scanner.rules, _tool_version()), output, "SARIF 보고서")
     elif report_format is ReportFormat.MOIS:
-        from iron_laws.reporters.mois_report import generate_mois_report, write_mois_docx
+        from iron_laws.reporters.mois_report import (
+            generate_mois_report,
+            write_mois_docx,
+            write_mois_hwpx,
+        )
 
-        if output is not None and output.suffix.lower() == ".docx":
+        writers = {".docx": write_mois_docx, ".hwpx": write_mois_hwpx}
+        if output is not None and output.suffix.lower() in writers:
             try:
-                write_mois_docx(report, scanner.rules, output)
+                writers[output.suffix.lower()](report, scanner.rules, output)
             except RuntimeError as e:
                 err.print(f"[bold red]{escape(str(e))}[/bold red]")
                 raise typer.Exit(2) from e

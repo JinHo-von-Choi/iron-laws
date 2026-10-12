@@ -4,6 +4,7 @@
 작성일: 2026-10-12
 """
 
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -51,3 +52,17 @@ def test_markdown_and_docx_outputs(tmp_path: Path):
 
     body = "\n".join(p.text for p in docx.Document(str(out)).paragraphs)
     assert "감리 대응 보고서" in body
+
+
+def test_hwpx_output_reopens_with_the_same_content(tmp_path: Path):
+    _report(tmp_path)
+    pytest.importorskip("hwpx")
+    from hwpx import HwpxDocument
+
+    out = tmp_path / "report.hwpx"
+    result = runner.invoke(app, ["audit", str(tmp_path), "--format", "mois-report", "-o", str(out)])
+    assert out.is_file() and out.stat().st_size > 1000, result.output
+    with zipfile.ZipFile(out) as package:
+        assert package.read("mimetype") == b"application/hwp+zip"  # OWPML 패키지 서명
+    text = HwpxDocument.open(str(out)).text.plain()
+    assert "소프트웨어 개발보안 감리 대응 보고서" in text and "항목별 현황" in text and "1-5" in text

@@ -270,7 +270,7 @@ iron-laws architecture . --compare before.json    # 이전 진단과 지표 비�
 
 ## 감리 대응 보고서
 
-`iron-laws audit . --format mois-report -o 감리대응.md`는 행안부 구현단계 49개 항목별로 지적, 잔존(억제 주석의 사유·만료일, 승인 기록), 미점검 사유(규칙 미탑재·수동 확인 항목, 근거 장부의 공백, 건너뛴 파일)를 정리합니다. 출력 파일을 `.docx`로 주면 Word 문서로 씁니다(선택 의존성 `pip install 'iron-laws[docx]'`).
+`iron-laws audit . --format mois-report -o 감리대응.md`는 행안부 구현단계 49개 항목별로 지적, 잔존(억제 주석의 사유·만료일, 승인 기록), 미점검 사유(규칙 미탑재·수동 확인 항목, 근거 장부의 공백, 건너뛴 파일)를 정리합니다. 출력 파일을 `.docx`로 주면 Word 문서로(선택 의존성 `pip install 'iron-laws[docx]'`), `.hwpx`로 주면 한글 문서로(선택 의존성 `pip install 'iron-laws[hwpx]'`, 한글 프로그램 없이 만듭니다) 씁니다.
 
 ## 쉬운 설명과 수정 지시문
 

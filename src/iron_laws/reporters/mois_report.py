@@ -4,7 +4,7 @@
 - 잔존 사유는 억제 주석(사유·만료일)과 승인 기록(승인 ID·상태)에서 가져온다.
 - 미점검 사유는 규칙 미탑재·수동 확인 항목, 그리고 근거 장부의 공백(지원하지 않음·해석 미확정·예산 초과)과 건너뛴 파일에서 가져온다.
 - '지적 없음'은 탑재된 규칙 범위에서 발견되지 않았다는 뜻이며 취약점이 없다는 증명이 아니다.
-- markdown이 기본이며, 출력 파일이 .docx면 python-docx(선택 의존성 iron-laws[docx])로 같은 내용을 문서로 쓴다.
+- markdown이 기본이며, 출력 파일이 .docx면 python-docx(선택 의존성 iron-laws[docx]), .hwpx면 python-hwpx(선택 의존성 iron-laws[hwpx])로 같은 내용을 문서로 쓴다.
 작성자: 최진호
 작성일: 2026-10-12
 """
@@ -152,3 +152,38 @@ def write_mois_docx(report: AuditReport, rules, path: Path) -> None:
         for line in r.remaining:
             doc.add_paragraph(f"잔존: {line}", style="List Bullet")
     doc.save(str(path))
+
+
+def write_mois_hwpx(report: AuditReport, rules, path: Path) -> None:
+    """같은 내용을 한글 문서(HWPX, OWPML)로 쓴다. 한글이 없어도 만들 수 있다."""
+    try:
+        from hwpx import HwpxDocument
+    except ImportError as e:  # iron-laws: ignore[IL-301] 선택 의존성이 없을 때는 설치 방법을 알리는 오류로 바꿔 던진다
+        raise RuntimeError("hwpx 출력에는 선택 의존성이 필요합니다: pip install 'iron-laws[hwpx]'") from e
+    rows = build_rows(report, rules)
+    doc = HwpxDocument.new()
+    doc.add_heading("소프트웨어 개발보안 감리 대응 보고서", 1)
+    for key, value in _header(report):
+        doc.add_paragraph(f"{key}: {value}")
+    doc.add_paragraph("'지적 없음'은 탑재된 규칙 범위에서 발견되지 않았다는 뜻이며, 취약점이 없다는 증명이 아닙니다.")
+    doc.add_heading("항목별 현황", 2)
+    titles = ("항목", "명칭", "점검 규칙", "지적", "상태", "미점검 사유")
+    table = doc.add_table(len(rows) + 1, len(titles))
+    for col, title in enumerate(titles):
+        table.set_cell_text(0, col, title)
+    for index, r in enumerate(rows, start=1):
+        values = (r.item_id, r.name, ", ".join(r.rules) or "-", str(len(r.findings)), r.status, "; ".join(r.unchecked) or "-")
+        for col, value in enumerate(values):
+            table.set_cell_text(index, col, value)
+    doc.add_heading("항목별 상세", 2)
+    for r in rows:
+        if not r.findings and not r.remaining:
+            continue
+        doc.add_heading(f"{r.item_id} {r.name}", 3)
+        for v in r.findings[:50]:
+            doc.add_paragraph(f"• [{v.severity.value}] {v.file_path.as_posix()}:{v.line_number} {v.rule_id} {v.message}")
+        if len(r.findings) > 50:
+            doc.add_paragraph(f"• 외 {len(r.findings) - 50}건(전체 목록은 JSON 보고서)")
+        for line in r.remaining:
+            doc.add_paragraph(f"• 잔존: {line}")
+    doc.save_to_path(str(path))

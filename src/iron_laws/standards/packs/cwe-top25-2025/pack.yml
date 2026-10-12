@@ -54,5 +54,5 @@ mapping:
   IL-303: [CWE-306, CWE-862]
   IL-506: [CWE-918]
   AI-114: [CWE-770]
-verified_edition: null
-verified_sha256: null
+verified_edition: "2025"
+verified_sha256: cdbc113bff65a406b26ce32301e5254416ffb9da5b380fe4621f9e2c9e8f8833

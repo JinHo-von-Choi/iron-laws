@@ -50,16 +50,16 @@ def test_report_carries_pack_refs_and_verifier_accepts_them(tmp_path: Path):
     finding = next(v for v in data["violations"] if v["rule_id"] == "IL-504")
     refs = {(r["pack_id"], r["item_id"]): r["mapping_verified"] for r in finding["standards"]}
     assert refs[("mois-2021-impl", "1-5")] is True
-    assert refs[("owasp-top10-2025", "A05")] is False and ("cwe-top25-2025", "CWE-78") in refs
+    assert refs[("owasp-top10-2025", "A05")] is True and ("cwe-top25-2025", "CWE-78") in refs
     assert finding["gov_standard"]["clause_id"].startswith("구현단계 1-5")  # 하위 호환 필드는 그대로 둔다
     assert {p["id"] for p in data["metadata"]["standard_packs"]} >= {"owasp-top10-2025", "cwe-top25-2025"}
     assert verify_report(data).ok
 
 
-def test_verifier_rejects_unverified_mapping_shown_as_verified(tmp_path: Path):
+def test_verifier_rejects_mapping_state_that_differs_from_the_pack(tmp_path: Path):
     data = _report(tmp_path)
     finding = next(v for v in data["violations"] if v["rule_id"] == "IL-504")
-    next(r for r in finding["standards"] if r["pack_id"] == "owasp-top10-2025")["mapping_verified"] = True
+    next(r for r in finding["standards"] if r["pack_id"] == "owasp-top10-2025")["mapping_verified"] = False
     result = verify_report(data)
     assert not result.ok and any(p.code == "standards.verified_mismatch" for p in result.problems)
 
@@ -77,5 +77,5 @@ def test_verifier_reports_malformed_standards_instead_of_crashing(tmp_path: Path
 
 def test_coverage_by_standard_pack():
     result = runner.invoke(app, ["coverage", "--standard", "owasp-asi-2026"])
-    assert result.exit_code == 0 and "ASI05" in result.output and "미확인" in result.output
+    assert result.exit_code == 0 and "ASI05" in result.output and "사람이 이 판본으로 확인함" in result.output
     assert runner.invoke(app, ["coverage", "--standard", "nope"]).exit_code == 2

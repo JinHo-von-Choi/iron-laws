@@ -5,6 +5,9 @@
 
 ## [Unreleased]
 
+### Changed
+- OWASP Top 10:2025, OWASP Top 10 for Agentic Applications 2026, 2025 CWE Top 25, 국가정보원 AI보안 가이드북(2025) 팩의 대응표를 각 판본 원문과 대조해 확인했다. 보고서와 `iron-laws coverage --standard`에 확인된 대응으로 표시된다.
+
 ## [1.6.0] - 2026-10-12
 
 ### Added

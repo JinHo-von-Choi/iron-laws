@@ -15,7 +15,7 @@ items:
   - {id: A08, name: Software or Data Integrity Failures}
   - {id: A09, name: Security Logging and Alerting Failures}
   - {id: A10, name: Mishandling of Exceptional Conditions}
-# 오철칙 규칙 → 항목. 사람이 원문과 대조해 확인하면 verified_edition·verified_sha256을 채운다.
+# 오철칙 규칙 → 항목. 원문과 대조해 확인한 대응이다(verified_edition·verified_sha256). 항목이나 대응을 바꾸면 다시 확인해야 한다.
 mapping:
   IL-101: [A04, A07]
   IL-102: [A04]
@@ -80,5 +80,5 @@ mapping:
   AIA-104: [A05]
   AIA-105: [A01, A05]
   AIA-107: [A02, A04]
-verified_edition: null
-verified_sha256: null
+verified_edition: "2025"
+verified_sha256: 17d5153f13650e3846077be6746705982cc5a811ed73f4b6b78a688ce7ca58db

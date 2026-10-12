@@ -26,5 +26,5 @@ mapping:
   AIA-103: [ASI05]
   AIA-104: [ASI01]
   AIA-105: [ASI02, ASI04]
-verified_edition: null
-verified_sha256: null
+verified_edition: "2026"
+verified_sha256: d4af4b39c5a35e880c153362b7e9df1461e94e743497e92f09b7e0e8f21c64aa

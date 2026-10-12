@@ -212,5 +212,5 @@ mapping:
   - T14
   - M11
   - M25
-verified_edition: null
-verified_sha256: null
+verified_edition: "2025-12"
+verified_sha256: 594bcf573e201d49c1b2d63400e09bcaf5962d999eb1b4303f2fe9fafd40deda

@@ -52,12 +52,24 @@
 `error`가 하나라도 있으면 `scan_status`가 `incomplete`다. `consistency`는 보고서를 내보내기 전에 독립 검증기가 찾은 내부 모순이며, 있으면 통과로 내보내지 않고 `incomplete`로 표시한다.
 
 ### `metadata`
-`tool_version`, `ruleset`(규칙 수·해시·규칙별 버전), `config`·`config_source`·`config_hash`·`fail_on_source`, `files_by_language`, `skipped_files`, `excluded_summary`(제외 패턴별 파일·폴더 수), `unscanned_by_extension`(지원하지 않는 확장자 파일 수), `cross_file`(파일 간 해석 횟수, 한도에 걸린 위치 수, 호출한 파일의 언어별 `resolved_calls`·`resolution_gaps`·`limit_hits`·`resolution_gap_rate` = 공백 / (해석 + 공백)), `repo_relative_prefix`, `scope`(`--changed-since` 사용 시: `mode`·`ref`·`changed_files`·`changed_paths`·`renames`(이름이 바뀐 파일의 `from`·`to`)·`full_findings`), `baseline`. `ruleset`에는 `support_manifest`(규칙 검증 등급의 근거 지문)가 있으며 규칙 집합 `hash`에 포함된다.
+`tool_version`, `ruleset`(규칙 수·해시·규칙별 버전), `config`·`config_source`·`config_hash`·`fail_on_source`, `files_by_language`, `skipped_files`, `excluded_summary`(제외 패턴별 파일·폴더 수), `unscanned_by_extension`(지원하지 않는 확장자 파일 수), `cross_file`(파일 간 해석 횟수, 한도에 걸린 위치 수, 호출한 파일의 언어별 `resolved_calls`·`resolution_gaps`·`limit_hits`·`resolution_gap_rate` = 공백 / (해석 + 공백)), `repo_relative_prefix`, `routes`(웹 라우트 수, 중요 기능 라우트의 인증·인가 yes/no/unknown 건수와 행), `suppressions`(적용된 억제 주석의 규칙·위치·사유·만료일·범위), `standard_packs`(1.5, 기준 팩 목록), `scope`(`--changed-since` 사용 시: `mode`·`ref`·`changed_files`·`changed_paths`·`renames`(이름이 바뀐 파일의 `from`·`to`)·`full_findings`), `baseline`. `ruleset`에는 `support_manifest`(규칙 검증 등급의 근거 지문)가 있으며 규칙 집합 `hash`에 포함된다.
 
 ## SARIF (`audit --format sarif`)
 - 버전 2.1.0. 결과 위치는 **저장소 루트(`.git`이 있는 가장 가까운 상위 폴더) 기준 상대 경로**이고 `uriBaseId`는 `%SRCROOT%`, 경로 구간은 URI 인코딩된다.
 - `partialFingerprints["ironLaws/v1"]`에 지문, `baselineState`에 기준선 대비 상태(`new`/`unchanged`), `codeFlows`에 입력 유입 → 전파 → 싱크 흐름을 담는다.
 - GitHub Code Scanning 업로드 전체 흐름은 시험에서 실행하지 않았다. 생성물의 구조와 경로 규격만 시험한다.
+
+## GitLab Code Quality (`audit --format gitlab-codequality`)
+- GitLab Code Quality JSON 배열. 지적마다 `description`(규칙 ID·이름·메시지, 확인 필요 지적은 표시), `check_name`(규칙 ID), `fingerprint`(기준선과 같은 지문), `severity`, `location`(`path`, `lines.begin`)을 담는다.
+- 심각도 대응: CRITICAL → `blocker`, HIGH → `critical`, MEDIUM → `major`, LOW → `minor`.
+
+## 감리 대응 보고서 (`audit --format mois-report`)
+- 행안부 구현단계 49개 항목별 점검 규칙, 지적 수, 잔존(억제 주석의 사유·만료일, 승인 기록), 상태, 미점검 사유를 담는다.
+- 출력 파일 확장자로 형식을 정한다: `.md`(기본), `.docx`(선택 의존성 `iron-laws[docx]`), `.hwpx`(선택 의존성 `iron-laws[hwpx]`).
+
+## SBOM·VEX
+- `sbom --format cyclonedx`는 CycloneDX 1.6 JSON, `--format spdx`는 SPDX 2.3 JSON이다. 구성요소는 package URL로 적고, 의존 관계는 잠금 파일이 알려 주는 버전 단위 관계만 쓴다.
+- `deps --format openvex`는 OpenVEX 0.2.0 문서다. 자동으로는 `affected`와 `under_investigation`만 쓰고, `not_affected`는 사람의 판정 기록(`--vex-decisions`)에 근거가 있을 때만 쓴다.
 
 ## 마크다운·검토 의견서·수정 지시문
 - 마크다운 보고서에는 점검 완료 상태, 도구·규칙셋 버전, 설정 출처, 점검 진단, 판단 근거, 기준선 대비 상태가 들어간다.

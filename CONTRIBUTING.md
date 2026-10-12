@@ -42,6 +42,8 @@ uv run python benchmarks/plan_experiments_v13.py   # 근거 일치·변형 사�
 uv run python benchmarks/plan_experiments_v14.py out.json --baseline <이전 버전 소스 폴더>   # 이전 버전과 같은 표본 비교
 ```
 
+정확도 측정 도구(OWASP Benchmark Java·Python, Juliet, CWE-Bench-Java, 도구 비교, 수정 지시문 비교)와 재현 명령은 [docs/ACCURACY.md](docs/ACCURACY.md) §3·§6·§7에 있습니다. 탐지 규칙을 바꾸면 양성·음성 사례를 더하고, 같은 측정의 수치가 바뀐 경우 기록 파일과 ACCURACY를 함께 갱신합니다.
+
 격리 실행 시험은 준비 단계에서 만든 이미지가 있어야 돌아갑니다(시험 중에는 네트워크를 쓰지 않으므로 미리 받아 둡니다).
 `tests/runner_doubles.py`의 `LocalTestRunner`는 호스트에서 명령을 실행하는 **시험 전용 대역**입니다. 우리가 만든 입력(위험한 호출을 기록만 하는 harness 등)을 돌리는 데만 쓰고, 제품 코드에 넣지 않으며, 호스트 실행 금지 정책을 검증하는 시험에는 쓰지 않습니다.
 

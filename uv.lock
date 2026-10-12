@@ -414,6 +414,9 @@ dependencies = [
 docx = [
     { name = "python-docx" },
 ]
+hwpx = [
+    { name = "python-hwpx" },
+]
 mcp = [
     { name = "mcp" },
 ]
@@ -432,6 +435,7 @@ requires-dist = [
     { name = "packaging", specifier = ">=23.0" },
     { name = "pydantic", specifier = ">=2.0.0" },
     { name = "python-docx", marker = "extra == 'docx'", specifier = ">=1.1" },
+    { name = "python-hwpx", marker = "extra == 'hwpx'", specifier = ">=6.6,<7" },
     { name = "pyyaml", specifier = ">=6.0.0" },
     { name = "rich", specifier = ">=13.0.0" },
     { name = "tree-sitter", specifier = ">=0.26.0" },
@@ -448,7 +452,7 @@ requires-dist = [
     { name = "tree-sitter-typescript", specifier = ">=0.23.2" },
     { name = "typer", specifier = ">=0.12.0" },
 ]
-provides-extras = ["mcp", "docx"]
+provides-extras = ["mcp", "docx", "hwpx"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -845,6 +849,18 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/74/26/2fbeedb218a787a5eea551c7532cac4e009f83d689dd2faa0d0353473f86/python_dotenv-1.2.4.tar.gz", hash = "sha256:f0d53e69935a851c0dcc78f3ab7aaccd8cabef0b92382b576b824212902873c0", size = 60824, upload-time = "2026-10-01T05:36:10Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/60/d1/38f3a3405989a89ac18390803e70c6ad7c7760da4f9b83cbeca0c44a0c72/python_dotenv-1.2.4-py3-none-any.whl", hash = "sha256:42269a8a5b3fd54ffa6f3d84b18abed50064717576b4ecf03dc4a55d8aa04fdc", size = 23266, upload-time = "2026-10-01T05:36:08.633Z" },
+]
+
+[[package]]
+name = "python-hwpx"
+version = "6.6.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "lxml" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/8f/64/bbbbd6468e13f76ffa148ba68f1efa5382ae2f79c1e8f597800f7c17efa2/python_hwpx-6.6.0.tar.gz", hash = "sha256:3dbeb1e183e163e57272adda3844e4324ed7128f7312525a7a99489c19a0d7ad", size = 1328103, upload-time = "2026-09-27T15:40:25.549Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f6/a1/b7b295f7fe02ed3ac9fc2fe59b3658623eb8e8cdc8e0207d2b26428a4d2f/python_hwpx-6.6.0-py3-none-any.whl", hash = "sha256:382081817486df356fbc85b14639ef757a597585a4fecb51152653085475ff1c", size = 904616, upload-time = "2026-09-27T15:40:23.357Z" },
 ]
 
 [[package]]

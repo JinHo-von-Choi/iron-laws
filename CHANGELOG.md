@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-10-12
+
 ### Added
 - `--format mois-report`의 출력 파일을 `.hwpx`로 주면 한글 문서(HWPX)로 쓴다. 선택 의존성 `iron-laws[hwpx]`(python-hwpx)이며 한글 프로그램 없이 만든다.
 

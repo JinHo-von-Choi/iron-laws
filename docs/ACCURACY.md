@@ -7,6 +7,11 @@
 `tests/` 아래에 규칙마다 양성(탐지해야 함)과 음성(탐지하면 안 됨) 사례를 언어별로 둔다.
 - `test_rule_cases.py`: 행안부 구현단계 규칙(주입, 암호, 오류 처리, 메모리 등) 221건
 - `test_ai_arch_typing_cases.py`: AI 생성 코드 보정, 구조, 타입 안전성 규칙 98건
+- `test_support_cells.py`: 한쪽 사례만 있던 규칙×언어 칸과 TypeScript 칸을 채운 양성·음성 97건
+- `test_go_php_cases.py`: Go·PHP 외부 입력 흐름과 정제 28건, Kotlin 5건, Go·PHP 파일 간 호출
+- `test_field_flow.py`: 객체 필드·상수 키 단위의 오염 구분
+- `test_archive_paths.py`: 압축 해제 경로 조작(Zip Slip), 프레임워크 요청 경로, Java 응답 출력 XSS의 위험·안전 짝
+- `test_spel_injection.py`: SpEL·OGNL 표현식 삽입의 확정·확인 필요·지적 없음 구분
 - `test_regressions.py`: 실제 프로젝트 점검과 벤치마크에서 발견한 오탐·미탐을 고정한 회귀 사례와 억제·생성 파일·CLI 형식 시험
 - `test_plan_features.py`: 분기 합류·반복 흐름, 문맥별 정제, 파일 간 해석, 진단, 기준선, 억제 만료, 설정 선택, 근거(evidence), 지원 행렬 시험
 - `test_review_findings.py`: 외부 평가에서 재현된 결함(잘못된 입력의 통과 처리, 억제 구문 오인식, 싱크 시점의 변수 상태, API 인자 위치, XXE 설정 값, 템플릿 연결, 출력 안전성)을 전체 CLI 경로로 고정한 시험
@@ -43,7 +48,7 @@ Java, JavaScript, Python, C#, Go, Rust, PHP, C/C++ 오픈소스·자체 프로�
 | 신뢰 경계 (trustbound) | 78.3% | 65.1% | +13.2% | +13.2% |
 | 예측 가능한 난수 (weakrand) | 0.0% | 0.0% | 0.0% | 0.0% |
 
-1.5.0과 비교하면 XSS를 뺀 분류는 TP가 같고, 객체 필드·상수 키 단위의 오염 구분으로 FP가 줄었다(예: sqli 114→97, pathtraver 84→68건). XSS는 응답 writer 변수와 `printf`·`format`의 모든 인자를 출력으로 보게 되어 TP 212→220, FP 86→75건이다. 원시 결과는 `docs/benchmark_results/owasp_confirmed.json`, `owasp_all.json`이다.
+1.6.0은 1.5.0과 비교해 XSS를 뺀 분류의 TP가 같고, 객체 필드·상수 키 단위의 오염 구분으로 FP가 줄었다(예: sqli 114→97, pathtraver 84→68건). XSS는 응답 writer 변수와 `printf`·`format`의 모든 인자를 출력으로 보게 되어 TP 212→220, FP 86→75건이다. 원시 결과는 `docs/benchmark_results/owasp_confirmed.json`, `owasp_all.json`이다.
 
 ### 해석과 한계
 - OWASP Benchmark는 안전한 사례를 일부러 도우미 클래스, 상수로 결정되는 분기, 컬렉션 경유로 감춰 정적 분석의 오탐을 유도한다. 오철칙은 함수 안의 흐름(분기 합류, 같은 파일 도우미 함수 요약, 문맥별 정제 함수 이름 인식)과 파일 간 호출(Python, JavaScript·TypeScript, Java static 메서드)을 추적하고, 객체 필드 흐름과 상수 조건 계산은 하지 않는다. Benchmark 사례는 도우미 클래스가 측정 대상 폴더 밖에 있어 파일 간 해석이 수치를 바꾸지 않는다. 그래서 FPR이 높다.
@@ -91,7 +96,7 @@ CI는 전체 감사의 계열·호출·상태·미확정 원인별 공백과 분
 
 ### 4.3 수정 지시문 판별 비교(AI 수정 결과)
 
-측정 도구는 `benchmarks/fix_prompt_ab.py`, 원시 결과는 `docs/benchmark_results/fix_prompt_ab.json`이다. 회귀시험 표본 21건(명령 실행·경로 접근·SQL 조립 각 7건)을 같은 점검 결과로 만든 두 판의 `fix-prompt` 지시문으로 AI에게 고치게 했다. 이전 판은 v1.5.0의 지시문이고, 현재 판은 금지 패턴(억제 주석, 시험 삭제, 예외 삼키기, 도우미로 옮기기)과 규칙별 '이렇게 고치지 마세요/이렇게 고치세요' 짝을 더한 지시문이다. 수정안은 `benchmarks/fix_loop.py`와 같은 분류로 검증했고, 결함 행동 제거는 확정한 회귀 명세를 docker 격리 실행으로 판정했다. AI는 Claude Code 2.1.296의 sonnet(도구 끔)이며 사례·판마다 한 번씩 응답을 받았다.
+측정 도구는 `benchmarks/fix_prompt_ab.py`, 원시 결과는 `docs/benchmark_results/fix_prompt_ab.json`이다. 회귀시험 표본 21건(명령 실행·경로 접근·SQL 조립 각 7건)을 같은 점검 결과로 만든 두 판의 `fix-prompt` 지시문으로 AI에게 고치게 했다. 이전 판은 v1.5.0의 지시문이고, 현재 판은 1.6.0의 지시문으로 금지 패턴(억제 주석, 시험 삭제, 예외 삼키기, 도우미로 옮기기)과 규칙별 '이렇게 고치지 마세요/이렇게 고치세요' 짝을 더한 지시문이다. 수정안은 `benchmarks/fix_loop.py`와 같은 분류로 검증했고, 결함 행동 제거는 확정한 회귀 명세를 docker 격리 실행으로 판정했다. AI는 Claude Code 2.1.296의 sonnet(도구 끔)이며 사례·판마다 한 번씩 응답을 받았다.
 
 | 지시문 | 해결 | 정적 지적 소멸 | 결함 행동 제거 | 결함 행동 제거(IL-501 / IL-502 / IL-504) | 새 지적 | 판정 불가 |
 |---|---|---|---|---|---|---|

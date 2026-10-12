@@ -19,7 +19,25 @@ PREAMBLE = """아래는 보안·품질 점검 도구(오철칙)가 이 프로젝
 - 설정값(주소, 포트, 경로)은 코드에 박지 않고 환경변수나 설정 파일로 분리합니다.
 - '확인 필요'로 표시된 문제는 도구가 확정하지 못한 것입니다. 먼저 외부 입력이 실제로 그 코드에 닿는지 흐름을 확인하고, 위험이 사실일 때만 고칩니다. 아니라면 고치지 말고 근거를 한 줄 남깁니다.
 - 수정 후 관련 테스트를 실행합니다. 테스트가 없으면 수정한 동작을 검증하는 테스트를 추가합니다.
+
+금지(이렇게 하면 지적이 사라져도 수정으로 인정되지 않습니다):
+- `iron-laws: ignore` 억제 주석, `# noqa`, `@SuppressWarnings`, `eslint-disable`로 지적을 가리기
+- 실패하는 테스트를 지우거나 skip·xfail로 바꾸기, 검사 설정(.iron-laws.yml, 계약 파일)을 느슨하게 바꾸기
+- 문제가 된 코드를 try/except로 감싸고 예외를 버리기
+- 위험한 호출을 다른 이름의 도우미 함수로 옮기기만 하기(도구는 도우미 안까지 따라갑니다)
 """
+
+# 규칙별 반례: 흔히 나오는 잘못된 수정과 올바른 수정
+COUNTER_EXAMPLES = {
+    "IL-501": ("문자열에서 따옴표를 지우거나 replace로 이스케이프하기", "파라미터 바인딩: cursor.execute('... WHERE id = %s', (value,)) / PreparedStatement.setString"),
+    "IL-504": ("입력에서 ; & | 같은 글자만 지우기, shell=True를 유지한 채 shlex.quote를 일부에만 쓰기", "셸을 거치지 않는 인자 배열: subprocess.run(['cmd', value], check=True) / execFile('cmd', [value])"),
+    "IL-502": ("'../' 문자열만 지우기", "기준 폴더와 합친 뒤 실제 경로로 정규화하고 기준 폴더 안인지 확인: realpath(join(BASE, v)).startswith(BASE + os.sep)"),
+    "IL-503": ("eval 앞에 정규식 검사를 하나 덧붙이기", "eval·exec를 없애고 허용 목록의 함수 이름만 사전에서 고르기, 데이터는 json.loads·ast.literal_eval로 읽기"),
+    "IL-505": ("innerHTML에 넣기 전 <script>만 지우기", "textContent나 템플릿의 자동 이스케이프 사용, HTML이 꼭 필요하면 검증된 sanitizer(DOMPurify 등)"),
+    "IL-506": ("요청 주소에서 'localhost'만 막기", "허용 호스트 목록으로 확인하고, 이름 해석 뒤 사설·루프백 주소를 거부"),
+    "AIA-103": ("LLM에 '위험한 명령은 출력하지 마'라고 지시하기", "LLM 응답은 허용 목록의 값만 고르게 하고, SQL은 바인딩, 실행은 격리 환경에서만"),
+}
+
 
 
 def _entry(index: int, v: Violation) -> str:
@@ -34,6 +52,10 @@ def _entry(index: int, v: Violation) -> str:
         lines.append(f"- 왜 위험한가: {v.plain}")
     if v.how_to_fix:
         lines.append(f"- 고치는 방법: {v.how_to_fix}")
+    counter = COUNTER_EXAMPLES.get(v.rule_id)
+    if counter is not None:
+        lines.append(f"- 이렇게 고치지 마세요: {counter[0]}")
+        lines.append(f"- 이렇게 고치세요: {counter[1]}")
     if v.snippet:
         lines.append(f"- 해당 코드: {v.snippet}")
     return "\n".join(lines)

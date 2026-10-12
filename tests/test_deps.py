@@ -253,7 +253,9 @@ def test_package_lock_v3_direct_transitive_dev_and_nested_versions(tmp_path: Pat
     assert ("qs", "6.7.0") in by  # 중첩 설치된 같은 이름의 다른 버전도 따로 점검한다
     db = db_of(advisory("A-1", "qs", [{"introduced": "0"}, {"fixed": "6.5.3"}], ecosystem="npm"))
     findings, _ = analyze(lock, db)
-    assert [(f.package, f.version) for f in findings] == [("qs", "6.5.0")] and findings[0].via_direct == ["express"]
+    assert [(f.package, f.version) for f in findings] == [("qs", "6.5.0")]
+    # npm 해석 순서: express는 자기 아래 중첩 설치된 qs@6.7.0을 쓴다. 최상위 qs@6.5.0을 express가 끌어온다고 이름으로 합치지 않는다
+    assert by[("qs", "6.7.0")].parents == {"express"} and by[("qs", "6.5.0")].parents == set()
 
 
 def test_package_lock_v1_uses_the_manifest_for_direct_dependencies(tmp_path: Path):

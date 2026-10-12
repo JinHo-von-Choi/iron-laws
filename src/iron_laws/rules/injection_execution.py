@@ -4,9 +4,12 @@ import re
 
 from tree_sitter import Node
 
-from iron_laws.core.models import Severity, Violation
+from iron_laws.core.models import Confidence, Severity, Violation
 from iron_laws.engine.ast_tools import (
     Call,
+    is_literal,
+    iter_calls,
+    iter_functions,
 )
 from iron_laws.engine.java_literals import is_closed_java
 from iron_laws.engine.languages import Lang
@@ -141,9 +144,93 @@ class CodeInjectionRule(SinkRule):
         Sink.of(JS, r"^(eval|Function|newFunction|vm\.runInNewContext|vm\.runInThisContext|newvm\.Script)$", None),
         Sink.of(JS, r"^(setTimeout|setInterval)$"),
         Sink.of(JAVA, r"(^|\.)eval$"),
+        Sink.of(JAVA, r"(^|\.)parseExpression$|^Ognl\.(getValue|parseExpression)$|^MVEL\.(eval|executeExpression|compileExpression)$", 0),
         Sink.of(CS, r"CSharpScript\.(EvaluateAsync|RunAsync)$"),
         Sink.of(PHP, r"^(eval|assert|create_function)$"),
     ]
+    SPEL_STANDARD = re.compile(r"\bStandardEvaluationContext\b")
+    EVAL_METHODS = frozenset({"getValue", "setValue", "getValueType"})
+
+    def check(self, src: SourceFile) -> list[Violation]:
+        found = super().check(src)
+        if src.lang is not Lang.JAVA or src.root is None:
+            return found
+        # 동적 SpEL 식은 StandardEvaluationContext(형식 참조 T(...)로 임의 클래스 호출 가능)로 평가할 때만 확인 대상이다.
+        # SimpleEvaluationContext만 쓰는 함수의 동적 식은 지적하지 않는다
+        kept = []
+        for v in found:
+            spel = "parseExpression" in v.message and "Ognl." not in v.message
+            if v.confidence is Confidence.REVIEW and spel and self._simple_context_only_at(src, v.line_number):
+                continue  # OGNL·MVEL은 컨텍스트와 무관하게 임의 코드 실행이 가능하므로 동적 식이면 그대로 남긴다
+            kept.append(v)
+        kept += self._spel_dynamic_parse(src, {v.line_number for v in kept})
+        return kept + self._spel_standard_evaluation(src, {v.line_number for v in kept})
+
+    def _spel_dynamic_parse(self, src: SourceFile, reported: set[int]) -> list[Violation]:
+        """상수가 아닌 문자열을 SpEL 식으로 파싱하는 호출(SimpleEvaluationContext만 쓰는 함수는 제외). getValue()의 기본 컨텍스트는 StandardEvaluationContext다"""
+        found = []
+        for call in iter_calls(src):
+            if not call.callee.endswith("parseExpression") or call.callee.startswith("Ognl.") or not call.args or call.line in reported:
+                continue
+            fn = self._function_at(src, call.line)
+            text = src.text_of(fn.node) if fn is not None else ""
+            arg = src.text_of(call.args[0]).strip()
+            constants = {m.group(1) for m in re.finditer(r"\b(\w+)\s*=\s*\"[^\"]*\"\s*;", text) if len(re.findall(rf"\b{re.escape(m.group(1))}\s*=[^=]", text)) == 1}
+            if is_literal(call.args[0]) or arg in constants or self._simple_context_only_at(src, call.line):
+                continue
+            found.append(self.at_node(
+                src, call.node,
+                f"상수가 아닌 문자열을 SpEL 식으로 파싱합니다({call.callee}). 식 문자열이 설정·입력에서 오면 StandardEvaluationContext(기본 컨텍스트 포함)에서 T(...) 형식 참조로 임의 코드가 실행됩니다. SimpleEvaluationContext로 평가하십시오.",
+                severity=Severity.HIGH, confidence=Confidence.REVIEW,
+            ))
+        return found
+
+    def _function_at(self, src: SourceFile, line: int):
+        for fn in iter_functions(src):
+            if src.line_of(fn.node) <= line <= fn.node.end_point[0] + 1:
+                return fn
+        return None
+
+    def _simple_context_only_at(self, src: SourceFile, line: int) -> bool:
+        """함수가 SimpleEvaluationContext만 쓴다. Expression.getValue()는 컨텍스트를 주지 않으면 StandardEvaluationContext로 평가하므로
+        SimpleEvaluationContext를 명시하지 않은 동적 식은 확인 대상이다"""
+        fn = self._function_at(src, line)
+        text = src.text_of(fn.node) if fn is not None else ""
+        return "SimpleEvaluationContext" in text and not self.SPEL_STANDARD.search(text)
+
+    def _spel_standard_evaluation(self, src: SourceFile, reported: set[int]) -> list[Violation]:
+        """상수가 아닌 식(이 함수에서 동적 문자열로 파싱했거나 필드·매개변수로 받은 식)을 StandardEvaluationContext로 평가하는 호출.
+        식 문자열이 설정·입력에서 오면 원격 코드 실행이 된다"""
+        found = []
+        if not self.SPEL_STANDARD.search(src.code_text):
+            return found
+        calls = [c for c in iter_calls(src) if c.callee.rpartition(".")[2] in self.EVAL_METHODS]
+        for fn in iter_functions(src):
+            text = src.text_of(fn.node)
+            if not self.SPEL_STANDARD.search(text):
+                continue
+            # 이 함수에서 만들었거나 매개변수·지역 변수로 선언한 StandardEvaluationContext 이름
+            contexts = set(re.findall(r"\b(\w+)\s*=\s*new\s+StandardEvaluationContext\s*\(", text)) | set(re.findall(r"\bStandardEvaluationContext\s+(\w+)", text))
+            constants = {m.group(1) for m in re.finditer(r"\b(\w+)\s*=\s*\"[^\"]*\"\s*;", text) if len(re.findall(rf"\b{re.escape(m.group(1))}\s*=[^=]", text)) == 1}
+            # 이 함수에서 파싱한 식 변수 → 상수 문자열(또는 한 번만 상수를 담은 변수)로 파싱했는가
+            parsed_here = {}
+            for m in re.finditer(r"\b(\w+)\s*=\s*[^;=]*?\bparseExpression\s*\(\s*(\"(?:[^\"\\\\]|\\\\.)*\"|\w+)\s*([,)]?)", text):
+                # 인자 전체가 문자열 하나이거나 상수 하나만 담은 변수여야 상수다("prefix." + 입력은 동적)
+                parsed_here[m.group(1)] = bool(m.group(3)) and (m.group(2).startswith('"') or m.group(2) in constants)
+            for call in calls:
+                if not (fn.node.start_byte <= call.node.start_byte < fn.node.end_byte) or call.line in reported:
+                    continue
+                receiver, _, method = call.callee.rpartition(".")
+                if method not in self.EVAL_METHODS or not receiver or receiver in parsed_here or not re.fullmatch(r"(this\.)?\w+", receiver):
+                    continue  # 이 함수에서 파싱한 식은 파싱 지점에서 판정한다
+                if not any(src.text_of(a).strip() in contexts for a in call.args):
+                    continue
+                found.append(self.at_node(
+                    src, call.node,
+                    f"함수 밖에서 만든 SpEL 식({receiver})을 StandardEvaluationContext로 평가합니다. 식 문자열이 설정·입력에서 오면 T(...) 형식 참조로 임의 코드가 실행됩니다. SimpleEvaluationContext를 쓰십시오.",
+                    severity=Severity.HIGH, confidence=Confidence.REVIEW,
+                ))
+        return found
 
 
 class CommandInjectionRule(SinkRule):

@@ -29,6 +29,7 @@ class Affected:
     name: str
     versions: set[str]
     ranges: list[Range]
+    symbols: list[str] = field(default_factory=list)  # 권고가 알려 준 영향 함수(없으면 도달성을 판정하지 않는다)
 
 
 @dataclass
@@ -49,6 +50,20 @@ def _severity(raw: dict[str, Any]) -> str:
     return "미상"
 
 
+def _symbols(item: dict[str, Any], raw: dict[str, Any]) -> list[str]:
+    """OSV의 영향 함수 정보: ecosystem_specific.affected_functions, ecosystem_specific.imports[].symbols(Go 형식), database_specific.affected_functions"""
+    found: list[str] = []
+    for source in (item.get("ecosystem_specific") or {}, item.get("database_specific") or {}, raw.get("database_specific") or {}):
+        for name in source.get("affected_functions") or []:
+            if isinstance(name, str) and name:
+                found.append(name)
+        for imp in source.get("imports") or []:
+            if isinstance(imp, dict):
+                path = str(imp.get("path") or "")
+                found += [f"{path}.{sym}" if path else str(sym) for sym in imp.get("symbols") or [] if sym]
+    return sorted(set(found))
+
+
 def parse_advisory(raw: dict[str, Any]) -> Advisory | None:
     if raw.get("withdrawn"):
         return None
@@ -66,7 +81,7 @@ def parse_advisory(raw: dict[str, Any]) -> Advisory | None:
                     if kind in event:
                         events.append((kind, str(event[kind])))
             ranges.append(Range(str(r.get("type") or ""), events))
-        affected.append(Affected(ecosystem, normalize_name(ecosystem, package["name"]), {str(v) for v in item.get("versions") or []}, ranges))
+        affected.append(Affected(ecosystem, normalize_name(ecosystem, package["name"]), {str(v) for v in item.get("versions") or []}, ranges, _symbols(item, raw)))
     if not affected:
         return None
     return Advisory(str(raw.get("id") or ""), [str(a) for a in raw.get("aliases") or []], str(raw.get("summary") or ""), _severity(raw), str(raw.get("modified") or ""), affected)

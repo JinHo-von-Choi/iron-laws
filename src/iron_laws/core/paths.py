@@ -23,6 +23,20 @@ TEST_FILE_PATTERNS = (
 )
 
 
+class OutsideRootError(ValueError):
+    """허용한 기준 폴더 밖을 가리키는 경로"""
+
+
+def resolve_within(root: Path, path: Path | str) -> Path:
+    """path를 root 기준으로 풀고(심볼릭 링크 해석 포함) root 밖이면 거부한다. 상대 경로는 root 기준이다."""
+    base = Path(root).resolve(strict=True)
+    candidate = Path(path)
+    target = (candidate if candidate.is_absolute() else base / candidate).resolve(strict=False)
+    if target != base and base not in target.parents:
+        raise OutsideRootError(f"허용한 폴더 밖의 경로입니다: {path}")
+    return target
+
+
 def is_test_path(rel_path: Path) -> bool:
     if any(part in TEST_DIR_NAMES for part in rel_path.parts[:-1]):
         return True

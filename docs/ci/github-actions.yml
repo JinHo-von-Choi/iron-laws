@@ -1,0 +1,19 @@
+# .github/workflows/iron-laws.yml
+name: iron-laws
+on: [push, pull_request]
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install iron-laws
+      - run: iron-laws audit . --format sarif -o iron-laws.sarif --limit 0 || true
+      - uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: iron-laws.sarif
+      - run: iron-laws check . --fail-on HIGH

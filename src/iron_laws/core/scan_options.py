@@ -30,6 +30,7 @@ class ScanOptions:
     directive_filter: Callable[[str, Directive], bool] | None = None
     approvals: ApprovalStore | None = None
     collect_dependencies: bool = False
+    confine_root: Path | None = None
 
     def kwargs(self) -> dict[str, Any]:
         # asdict는 정책 모델까지 복제·변환하므로 신뢰된 모델 객체를 그대로 전달한다.

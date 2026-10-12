@@ -82,6 +82,7 @@ class VerifyOptions:
     max_files: int = 5
     allow_paths: tuple[str, ...] = ()
     regression_spec: Path | None = None  # 4단계: 결함을 구별하는 회귀시험 명세
+    runner_policy: RunnerPolicy | None = None  # 지정하면 저장소의 실행 정책 파일 대신 쓴다(MCP 서버는 서버 설정의 정책만 신뢰한다)
 
     def to_record(self) -> dict[str, Any]:
         return {
@@ -203,7 +204,10 @@ def _verify(original: Path, patch_path: Path, options: VerifyOptions, runner: Ru
         contract, contract_file_digest = load_contract(options.contract_path)
     else:
         contract, contract_file_digest = default_contract(), "기본값"
-    runner_policy, _runner_policy_source = load_runner_policy(orig_ro)
+    if options.runner_policy is not None:
+        runner_policy = options.runner_policy
+    else:
+        runner_policy, _runner_policy_source = load_runner_policy(orig_ro)
     policy_names = set(POLICY_FILES)
     spec_rel: str | None = None
     spec_source: Path | None = options.regression_spec

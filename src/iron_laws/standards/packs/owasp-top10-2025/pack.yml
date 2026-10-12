@@ -1,0 +1,84 @@
+id: owasp-top10-2025
+title: OWASP Top 10:2025
+edition: "2025"
+source_url: https://top10.owasp.org/2025
+retrieved_at: "2026-10-12"
+sha256: 17d5153f13650e3846077be6746705982cc5a811ed73f4b6b78a688ce7ca58db
+items:
+  - {id: A01, name: Broken Access Control}
+  - {id: A02, name: Security Misconfiguration}
+  - {id: A03, name: Software Supply Chain Failures}
+  - {id: A04, name: Cryptographic Failures}
+  - {id: A05, name: Injection}
+  - {id: A06, name: Insecure Design}
+  - {id: A07, name: Authentication Failures}
+  - {id: A08, name: Software or Data Integrity Failures}
+  - {id: A09, name: Security Logging and Alerting Failures}
+  - {id: A10, name: Mishandling of Exceptional Conditions}
+# 오철칙 규칙 → 항목. 사람이 원문과 대조해 확인하면 verified_edition·verified_sha256을 채운다.
+mapping:
+  IL-101: [A04, A07]
+  IL-102: [A04]
+  IL-103: [A04]
+  IL-104: [A04]
+  IL-105: [A07, A08]
+  IL-106: [A04]
+  IL-107: [A04, A07]
+  IL-108: [A07]
+  IL-109: [A04]
+  IL-110: [A07]
+  IL-111: [A02]
+  IL-112: [A04]
+  IL-113: [A08]
+  IL-114: [A01, A02]
+  IL-301: [A10]
+  IL-303: [A01, A07]
+  IL-304: [A10]
+  IL-305: [A02, A10]
+  IL-307: [A10]
+  IL-501: [A05]
+  IL-502: [A01, A05]
+  IL-503: [A05]
+  IL-504: [A05]
+  IL-505: [A05]
+  IL-506: [A01]
+  IL-507: [A01]
+  IL-508: [A05]
+  IL-509: [A02, A05]
+  IL-510: [A01]
+  IL-511: [A05]
+  IL-512: [A06]
+  IL-513: [A06]
+  IL-515: [A08]
+  IL-520: [A02]
+  IL-525: [A01, A07]
+  IL-526: [A06]
+  IL-527: [A05]
+  IL-530: [A06]
+  IL-532: [A07]
+  IL-533: [A05]
+  AI-102: [A02, A07]
+  AI-103: [A02]
+  AI-104: [A02]
+  AI-105: [A02]
+  AI-106: [A02]
+  AI-108: [A01, A02]
+  AI-109: [A01, A07]
+  AI-110: [A02, A03]
+  AI-111: [A03]
+  AI-112: [A09]
+  AI-113: [A01]
+  AI-114: [A02]
+  AI-115: [A02, A07]
+  AI-118: [A07]
+  AI-120: [A10]
+  AI-122: [A01]
+  AIA-101: [A03]
+  AIA-102: [A03]
+  AIA-106: [A03, A08]
+  AIA-103: [A05]
+  AIA-104: [A05]
+  AIA-105: [A01, A05]
+  AIA-107: [A02, A04]
+verified_edition: null
+verified_sha256: null

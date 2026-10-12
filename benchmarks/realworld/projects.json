@@ -1,0 +1,6 @@
+[
+  {"name": "juice-shop", "url": "https://github.com/juice-shop/juice-shop.git", "commit": "0e6d909b7466e76bc8deabf2fdb62bc5c849961f"},
+  {"name": "NodeGoat", "url": "https://github.com/OWASP/NodeGoat.git", "commit": "c5cb68a7084e4ae7dcc60e6a98768720a81841e8"},
+  {"name": "WebGoat", "url": "https://github.com/WebGoat/WebGoat.git", "commit": "10cecda8b93f9ea1439188a6257dfb7fc9c954d5"},
+  {"name": "spring-petclinic", "url": "https://github.com/spring-projects/spring-petclinic.git", "commit": "500158f732419217507c7656904b8e6aa1bcc0d6"}
+]

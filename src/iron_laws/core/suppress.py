@@ -199,7 +199,7 @@ class FileSuppressions:
     directives: list[Directive] = field(default_factory=list)
     problems: list[tuple[int, str]] = field(default_factory=list)
 
-    def covers(self, violation: Violation) -> bool:
+    def covering(self, violation: Violation) -> "Directive | None":
         for d in self.directives:
             if violation.rule_id not in d.ids:
                 continue
@@ -209,8 +209,11 @@ class FileSuppressions:
             if d.expired:
                 continue
             d.used.add(violation.rule_id)
-            return True
-        return False
+            return d
+        return None
+
+    def covers(self, violation: Violation) -> bool:
+        return self.covering(violation) is not None
 
 
 def _clean_reason(raw: str) -> str:

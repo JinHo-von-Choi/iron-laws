@@ -1,0 +1,8 @@
+- id: iron-laws
+  name: iron-laws check
+  description: 소스코드 보안·품질 점검(HIGH 이상 지적이 있으면 커밋을 막는다)
+  entry: iron-laws check
+  args: ["."]
+  language: python
+  pass_filenames: false
+  always_run: true

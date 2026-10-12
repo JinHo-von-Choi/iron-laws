@@ -27,7 +27,7 @@ STRINGS = [str]
 FINDING = {key: str for key in ("finding_id", "rule_id", "file_path", "fingerprint", "severity", "approval_status", "approval_id", "baseline_status", "confidence", "verification_grade")}
 FINDING.update(line_number=int, column=int)
 POINT = {key: str for key in ("id", "family", "path", "callee", "state", "evidence_kind", "reason")}
-POINT.update(line=int, column=int, in_scope=bool, finding=bool, finding_ids=STRINGS, suppressed_rules=STRINGS)
+POINT.update(line=int, column=int, in_scope=bool, finding=bool, finding_ids=STRINGS, suppressed_rules=STRINGS, linked_columns=[int])
 FILE = {"path": str, "classification": str, "changed": bool}
 EXECUTION = {key: str for key in ("run_id", "code_digest", "config_hash", "contract_digest", "scan_status", "ruleset_hash")}
 EXECUTION.update(files_scanned=int, error_diagnostics=int)
@@ -86,7 +86,7 @@ def shape_errors(value: object, spec: object, path: str = "$", *, optional: bool
     return []
 
 
-SUPPORTED_REPORT_VERSIONS = ("1.3", "1.4")
+SUPPORTED_REPORT_VERSIONS = ("1.3", "1.4", "1.5")
 SUPPORTED_RECEIPT_VERSIONS = ("1",)
 
 # 검사 계열 → 그 계열의 지적을 내는 규칙. 보고서가 다른 계열의 지적을 연결하면 모순이다.
@@ -205,6 +205,7 @@ def verify_report(data: dict[str, Any], *, as_of: date | None = None, checkout: 
     _check_ledger(c, ledger, findings, hidden_paths)
     _check_passed(c, data, summary, ledger, violations, execution)
     _check_trust(c, data, summary, ledger, violations)
+    _check_standards(c, data, violations)
     _check_approvals(c, data, ledger, execution, findings, violations, as_of)
     if checkout is not None:
         _check_checkout(c, ledger, execution, checkout)
@@ -275,7 +276,8 @@ def _check_ledger(c: _Collector, ledger: dict[str, Any], findings: dict[str, dic
                 continue
             c.check(target.get("file_path") == p.get("path") and target.get("line_number") == p.get("line"), "point.finding_elsewhere", "다른 파일·다른 줄의 지적을 연결했다", where)
             if p.get("column") is not None and target.get("column") is not None:
-                c.check(target.get("column") == p.get("column"), "point.finding_other_call", "같은 줄의 다른 호출(다른 열)의 지적을 연결했다", where)
+                # 중첩 호출(`open(os.path.join(...))`)은 한 흐름이라 장부가 linked_columns에 적은 열의 지적만 함께 인정한다
+                c.check(target.get("column") == p.get("column") or target.get("column") in (p.get("linked_columns") or []), "point.finding_other_call", "같은 줄의 다른 호출(다른 열)의 지적을 연결했다", where)
             c.check(target.get("rule_id") == rule, "point.finding_wrong_rule", f"{p.get('family')} 계열 지점에 다른 규칙({target.get('rule_id')})의 지적을 연결했다", where)
             c.check(target.get("confidence") in (None, "CONFIRMED"), "point.finding_not_confirmed", "확정되지 않은 지적을 근거로 삼았다", where)
         if state == "evidence_met":
@@ -353,9 +355,31 @@ CODE_LANGUAGES = frozenset({"python", "javascript", "typescript", "tsx", "java",
 GATE_FIELDS = {"max_analysis_unknown_rate": "analysis_unknown_rate", "max_unverified_rule_language_rate": "unverified_rule_language_rate"}
 
 
+def _check_standards(c: _Collector, data: dict[str, Any], violations: list[dict[str, Any]]) -> None:
+    """기준 팩 참조(1.5 이후): 지적의 기준 항목이 보고서에 적힌 팩·판본을 가리키고, 대응표 확인 여부가 팩의 값과 같은지 본다."""
+    if data.get("schema_version") != "1.5":
+        return
+    listed = (data.get("metadata") or {}).get("standard_packs") or []
+    if not c.check(isinstance(listed, list) and all(isinstance(p, dict) for p in listed), "standards.shape", "metadata.standard_packs가 객체 목록이 아니다", "metadata.standard_packs"):
+        return
+    packs = {p.get("id"): p for p in listed}
+    for index, v in enumerate(violations):
+        refs = v.get("standards") or []
+        if not c.check(isinstance(refs, list) and all(isinstance(r, dict) for r in refs), "standards.shape", "standards가 객체 목록이 아니다", f"violations[{index}].standards"):
+            continue
+        for ref in refs:
+            pack = packs.get(ref.get("pack_id"))
+            where = f"violations[{index}].standards"
+            if pack is None:
+                c.check(False, "standards.unknown_pack", f"보고서에 없는 기준 팩을 가리킨다: {ref.get('pack_id')!r}", where)
+                continue
+            c.check(ref.get("edition") == pack.get("edition"), "standards.edition_mismatch", f"{pack.get('id')} 판본이 팩 목록과 다르다", where)
+            c.check(bool(ref.get("mapping_verified")) == bool(pack.get("mapping_verified")), "standards.verified_mismatch", f"{pack.get('id')} 대응표 확인 여부가 팩 목록과 다르다(확인되지 않은 대응을 확인된 것처럼 표시)", where)
+
+
 def _check_trust(c: _Collector, data: dict[str, Any], summary: dict[str, Any], ledger: dict[str, Any], violations: list[dict[str, Any]]) -> None:
     """신뢰 지표(1.4 이후): 분석 unknown 비율을 장부에서 다시 계산해 대조하고, 상한 초과가 통과로 표시되지 않았는지 본다."""
-    if data.get("schema_version") != "1.4":
+    if data.get("schema_version") not in ("1.4", "1.5"):
         return
     for index, v in enumerate(violations):
         c.check(v.get("verification_grade", "") in ("", "verified", "unverified"), "trust.grade_unknown", f"알 수 없는 검증 등급: {v.get('verification_grade')!r}", f"violations[{index}]")

@@ -5,6 +5,94 @@
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-10-12
+
+### Added
+- 코드 삽입(IL-503)이 Java 표현식 언어(SpEL `parseExpression`, OGNL, MVEL)를 본다. 외부 입력이 식에 닿으면 확정 지적이다. 상수가 아닌 SpEL 식을 파싱하거나 함수 밖에서 만든 식을 `StandardEvaluationContext`로 평가하면(형식 참조 `T(...)`로 임의 코드 실행 가능, 컨텍스트 없는 `getValue()`도 이 컨텍스트를 쓴다) 확인 필요 지적이다. `SimpleEvaluationContext`만 쓰는 함수와 상수 식은 지적하지 않는다.
+- XSS(IL-505)가 Java에서 응답의 `getWriter()`·`getOutputStream()`을 변수에 담아 쓰는 출력(`PrintWriter out = resp.getWriter(); out.print(...)`)과 `printf`·`format`의 모든 인자를 본다. 출력보다 앞서 같은 경로에서 `setContentType("application/json")`으로 JSON 응답을 정한 출력은 제외한다.
+- `benchmarks/cwe_bench_java.py`가 확정 지적 기준과 확인 필요 지적까지 센 기준(`with_review`)을 함께 기록한다.
+- Kotlin(.kt, .kts) 구문 분석과 외부 입력 추적: Spring `@RequestParam`·Ktor `call.parameters`·`call.request.queryParameters` 입력, `"$name"`·`${...}` 문자열 템플릿, JVM 싱크(명령 실행·JDBC 등).
+- Go 파일 간 해석(같은 패키지의 다른 파일 함수, import 경로 끝부분과 맞는 프로젝트 폴더의 내보낸 함수)과 PHP 파일 간 해석(require·include한 파일의 함수, 프로젝트에서 유일한 함수·클래스의 static 메서드). Go·PHP 주요 보안 규칙의 양성·음성 사례로 검증 칸을 늘렸다.
+- `check`·`audit --triage-model "<명령>"`: '확인 필요' 지적에 LLM 검토 의견을 `review_opinion`으로만 붙인다(판정은 바꾸지 않음, 비밀값을 가린 코드 조각만 보냄).
+- `iron-laws lsp`: 편집기용 LSP 서버(표준 입출력, 저장하지 않은 내용도 점검).
+- `iron-laws habits`: 다섯 습관의 1천 줄당 지적 수를 기록하고 추이를 보여 준다.
+- 실측 누락 순환 `benchmarks/realworld_loop.py`와 주간 워크플로: 고정 커밋 실제 프로젝트의 보안 지적 변화를 분류 대기열로 만든다.
+- 지원 행렬의 공개 벤치마크 표시에 OWASP Benchmark Python, CWE-Bench-Java, Juliet C/C++·C#를 더했다.
+- `audit --format mois-report`: 행안부 구현단계 49개 항목별 지적·잔존과 사유(억제 주석·승인)·미점검 사유(장부 공백·미탑재·건너뛴 파일)를 정리한 감리 대응 보고서. `.docx` 출력은 선택 의존성 `iron-laws[docx]`.
+- 보고서 `metadata.suppressions`: 억제된 지적의 규칙·위치·사유·만료일.
+- 취약 의존성 도달성 `deps --reachability`: 권고의 영향 함수 정보(OSV `affected_functions`, `imports[].symbols`)가 있을 때만 코드의 호출을 찾아 `reachable`·`no_evidence`·`undetermined`로 표시한다.
+- `deps --format openvex`: OpenVEX 0.2.0 문서. 자동 판정은 `affected`·`under_investigation`만이고, `not_affected`는 `--vex-decisions`의 사람 판정(justification 필수)에서만 나온다.
+- **AIA-107** 브라우저에서 모델 키로 LLM을 직접 부르는 코드, **AIA-108** 웹 입력을 받는 LLM 호출의 출력 상한 부재, **AIA-109** 개인정보 필드를 외부 LLM으로 보내는 코드.
+- 수정 지시문에 우회 수정 금지 목록(억제 주석·테스트 skip·예외 삼키기·도우미로 옮기기)과 규칙별 반례(잘못된 수정·올바른 수정)를 넣었다.
+- 반례 접수: 이슈 양식(`.github/ISSUE_TEMPLATE/counterexample.yml`), 처리 절차(`docs/COUNTEREXAMPLES.md`), 처리된 반례의 사례 시험(`tests/counterexamples/`).
+- 경쟁 도구 비교 측정기 `benchmarks/compare_tools.py`(오철칙·Semgrep·CodeQL, 개발용·평가용 사례를 나눠 집계).
+- **사용자 명세** `iron-laws spec draft|check`와 설정 `policies.custom_spec`: 프로젝트 고유의 소스·싱크·정제 함수를 더한다. 초안은 코드 후보(감싼 싱크 함수, 정제 함수 이름, Lambda event 등)와 선택적 LLM 제안(`--llm-cmd`)으로 만들고, 모든 항목의 양성·음성 예제가 기대대로 판정될 때만 불러온다.
+- import 이름 점검: 패키지 색인이 있으면 JavaScript·TypeScript import 이름을 npm 색인과, Python import 이름을 모듈→배포 매핑 색인(`pypi-modules`)과 맞춘다. 매핑 색인이 없으면 Python import는 판정하지 않는다.
+- 지적이 30건을 넘으면 콘솔 보고서가 먼저 고칠 3건과 다음 명령을 보여 준다.
+- 검증 기록 서명: `verify-patch --sign ssh:<키>`가 기록 옆에 OpenSSH 서명(`.sig`, 이름공간 `iron-laws-receipt`)을 남기고, `evidence verify --allowed-signers`가 서명을 확인한다.
+- `iron-laws sbom --format cyclonedx|spdx`: 잠금 파일로 CycloneDX 1.6·SPDX 2.3 JSON SBOM을 만든다. 구성요소는 purl, 관계는 버전 단위(관계 정보가 없는 입력은 추정하지 않음). 같은 입력·시각이면 같은 문서다.
+- AI 수정 성공률 측정기 `benchmarks/fix_loop.py`: 지적별 패치 검증 결과를 해결·신규 부채 동반 해결·새 지적 발생·그 밖의 검증 실패·결함 행동 미제거·정적 지적 잔존·우회·시험 실패·판정 불가로 나누고, 정적 지적 소멸률과 결함 행동 제거율을 따로 낸다.
+- 수정 지시문 비교 측정기 `benchmarks/fix_prompt_ab.py`: 같은 결함 표본을 두 판의 `fix-prompt` 지시문으로 사용자가 지정한 AI 명령에 고치게 하고, 수정안을 같은 조건으로 검증해 규칙별 결함 행동 제거율을 비교한다. 결과는 docs/ACCURACY.md §4.3에 있다.
+- `iron-laws hook claude-code`: Claude Code PostToolUse 훅. 고친 파일을 점검해 기준 이상 지적이 있으면 지적과 고치는 방법을 에이전트에게 돌려준다(종료코드 2). pre-commit 훅 정의(`.pre-commit-hooks.yaml`)와 Claude Code·pre-commit·GitHub Actions·GitLab CI 설정 예시(`docs/ci/`).
+- **AIA-103** LLM 응답(소스 종류 `ai_response`)이 검증 없이 코드 실행·명령·SQL 싱크에 닿는 코드. 웹 입력만으로 닿는 흐름은 IL-50x가 알리므로 겹쳐 내지 않는다.
+- **AIA-104** 웹 요청의 값이 LLM 시스템 지시 자리(`role: system`, `system=`, `SystemMessage`)에 들어가는 코드. 사용자 메시지 자리는 대상이 아니다.
+- **AIA-105** MCP 서버 구현의 도구 설명에 숨은 지시(보이지 않는 글자·비밀 유출·무단 실행 문장), 도구 인자를 검증 없이 파일 경로·명령으로 쓰는 코드.
+- 의미 변형 사례집에 AI 공격면 정상·위험 짝 4개를 추가했다.
+- **라우트 접근통제 행렬** `iron-laws routes`: Flask·FastAPI·Django(urls.py)·Express·Next.js(app/**/route, pages/api)·Spring·ASP.NET 라우트마다 인증(yes/no/unknown)과 인가(yes/no/unknown/n/a)를 근거와 함께 보인다. 인가 yes는 역할·권한 검사가 있거나 데이터 조회보다 먼저 현재 사용자와 대상의 소유 관계를 비교할 때만이다. 보고서 `metadata.routes`에 요약과 중요 기능 라우트 행이 실린다.
+- `audit --format gitlab-codequality`: GitLab merge request Code Quality 보고서. 지문은 기준선 지문을 쓴다. 예시 `docs/ci/gitlab-ci.yml`.
+- **기준 팩**: 기준마다 항목과 규칙 대응표를 `standards/packs/<id>/pack.yml`로 둔다. OWASP Top 10:2025, OWASP Top 10 for Agentic Applications 2026, 2025 CWE Top 25, 국가정보원 국가·공공기관 AI보안 가이드북(2025-12, 위협 T01~T15·A01~A11, 대책 M01~M30·A-M01~A-M17) 팩을 추가했고 대응표는 사람이 그 판본으로 확인하기 전까지 `미확인`으로 표시한다(판본·내용이 바뀌면 확인 표시가 자동으로 풀린다). `iron-laws coverage --standard <팩>`.
+- 보고서 형식 1.5: 지적의 `standards`(팩·판본·항목·대응표 확인 여부), 선택형 `review_opinion`, `metadata.standard_packs`. `gov_standard`는 그대로 둔다. 독립 검증기는 1.5를 읽고 기준 참조가 팩 목록과 맞는지 확인한다.
+- 공개 벤치마크 측정기: `benchmarks/owasp_benchmark_python.py`(OWASP Benchmark for Python), `benchmarks/juliet.py`(Juliet C/C++·C# 1.3, CWE 대응표 포함), `benchmarks/cwe_bench_java.py`(CWE-Bench-Java 함수 단위). 데이터셋 커밋·해시가 다르면 종료코드 2.
+- **MCP 서버** `iron-laws mcp --root <폴더>`(stdio, 선택 의존성 `iron-laws[mcp]`): `check`·`explain`·`fix_prompt`·`verify_patch`·`deps` 도구. 경로 입력은 기준 폴더 안만 받고(심볼릭 링크 해석 포함), 시험 명령은 점검 폴더 밖 서버 설정의 `test_presets` 이름으로만 받는다. `regression_spec`을 주면 결함 행동 제거 여부를 정적 지적 소멸과 따로 돌려준다.
+- 보고서 `metadata.cross_file.by_language`: 파일 간 해석 횟수와 한도에 걸린 위치 수를 호출한 파일의 언어별로 보여 준다.
+- 공통 측정기 `benchmarks/bench_common.py`: 사례(파일·줄 범위 또는 진입 함수·기대 CWE·취약/안전·제외 사유)에 지적을 대응시키고, 분석하지 못한 사례는 TN·FN이 아니라 따로 센다. OWASP Benchmark 측정기가 이를 쓴다.
+- 의미 변형 사례집에 파일 경계를 넘는 변형 3종(그대로 돌려주는 함수, 두 파일 사슬, 다른 파일 함수 안에서 외부 입력 읽기)과 kill-rate 평가를 추가했다.
+- JavaScript·TypeScript 파일 간 오염 추적: ESM(named·default·namespace·재내보내기 1단계), CommonJS(`module.exports`, `exports.a`, `require` 구조분해·속성), 상대 경로·확장자 후보·`/index.*`, tsconfig `paths` 단일 와일드카드 별칭. 후보가 둘 이상이거나 동적 `import()`·계산된 `require`면 해석 공백으로 센다.
+- Java 파일 간 오염 추적: 명시 import·같은 패키지·와일드카드 import로 찾은 클래스의 static 메서드. 동명 클래스·같은 인자 수 중복 정의는 해석 공백, 시험 소스 클래스는 후보에서 뺀다.
+- 보고서 `metadata.cross_file.by_language`에 `resolution_gaps`·`resolution_gap_rate`를 추가했다.
+- 존재하지 않는 패키지 이름 점검: `iron-laws index build`로 받아 둔 레지스트리 이름 목록을 오프라인 색인으로 만들고, `check`·`audit --package-index`(또는 설정 `policies.package_index`)로 `package.json`·`requirements*.txt`·`pyproject.toml`·잠금 파일의 이름을 맞춘다. 색인에 없는 이름(MEDIUM)·색인 수집 시각 기준 90일 이내 게시(MEDIUM)·철자 유사(HIGH)를 한 지적으로 합치며 모두 확인 필요다. 사설 패키지 패턴은 `policies.private_packages`로 뺀다.
+
+### Changed
+- 흐름 해석이 블록·람다 바로 아래의 문장마다 직전 상태를 기록한다(Kotlin처럼 문장 노드 이름이 없는 문법에서도 상태를 조회한다).
+- 규칙은 98개에서 104개가 됐다.
+- Java 파일 간 해석이 주입 필드 호출(`field.method()`, `this.field.method()`)을 따른다: 필드 형식이 클래스면 그 클래스, 인터페이스면 구현이 하나일 때(여럿이면 `@Primary`가 하나일 때) 그 구현의 인스턴스 메서드. `@Profile`이 붙은 구현이 섞이거나 구현이 모호하면 해석 공백, 지역 변수·매개변수가 필드 이름을 가리면 해석하지 않는다.
+- IL-525가 라우트 행렬을 쓴다. 중요 기능 라우트(민감한 GET 포함)에 인증 근거가 없으면 MEDIUM, 전역 설정(Spring 보안 체인의 경로 규칙, Next.js 미들웨어 matcher, 라우트보다 뒤에 등록한 Express 미들웨어)이 이 경로에 적용되는지 정할 수 없으면 LOW로 알리며 모두 확인 필요다. Spring 보안 설정의 `permitAll`·경로별 인증 규칙과 ASP.NET `[AllowAnonymous]`를 평가한다.
+- 오염 추적이 객체 필드와 상수 키를 한 단계까지 구분한다(`obj.field`, `d['k']`, `d.get('k')`, `map.put("k", v)`/`map.get("k")`). 다른 필드·키는 오염되지 않고, 필드에 깨끗한 값을 다시 넣으면 그 필드는 깨끗하다. 객체를 통째로 넘기거나 메서드를 부르면 필드 하나라도 오염이면 오염이다. 상수가 아닌 키와 더 깊은 경로는 객체 전체로 본다.
+- 오염된 인자 없이 도는 재귀·순환 호출의 반환값은 오염 없음에서 시작해 다른 반환 경로의 오염을 따른다(최소 고정점). 외부 입력이 없는 재귀 함수(디렉터리 순회 등)를 오염으로 보지 않는다. 오염된 인자가 재귀로 넘어가면 이전처럼 오염으로 본다.
+- `limits.max_cross_file_lookups`는 점검 전체가 아니라 관심 지점(호출 하나의 판정)마다 적용되는 해석 횟수 상한이다.
+- 분석 한도 진단의 건수는 한도에 걸린 서로 다른 위치(함수·호출)의 수다.
+
+### Fixed
+- Java 서블릿 요청 입력을 변수 이름이 `request`일 때만 인식하던 문제를 고쳤다. `req`·`httpRequest`·`pReq`처럼 흔한 이름의 `getParameter`·`getHeader` 등도 외부 입력이다.
+- 라우트 행렬이 다른 Express 라우터에 건 인증 미들웨어를 `app` 라우트에도 적용하던 문제를 고쳤다. 라우터에 건 미들웨어는 그 라우터의 라우트에만 적용한다.
+- 경로 조작(IL-502)이 압축 해제 경로 조작(Zip Slip)을 놓치던 문제를 고쳤다. 압축·메일 첨부 API(`java.util.zip`·`java.util.jar`·commons-compress·zip4j·plexus-archiver·javax.mail, Python `zipfile`·`tarfile`, JavaScript adm-zip·yauzl·unzipper 등)를 가져온 파일에서 항목 이름(`entry.getName()`, `getNextEntry()`, `namelist()`, `entry.entryName` 등)을 외부 입력으로 본다. 압축 항목의 `getName()`·`getFileName()`은 파일 이름만 남기는 정제로 보지 않는다.
+- Flink `HandlerRequest.getPathParameter`, Vert.x `RoutingContext.normalisedPath`·`pathParam`, Undertow `HttpServerExchange.getRelativePath` 등 요청 경로·파라미터를 외부 입력으로 본다.
+- 반복문이나 분기 안에서 항목마다 하는 기준 폴더 검사(`if (!f.toPath().normalize().startsWith(dir)) throw`)를 인정하지 않아 오탐을 내던 문제를 고쳤다. 검사와 접근을 함께 감싸는 가장 가까운 블록 안에서 검사가 무조건 실행되는지 본다. 다른 조건문 안에만 있는 검사는 계속 인정하지 않는다.
+- 기준 폴더 검사와 접근이 같은 조건문의 서로 다른 분기에 있으면 검사를 인정하지 않는다.
+- 정규화한 경로를 다른 변수에 담아 검사하는 형태(`String c = f.getCanonicalPath(); if (!c.startsWith(base)) throw`)를 같은 경로의 검사로 인정한다.
+- Java `new File(x).getName()`·`new File(x).getCanonicalPath()`처럼 파일에 접근하지 않고 이름·정규 경로만 계산하는 `new File`을 경로 접근으로 지적하지 않는다. `Files.copy(in, target)`의 스트림·내용 인자를 경로 인자로 보지 않는다.
+- `iron-laws deps`가 `pnpm-lock.yaml`에서 같은 이름의 패키지를 첫 버전만 점검하던 문제를 고쳤다. 모든 버전을 점검한다.
+- `package-lock.json`의 의존 관계를 이름으로 합쳐, 중첩 설치된 다른 버전을 쓰는 패키지를 최상위 버전의 부모로 표시하던 문제를 고쳤다. npm의 설치 위치 해석 순서를 따른다.
+- JavaScript·TypeScript에서 `obj.f = 외부 입력` 뒤 `obj.f`를 쓰는 흐름을 놓치던 문제를 고쳤다.
+- Python에서 `obj.f`에 상수를 넣으면 객체 전체의 오염이 지워지던 문제를 고쳤다.
+- 식 안에 끼어 있는 프로젝트 함수 호출이 함수 안에서 읽은 외부 입력을 돌려줄 때(`'ls ' + read_input(request)`) 식 전체를 오염으로 보지 않던 문제를 고쳤다. 인자 자리의 이런 호출도 도우미 매개변수를 오염시킨다.
+- 매개변수·지역 변수가 import 이름을 가리는 호출을 import 대상으로 해석하지 않는다.
+- 도우미 함수 호출이 4단계를 넘어 끝까지 따라가지 못한 경로를 안전으로 판정하던 문제를 고쳤다. 판정 불가로 두고 인자의 오염이 결과로 전해진다고 보며, 분석 한도 진단과 장부의 `budget_exceeded`로 남긴다.
+- Python에서 import한 함수와 같은 이름의 메서드·지역 함수가 있으면 지역 쪽만 따라가던 문제를 고쳤다. 메서드는 맨 이름 호출의 대상에서 빼고, import와 지역 정의가 함께 있으면 양쪽을 모두 따라가며, 모듈 최상위에서 다시 대입한 이름은 특정 함수로 해석하지 않는다.
+- 병렬 점검의 작업 프로세스 수나 파일을 분석한 순서에 따라 지적·장부 상태·분석 한도 건수가 달라질 수 있던 문제를 고쳤다. 작업 프로세스의 한도 건수와 해석 통계를 합산하고, 메모리 절약으로 버린 구문 트리를 파일 간 해석에서 다시 쓰지 않는다.
+- IL-101이 형식 표기가 붙은 비밀번호 대입(TypeScript `password: string = "..."`, Python `password: str = "..."`)을 놓치던 문제를 고쳤다.
+- IL-101이 `bypass`·`passed`처럼 `pass`가 다른 단어의 일부인 이름과, `34/34` 같은 비율·f-string 자리표시자만 있는 값을 비밀번호로 지적하던 문제를 고쳤다.
+- IL-502가 C#에서 `System.IO.File.ReadAllText(...)`처럼 이름 공간을 붙여 부른 파일 API를 싱크로 보지 않던 문제를 고쳤다.
+- Python에서 `d[1]`과 `d["1"]`을 같은 칸으로 보아, 문자열 키에 상수를 넣으면 정수 키의 오염이 지워지던 문제를 고쳤다.
+- 사용자 명세(`policies.custom_spec`)의 소스·정제 함수가 `languages`에 적지 않은 언어에도 적용되던 문제를 고쳤다.
+- 라우트 행렬이 `app.use('/public', authenticate)`처럼 경로를 준 인증 미들웨어를 모든 라우트의 인증으로 보던 문제를 고쳤다. 그 경로 아래 라우트에만 적용한다.
+- Go 파일 간 해석이 표준 라이브러리(`strings` 등)나 다른 모듈의 import를 같은 이름의 프로젝트 폴더로 연결하던 문제를 고쳤다. `go.mod`의 모듈 경로로 import 경로를 맞춘다.
+- `iron-laws mcp`의 점검이 기준 폴더 밖을 가리키는 심볼릭 링크 파일을 읽던 문제를 고쳤다. 그런 파일은 건너뛰고, 밖을 가리키는 설정 파일과 링크가 든 폴더의 패치 검증은 거부한다.
+- 독립 검증기가 `standards`나 `metadata.standard_packs`의 형식이 틀린 보고서에서 멈추던 문제를 고쳤다. `standards.shape` 문제로 보고한다.
+- SPDX 출력에서 이름이 바뀐 글자만 다른 패키지(`a_b`와 `a-b`)가 같은 `SPDXID`를 받던 문제를 고쳤다.
+- `--triage-model` 응답의 `verdict`가 문자열이 아니면 점검이 멈추던 문제를 고쳤다. 그 항목만 버린다.
+- 한 줄에 중첩된 위험 호출(`open(os.path.join(BASE, f))`)이 있으면 장부가 바깥 호출의 지적을 안쪽 지점에 연결하고, 점검 결과의 자체 정합성 검사가 이를 모순으로 보아 점검 전체를 불완전으로 끝내던 문제를 고쳤다. 장부 지점에 연결한 열을 `linked_columns`로 남긴다.
+
 ## [1.5.0] - 2026-10-11
 
 ### Added

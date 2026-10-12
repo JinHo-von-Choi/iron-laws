@@ -1,0 +1,12 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          { "type": "command", "command": "iron-laws hook claude-code --fail-on HIGH" }
+        ]
+      }
+    ]
+  }
+}

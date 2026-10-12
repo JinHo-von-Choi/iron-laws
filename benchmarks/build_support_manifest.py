@@ -30,6 +30,9 @@ CASE_SOURCES = [
     ("tests.test_review_findings", "FLOW_CASES"),
     ("tests.test_ai_attack_cases", "CASES"),
     ("tests.test_performance_cases", "CASES"),
+    ("tests.test_go_php_cases", "CASES"),
+    ("tests.test_go_php_cases", "KOTLIN_CASES"),
+    ("tests.test_support_cells", "CASES"),
 ]
 ALIASES = {"tsx": "typescript"}
 

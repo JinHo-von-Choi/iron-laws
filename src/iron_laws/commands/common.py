@@ -50,6 +50,10 @@ app.add_typer(baseline_app, name="baseline")
 app.add_typer(feedback_app, name="feedback")
 app.add_typer(evidence_app, name="evidence")
 app.add_typer(pilot_app, name="pilot")
+index_app = typer.Typer(help="오프라인 패키지 색인: 사용자가 받아 둔 레지스트리 이름 목록을 의존성 이름 점검용 색인으로 바꿉니다(네트워크를 쓰지 않습니다)")
+app.add_typer(index_app, name="index")
+spec_app = typer.Typer(help="사용자 명세: 프로젝트 고유의 소스·싱크·정제 함수 초안을 만들고, 사람이 채운 예제로 확인합니다")
+app.add_typer(spec_app, name="spec")
 console = Console()  # 사람이 읽는 본문(표·보고서)은 stdout
 err = Console(stderr=True)  # 상태·오류 메시지는 stderr. JSON·SARIF 같은 기계용 stdout을 오염시키지 않는다
 
@@ -81,6 +85,12 @@ MetricsOpt = typer.Option(
 )
 ApprovalsOpt = typer.Option(
     None, "--approvals", help="승인 기록 파일. 지정하면 전제가 유지되는 유효한 승인만 받아들이고, 전제가 바뀐 승인은 다시 검토 대상으로 셉니다"
+)
+TriageOpt = typer.Option(
+    None, "--triage-model", help="'확인 필요' 지적에 LLM 검토 의견을 붙일 명령(표준 입력으로 지시문을 받아 JSON을 출력). 예: \"claude -p\". 비밀값을 가린 코드 조각을 그 명령에 보냅니다. 판정은 바꾸지 않습니다"
+)
+PackageIndexOpt = typer.Option(
+    None, "--package-index", help="오프라인 패키지 색인 폴더(iron-laws index build로 만든 것). 의존성 이름이 레지스트리에 없거나 최근 게시된 패키지면 확인 필요로 알립니다"
 )
 ChangedSinceOpt = typer.Option(
     None, "--changed-since", help="이 git 기준(브랜치·커밋)보다 바뀐 파일의 지적만 표시합니다. 전체 점검과 정기적으로 대조하십시오"
@@ -115,6 +125,8 @@ class ReportFormat(StrEnum):
     SARIF = "sarif"
     PROMPT = "prompt"
     REVIEW = "review"
+    GITLAB = "gitlab-codequality"
+    MOIS = "mois-report"
 
 
 def _tool_version() -> str:
@@ -182,6 +194,7 @@ def _build_scanner(
     approvals: Path | None = None,
     collect_dependencies: bool = False,
     gates: dict[str, float] | None = None,
+    package_index: Path | None = None,
 ) -> AuditScanner:
     try:
         loaded_contract = None
@@ -213,7 +226,12 @@ def _build_scanner(
             approvals=ApprovalStore(approvals) if approvals else None,
             collect_dependencies=collect_dependencies,
         )
-        return AuditScanner.from_options(options)
+        scanner = AuditScanner.from_options(options)
+        if package_index is not None:
+            if not (package_index / "manifest.json").is_file():
+                raise ConfigError(f"패키지 색인 폴더에 manifest.json이 없습니다: {package_index}")
+            scanner.config.policies.package_index = str(package_index)  # 명령행 옵션이 설정 파일보다 우선한다
+        return scanner
     except ConfigError as e:
         label = "입력 오류" if isinstance(e, InputPathError) else "설정 오류"
         err.print(f"[bold red]{label}: {escape(str(e))}[/bold red]")
@@ -281,6 +299,22 @@ def _emit_report(
         _write_or_print(generate_json_report(report), output, "JSON 보고서")
     elif report_format is ReportFormat.SARIF:
         _write_or_print(generate_sarif_report(report, scanner.rules, _tool_version()), output, "SARIF 보고서")
+    elif report_format is ReportFormat.MOIS:
+        from iron_laws.reporters.mois_report import generate_mois_report, write_mois_docx
+
+        if output is not None and output.suffix.lower() == ".docx":
+            try:
+                write_mois_docx(report, scanner.rules, output)
+            except RuntimeError as e:
+                err.print(f"[bold red]{escape(str(e))}[/bold red]")
+                raise typer.Exit(2) from e
+            err.print(f"[bold green]감리 대응 보고서가 저장되었습니다: {output}[/bold green]")
+        else:
+            _write_or_print(generate_mois_report(report, scanner.rules), output, "감리 대응 보고서")
+    elif report_format is ReportFormat.GITLAB:
+        from iron_laws.reporters.gitlab import generate_gitlab_report
+
+        _write_or_print(generate_gitlab_report(report), output, "GitLab Code Quality 보고서")
     elif report_format is ReportFormat.REVIEW:
         _write_or_print(generate_review_report(report, scanner.rules, _tool_version()), output, "검토 의견서")
     else:

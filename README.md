@@ -138,26 +138,58 @@ AI가 고친 코드를 승인할 때 "무엇을 확인했고 무엇을 확인하
 
 ---
 
-## 점검 영역 (규칙 98개)
+## 코딩 에이전트에서 쓰기: MCP 서버
+
+Claude Code, Cursor 같은 코딩 에이전트가 점검과 검증을 직접 부를 수 있게 MCP 서버(stdio)를 제공합니다.
+
+```bash
+pip install 'iron-laws[mcp]'
+iron-laws mcp --root /path/to/project --server-config ~/.config/iron-laws/server.yml
+```
+
+```yaml
+# server.yml (점검 대상 폴더 밖에 둡니다)
+test_presets:
+  unit:
+    command: [python, -m, pytest, -q]
+    image: python:3.13-slim
+    timeout: 180
+```
+
+- 도구: `check`, `explain`, `fix_prompt`, `verify_patch`, `deps`. 입력 이름은 CLI 옵션과 같습니다.
+- 경로 입력은 `--root` 안에서만 받습니다. 심볼릭 링크를 풀어 밖을 가리키면 거부합니다.
+- 에이전트는 시험 명령을 직접 넘길 수 없고, 서버 설정에 정의된 `test_presets`의 이름만 고를 수 있습니다. 서버 설정 파일이 점검 폴더 안에 있으면 서버를 띄우지 않으며, 저장소 안의 설정은 시험 명령과 실행 이미지의 근거로 쓰지 않습니다.
+- `verify_patch`에 `regression_spec`을 주면 정적 지적이 사라졌는지와 별도로 결함 행동이 사라졌는지(원본 실패·수정본 통과·되돌린 코드 실패)를 돌려줍니다.
+
+**훅으로 자동 점검하기**
+
+| 대상 | 설정 | 동작 |
+|---|---|---|
+| Claude Code | [docs/ci/claude-code-settings.json](docs/ci/claude-code-settings.json)의 `hooks`를 `.claude/settings.json`에 넣습니다 | 파일을 고칠 때마다 `iron-laws hook claude-code`가 그 파일을 점검하고, HIGH 이상 지적이 있으면 지적과 고치는 방법을 에이전트에게 돌려줍니다(종료코드 2). PostToolUse 입력 형식은 Claude Code 2.1.296으로 시험했습니다. |
+| pre-commit | [docs/ci/pre-commit-config.yaml](docs/ci/pre-commit-config.yaml) | 커밋 전에 `iron-laws check .`를 실행하고 HIGH 이상 지적이 있으면 커밋을 막습니다. pre-commit 4.3.0으로 시험했습니다. |
+| GitHub Actions | [docs/ci/github-actions.yml](docs/ci/github-actions.yml) | SARIF를 Code Scanning에 올리고 HIGH 이상이면 실패합니다. |
+| GitLab CI | [docs/ci/gitlab-ci.yml](docs/ci/gitlab-ci.yml) | merge request Code Quality 위젯에 지적을 표시합니다. |
+
+## 점검 영역 (규칙 104개)
 
 | 분류 | 내용 | 근거 표기 |
 |---|---|---|
 | 기준 규칙 (IL-1xx, 3xx, 5xx) | 행안부 구현단계 49개 항목 전체: SQL·명령어·경로·코드 삽입, XSS, SSRF, XXE, 하드코딩된 비밀, 취약 암호, 인증서 검증 해제, 오류 처리, 역직렬화, 메모리 안전성 등 | 항목 번호와 CWE |
 | AI 코드 보정 (AI-1xx) | 하드코딩 설정값, 비밀 기본값 폴백, 프런트엔드 노출 비밀, 커밋된 `.env`, CORS, Supabase RLS·Firebase 규칙, Docker·CI 위험 설정, 의존성 오타·미고정, 민감정보 로깅, IDOR, 쿠키 속성 | 오철칙 자체 규칙 |
 | 구조 (ARC-2xx) | 과대한 함수·파일, 요청 처리기의 DB 직접 접근, 계층 위반과 의존 방향 위반(하위 계층이 상위 계층을 import, 컨트롤러가 서비스 없이 저장소 호출, 컨트롤러·서비스의 DB 드라이버 직접 사용, 서비스·저장소의 웹 프레임워크 의존), 순환 의존, 중복·유사 함수, 반복된 문자열 상수, 테스트 부재 | 오철칙 자체 규칙 |
-| AI 에이전트 공격면 (AIA-1xx) | AI 코딩 도구 규칙 파일(`AGENTS.md`, `CLAUDE.md`, `.cursorrules`, `.mdc` 등)에 사람 눈에 안 보이는 문자로 숨긴 지시와 비밀 유출·무단 실행을 시키는 문장, MCP 서버 설정의 버전 미고정 실행·평문 비밀·원격 서버 인증 누락, `trust_remote_code=True`와 위험한 모델 불러오기 | 오철칙 자체 규칙, OWASP LLM·Agentic 참조 |
+| AI 에이전트 공격면 (AIA-1xx) | AI 코딩 도구 규칙 파일(`AGENTS.md`, `CLAUDE.md`, `.cursorrules`, `.mdc` 등)에 사람 눈에 안 보이는 문자로 숨긴 지시와 비밀 유출·무단 실행을 시키는 문장, MCP 서버 설정의 버전 미고정 실행·평문 비밀·원격 서버 인증 누락, `trust_remote_code=True`와 위험한 모델 불러오기, LLM 응답을 검증 없이 실행·명령·SQL에 쓰는 코드, 웹 입력이 시스템 지시 자리에 들어가는 코드, MCP 서버 도구 설명의 숨은 지시와 무검증 경로·명령 인자 | 오철칙 자체 규칙, OWASP LLM·Agentic 참조 |
 | 성능 (PERF-1xx) | 한 함수의 DB 조회 과다, 중첩 반복과 반복 안의 리스트 찾기, 반복 안의 인터넷 요청·`await` 순차 대기, 한도 없는 `SELECT`, 비동기 함수 안의 막는 호출 | 오철칙 자체 규칙. 모두 `확인 필요` 등급 |
 | 타입 안전성 (TYP-3xx) | TypeScript `any`·`@ts-ignore`·`tsconfig` 느슨함, Python `type: ignore`·`cast`, Java 원시 타입, C# `dynamic`·`#nullable disable`, Go·Rust·C++·PHP·JS의 타입 우회 | 오철칙 자체 규칙 |
 
-참고한 공개 가이드(행안부 SW 개발보안 가이드)의 항목과 대응하는 규칙에는 항목 번호를 붙이고, 대응이 없는 규칙은 보고서에 `오철칙 자체 품질 규칙 (참고 가이드 항목 외)`로 구분 표기합니다.
+참고한 공개 가이드(행안부 SW 개발보안 가이드)의 항목과 대응하는 규칙에는 항목 번호를 붙이고, OWASP Top 10:2025·OWASP 에이전트 Top 10 2026·CWE Top 25 2025·국가정보원 AI보안 가이드북(2025)의 대응 항목은 보고서 `standards`와 `iron-laws coverage --standard`로 함께 보여 줍니다(이 대응표는 사람이 판본별로 확인하기 전까지 `미확인`으로 표시). 그 밖에 대응이 없는 규칙은 보고서에 `오철칙 자체 품질 규칙 (참고 가이드 항목 외)`로 구분 표기합니다.
 49개 항목 모두에 점검 규칙이 있으며(2-16 인증시도 제한은 IL-532), 설계단계 20개 항목도 구현 규칙과 대응시켜 `iron-laws coverage`와 마크다운 보고서에 보여 줍니다. 5-3, 5-4 등 일부 항목은 C/C++에만 적용됩니다. `지적 없음`은 탑재된 규칙 범위에서 발견되지 않았다는 뜻입니다.
 
 ### 지원 언어
 
 | 수준 | 언어 | 내용 |
 |---|---|---|
-| 깊게 | Python, JavaScript/TypeScript, Java, C# | 구문 분석, 외부 입력 추적(함수 안 분기 합류·같은 파일 도우미 함수, Python은 파일 간), 전체 규칙 |
-| 기본 | Go, PHP | 구문 분석, 주요 주입·오류 처리·암호 규칙 |
+| 깊게 | Python, JavaScript/TypeScript, Java, C#, Go, PHP | 구문 분석, 외부 입력 추적(함수 안 분기 합류·객체 필드 한 단계·같은 파일 도우미 함수), 파일 간 추적(Python, JavaScript/TypeScript, Java static·주입 필드, Go 같은 패키지·import, PHP require·static), 전체 규칙 |
+| 기본 | Kotlin | 구문 분석, Spring `@RequestParam`·Ktor `call.parameters` 입력에서 명령·SQL 등 JVM 싱크까지의 추적 |
 | 제한 | Rust, C/C++ | 오류 처리, 메모리·포맷 문자열·API, 타입 우회 |
 | 설정·정의 파일 | SQL, YAML, JSON, `.env`, Dockerfile, Compose, GitHub Actions, XML(MyBatis), HTML 템플릿 | 비밀, 접근 규칙(RLS·Firebase), 배포 설정, 템플릿 이스케이프 |
 
@@ -181,9 +213,39 @@ iron-laws deps . --advisory-db osv --fail-on high  # HIGH 이상 권고가 있�
 ```
 
 - 점검 중에는 네트워크를 쓰지 않고 코드나 의존성 목록을 어디로도 보내지 않습니다. 권고 목록은 직접 받아 둔 파일을 씁니다.
+- `--reachability`를 붙이면 권고가 영향 함수를 알려 줄 때 코드가 그 함수를 부르는지 봅니다(`reachable`·`no_evidence`·`undetermined`). `no_evidence`는 호출을 찾지 못했다는 뜻이지 영향이 없다는 뜻이 아닙니다.
+- `--format openvex`는 OpenVEX 0.2.0 문서를 씁니다. 자동으로는 `affected`(영향 함수 호출 확인)와 `under_investigation`만 쓰고, `not_affected`는 `--vex-decisions`로 준 사람의 판정 기록에 OpenVEX justification이 있을 때만 씁니다.
 - "수정 경계"는 권고가 말하는 수정 버전입니다. 그 버전이 앱과 호환된다는 보증이 아니므로, 올린 뒤 테스트를 돌리십시오. 직접 의존인지 간접 의존인지, 어떤 패키지가 끌어오는지 함께 보여 줍니다.
 - 권고가 Git 커밋 범위만 주거나 해석할 수 없으면 "영향 여부 판정 불가"로 따로 표시합니다. 영향이 없다는 뜻이 아닙니다.
 - 잠금 파일이 없으면 버전을 알 수 없어 점검하지 않습니다.
+
+**SBOM: `iron-laws sbom`**
+
+잠금 파일로 CycloneDX 1.6 또는 SPDX 2.3 JSON SBOM을 만듭니다. 구성요소는 package URL로 적고, 의존 관계는 잠금 파일이 알려 주는 버전 단위 관계만 씁니다(npm은 실제 설치 위치 해석 순서, pnpm은 버전별). `requirements.txt`처럼 관계 정보가 없는 입력은 관계를 추정하지 않고 비워 둡니다.
+
+```bash
+iron-laws sbom . --format cyclonedx -o sbom.cdx.json
+iron-laws sbom . --format spdx -o sbom.spdx.json --timestamp 2026-10-12T00:00:00Z
+```
+
+**존재하지 않는 패키지 이름: `--package-index`**
+
+AI가 지어낸 패키지 이름은 나중에 누군가 같은 이름으로 악성 패키지를 올리면 그대로 설치됩니다. 레지스트리의 전체 이름 목록을 받아 오프라인 색인으로 만들어 두면, `check`·`audit`가 `package.json`, `requirements*.txt`, `pyproject.toml`과 잠금 파일(직접·간접 의존 모두)의 이름을 색인과 맞춥니다.
+
+```bash
+# PyPI 전체 이름 목록(PEP 691 JSON)을 받아 색인으로 바꾼다
+curl -H "Accept: application/vnd.pypi.simple.v1+json" -o pypi.json https://pypi.org/simple/
+iron-laws index build --ecosystem pypi --source pypi.json --out pkg-index \
+  --source-name "pypi.org/simple" --collected-at 2026-10-01T00:00:00Z --complete
+
+iron-laws audit . --package-index pkg-index
+```
+
+- 색인에 없는 이름은 `확인 필요`(MEDIUM), 인기 패키지와 한 글자 다른 이름은 `확인 필요`(HIGH)로 알리며, 둘이 겹치면 한 지적으로 합칩니다.
+- 최초 게시일이 들어 있는 목록이면 색인 수집 시각 기준 90일 이내에 처음 게시된 패키지도 알립니다. 기준이 실행 날짜가 아니므로 같은 색인이면 결과가 같습니다.
+- `--complete`를 붙이지 않은 색인(일부 목록)이나 이 프로젝트가 쓰는 에코시스템의 색인이 없으면 "없는 이름"은 판정하지 않고 진단으로 알립니다. 색인 파일이 manifest.json의 sha256과 다르면 쓰지 않습니다.
+- `workspace:`·`file:`·Git·URL 의존과 설정 `policies.private_packages`(예: `['@acme/*']`)에 맞는 사설 패키지는 공개 색인과 맞추지 않습니다.
+- 코드의 import 이름도 맞춥니다: JavaScript·TypeScript는 npm 색인으로, Python은 모듈→배포 매핑 색인(`--ecosystem pypi-modules`, 한 줄에 `모듈 배포이름`)이 있을 때만 판정합니다. 표준 라이브러리·Node 내장 모듈·프로젝트 안의 모듈은 제외합니다.
 
 **프로젝트 구조 진단: `iron-laws architecture`**
 
@@ -200,9 +262,31 @@ iron-laws architecture . --compare before.json    # 이전 진단과 지표 비�
 
 ---
 
+## 편집기·검토 보조
+
+- **LSP 서버** `iron-laws lsp`: 편집기에 연결하면 파일을 열거나 고칠 때마다 그 내용을 점검해 진단으로 보여 줍니다(저장하지 않은 내용 포함, 파일 한 개 단위).
+- **LLM 검토 의견** `check`·`audit --triage-model "<명령>"`: '확인 필요' 지적을 지정한 LLM 명령에 묶어 보내고 의견(`likely_true`·`likely_false`·`unsure`)을 보고서의 `review_opinion`에만 담습니다. 판정·심각도·통과 여부는 바꾸지 않으며, 보내는 코드는 비밀값을 가린 조각입니다.
+- **AI 습관 추이** `iron-laws habits`: 점검마다 다섯 습관(하드코딩·구조 붕괴·삼킨 예외·중복 헬퍼·타입 회피)의 1천 줄당 지적 수를 `.iron-laws-habits.jsonl`에 기록하고 처음·직전·최근 값을 보여 줍니다. 코드·경로는 기록하지 않습니다.
+
+## 감리 대응 보고서
+
+`iron-laws audit . --format mois-report -o 감리대응.md`는 행안부 구현단계 49개 항목별로 지적, 잔존(억제 주석의 사유·만료일, 승인 기록), 미점검 사유(규칙 미탑재·수동 확인 항목, 근거 장부의 공백, 건너뛴 파일)를 정리합니다. 출력 파일을 `.docx`로 주면 Word 문서로 씁니다(선택 의존성 `pip install 'iron-laws[docx]'`).
+
 ## 쉬운 설명과 수정 지시문
 
 모든 지적에는 세 가지가 붙습니다: 무슨 문제인지, 왜 위험한지(쉬운 말), 어떻게 고치는지. `fix-prompt`는 지적을 심각도 순으로 모아 코딩 AI에게 줄 지시문으로 바꿉니다. 지시문에는 "오류를 조용히 삼키지 않는다, 비밀을 코드에 쓰지 않는다, 타입 검사를 덮지 않는다, 중복 함수를 새로 만들지 않는다" 같은 수정 원칙이 함께 들어갑니다.
+
+## 프로젝트 고유의 입력·위험 함수 알려 주기
+
+사내 프레임워크의 입력 함수나 명령 실행을 감싼 함수처럼 오철칙이 모르는 것은 사용자 명세로 더합니다. 초안은 코드에서 후보를 찾아 만들고(`--llm-cmd`로 LLM 제안을 더할 수 있습니다), 사람이 각 항목에 지적되어야 하는 코드(`positive`)와 지적되지 않아야 하는 코드(`negative`)를 채웁니다. 모든 예제가 기대대로 판정될 때만 불러오며, 하나라도 어긋나면 점검을 시작하지 않습니다.
+
+```bash
+iron-laws spec draft . -o iron-laws-spec.yml      # 후보 초안(예제는 비어 있음)
+iron-laws spec check iron-laws-spec.yml           # 예제 확인(어긋나면 종료코드 1)
+# .iron-laws.yml
+# policies:
+#   custom_spec: iron-laws-spec.yml
+```
 
 ## 지적을 억제하려면
 
@@ -254,6 +338,8 @@ jobs:
           sarif_file: iron-laws.sarif
       - run: iron-laws check . --fail-on HIGH
 ```
+
+GitLab에서는 `audit --format gitlab-codequality`로 merge request의 Code Quality 위젯에 지적을 표시합니다. 예시는 [docs/ci/gitlab-ci.yml](docs/ci/gitlab-ci.yml)에 있습니다. 지문은 기준선과 같은 지문을 써서 코드가 같으면 같은 지적으로 이어집니다.
 
 ---
 

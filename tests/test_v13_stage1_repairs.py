@@ -454,6 +454,9 @@ def test_nested_calls_in_one_flow_share_one_finding(tmp_path: Path):
     path_points = [p for p in report.coverage_ledger.points if p.family == "path"]
     assert len(report.violations) == 1 and path_points
     assert all(report.violations[0].finding_id in p.finding_ids for p in path_points if p.state == "evidence_met")
+    # 다른 열의 지적을 연결한 지점은 그 열을 linked_columns에 남겨, 점검 결과의 자체 정합성 검사가 모순으로 보지 않는다
+    assert report.summary.scan_status == "complete"
+    assert any(p.linked_columns == [report.violations[0].column] for p in path_points if p.column != report.violations[0].column)
 
 
 

@@ -14,6 +14,7 @@ from iron_laws.core.models import (
     Diagnostic,
     ExecutionRecord,
     Severity,
+    StandardRef,
     Violation,
 )
 from iron_laws.core.redaction import (
@@ -28,6 +29,7 @@ from iron_laws.core.scan_constants import (
     tool_version,
 )
 from iron_laws.engine.source import SourceFile
+from iron_laws.standards.pack_registry import all_packs
 
 
 @dataclass
@@ -151,6 +153,9 @@ class ScanResultBuilder:
             "unscanned_by_extension": dict(self._unscanned_ext.most_common(20)),
             "cross_file": self._cross_file,
             "repo_relative_prefix": self._repo_relative_prefix(),
+            "standard_packs": [pack.describe() for pack in all_packs()],
+            "routes": _route_summary(self._routes),
+            "suppressions": sorted(self._suppression_rows, key=lambda r: (r["path"], r["line"], r["rule_id"]))[:MAX_ROUTE_ROWS],
         }
         if scope_note:
             metadata["scope"] = scope_note
@@ -234,7 +239,10 @@ class ScanResultBuilder:
 
         table = self._trust_table()
         lang_of = {s.path.as_posix(): FIXTURE_LANG_ALIASES.get(s.lang.value, s.lang.value) for s in sources if s.lang is not None}
+        from iron_laws.standards.pack_registry import refs_for
+
         for v in violations:
+            v.standards = [StandardRef(**ref) for ref in refs_for(v.rule_id)]
             lang = lang_of.get(v.file_path.as_posix())
             if lang is not None and (v.rule_id, lang) in table:
                 v.verification_grade = "verified" if table[(v.rule_id, lang)] else "unverified"
@@ -309,3 +317,22 @@ class ScanResultBuilder:
                 )
             )
         return checks
+
+
+MAX_ROUTE_ROWS = 500
+
+
+def _route_summary(rows: list[dict]) -> dict:
+    """라우트 접근통제 행렬 요약. 중요 기능 라우트의 행을 함께 싣는다(인증 근거가 없거나 정할 수 없는 행이 먼저)."""
+    sensitive = [r for r in rows if r.get("sensitive")]
+    order = {"no": 0, "unknown": 1, "yes": 2}
+    listed = sorted(sensitive, key=lambda r: (order.get(r["auth"], 3), r["file"], r["line"]))
+    count = lambda key, value: sum(1 for r in sensitive if r[key] == value)  # noqa: E731
+    return {
+        "total": len(rows),
+        "sensitive": len(sensitive),
+        "auth": {v: count("auth", v) for v in ("yes", "no", "unknown")},
+        "authz": {v: count("authz", v) for v in ("yes", "no", "unknown", "n/a")},
+        "rows": listed[:MAX_ROUTE_ROWS],
+        "truncated": len(listed) > MAX_ROUTE_ROWS,
+    }

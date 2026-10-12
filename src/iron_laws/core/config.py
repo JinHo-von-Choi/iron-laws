@@ -125,6 +125,18 @@ class Policies(BaseModel):
         default_factory=dict,
         description="이름별 최소 버전. 예: {spring-boot: '4.0.8', java: '21', node: '22'}",
     )
+    package_index: str | None = Field(
+        default=None,
+        description="오프라인 패키지 색인 폴더(iron-laws index build로 만든 것). 있으면 레지스트리에 없는 이름·최근 게시 패키지를 점검한다",
+    )
+    custom_spec: str | None = Field(
+        default=None,
+        description="사용자 명세 파일(소스·싱크·정제 함수). 모든 항목의 양성·음성 예제가 기대대로 판정될 때만 불러온다",
+    )
+    private_packages: list[str] = Field(
+        default_factory=list,
+        description="사설 레지스트리 패키지 이름 패턴(glob). 예: ['@acme/*', 'acme-*']. 공개 색인 점검에서 뺀다",
+    )
 
 
 class ConfigError(Exception):

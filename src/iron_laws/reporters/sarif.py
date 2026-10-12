@@ -161,6 +161,7 @@ def generate_sarif_report(report: AuditReport, rules: list[BaseRule], version: s
                     "confidence": v.confidence.value,
                     "layer": v.layer.value,
                     "severity": v.severity.value,
+                    "standards": [f"{ref.pack_id}:{ref.item_id}" for ref in v.standards],
                 },
             }
         )

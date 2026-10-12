@@ -161,6 +161,88 @@ OPERATORS: dict[str, Callable[[str, str], str]] = {
 }
 
 
+# ---------------------------------------------------------------------------
+# 파일 경계를 넘는 변형 연산: 외부 입력을 다른 파일의 함수에 통과시켜도 판정이 같아야 한다.
+# 적용할 수 없는 언어·사례는 None을 돌려주고 변형 수에 넣지 않는다.
+# ---------------------------------------------------------------------------
+
+_PY_SOURCE = re.compile(r"\brequest\.\w+(?:\[[^\]\n]*\]|\.get\([^)\n]*\))")
+XF_PASSTHRU = {"xf_relay.py": "def passthru(value):\n    return value\n"}
+XF_CHAIN = {
+    "xf_relay.py": "from xf_core import forward\n\n\ndef relay(value):\n    return forward(value)\n",
+    "xf_core.py": "def forward(value):\n    return value\n",
+}
+
+
+_JS_SOURCE = re.compile(r"\breq\.(?:query|body|params|headers|cookies)(?:\.\w+|\[[^\]\n]*\])")
+XF_JS_PASSTHRU = {"xf_relay.js": "function passthru(value) {\n  return value;\n}\nmodule.exports = { passthru };\n"}
+XF_JS_CHAIN = {
+    "xf_relay.js": "import { forward } from './xf_core';\n\nexport function relay(value) {\n  return forward(value);\n}\n",
+    "xf_core.js": "export const forward = (value) => value;\n",
+}
+
+
+def _wrap_sources(code: str, ext: str, function: str, files: dict[str, str]) -> tuple[str, dict[str, str]] | None:
+    if ext == ".py" and _PY_SOURCE.search(code):
+        wrapped = _PY_SOURCE.sub(lambda m: f"{function}({m.group(0)})", code)
+        return f"from xf_relay import {function}\n" + wrapped, dict(files)
+    if ext in (".js", ".ts") and _JS_SOURCE.search(code):
+        js_files = XF_JS_PASSTHRU if function == "passthru" else XF_JS_CHAIN
+        wrapped = _JS_SOURCE.sub(lambda m: f"{function}({m.group(0)})", code)
+        head = f"const {{ {function} }} = require('./xf_relay');\n" if function == "passthru" else f"import {{ {function} }} from './xf_relay';\n"
+        return head + wrapped, dict(js_files)
+    return None
+
+
+def xf_import_passthru(code: str, ext: str) -> tuple[str, dict[str, str]] | None:
+    """외부 입력을 import한 다른 파일의 그대로 돌려주는 함수에 통과시킨다(JS는 CommonJS 구조분해)."""
+    return _wrap_sources(code, ext, "passthru", XF_PASSTHRU)
+
+
+def xf_import_chain(code: str, ext: str) -> tuple[str, dict[str, str]] | None:
+    """외부 입력을 두 파일을 거치는 함수 사슬에 통과시킨다(JS는 ESM)."""
+    return _wrap_sources(code, ext, "relay", XF_CHAIN)
+
+
+_PY_SOURCE_PARTS = re.compile(r"\brequest\.(\w+)(?:\[([^\]\n]*)\]|\.get\(([^)\n]*)\))")
+_JS_SOURCE_PARTS = re.compile(r"\breq\.(query|body|params|headers|cookies)(?:\.(\w+)|\[([^\]\n]*)\])")
+
+
+def xf_source_helper(code: str, ext: str) -> tuple[str, dict[str, str]] | None:
+    """외부 입력을 읽는 일 자체를 다른 파일의 함수로 옮긴다. 호출 지점에는 입력 표현이 남지 않으므로 파일 간 해석 없이는 잡을 수 없다."""
+    if ext == ".py" and _PY_SOURCE_PARTS.search(code):
+        attrs: set[str] = set()
+
+        def py(m: re.Match) -> str:
+            attrs.add(m.group(1))
+            return f"read_{m.group(1)}(request, {m.group(2) or m.group(3)})"
+
+        wrapped = _PY_SOURCE_PARTS.sub(py, code)
+        helpers = "".join(f"def read_{a}(request, key):\n    return request.{a}[key]\n\n\n" for a in sorted(attrs))
+        names = ", ".join(f"read_{a}" for a in sorted(attrs))
+        return f"from xf_input import {names}\n" + wrapped, {"xf_input.py": helpers}
+    if ext in (".js", ".ts") and _JS_SOURCE_PARTS.search(code):
+        attrs = set()
+
+        def js(m: re.Match) -> str:
+            attrs.add(m.group(1))
+            key = f"'{m.group(2)}'" if m.group(2) else m.group(3)
+            return f"read_{m.group(1)}(req, {key})"
+
+        wrapped = _JS_SOURCE_PARTS.sub(js, code)
+        helpers = "".join(f"export function read_{a}(req, key) {{\n  return req.{a}[key];\n}}\n" for a in sorted(attrs))
+        names = ", ".join(f"read_{a}" for a in sorted(attrs))
+        return f"import {{ {names} }} from './xf_input';\n" + wrapped, {"xf_input.js": helpers}
+    return None
+
+
+CROSS_FILE_OPERATORS: dict[str, Callable[[str, str], tuple[str, dict[str, str]] | None]] = {
+    "xf_import_passthru": xf_import_passthru,
+    "xf_import_chain": xf_import_chain,
+    "xf_source_helper": xf_source_helper,
+}
+
+
 def render(code: str, ext: str, operator: str | None = None) -> str:
     names = RENAMES if operator == "rename" else DEFAULT_NAMES
     text = _fill(code, names)
@@ -183,6 +265,27 @@ def _py(body: str, head: str = PY_HEAD) -> str:
 
 
 DEV_SCAN: list[ScanCase] = [
+    # ---- AI 공격면: LLM 응답·시스템 지시·MCP 도구 ----
+    ScanCase(
+        "llm-response-sql", "ai-response", "llm-py", ".py", "AIA-103",
+        "from openai import OpenAI\nclient = OpenAI()\n\ndef @FN@(cursor, q):\n    resp = client.chat.completions.create(model='m', messages=[{'role': 'user', 'content': q}])\n    @V@ = resp.choices[0].message.content\n    cursor.execute('SELECT * FROM t WHERE name = %s', (@V@,))\n",
+        "from openai import OpenAI\nclient = OpenAI()\n\ndef @FN@(cursor, q):\n    resp = client.chat.completions.create(model='m', messages=[{'role': 'user', 'content': q}])\n    @V@ = resp.choices[0].message.content\n    cursor.execute(\"SELECT * FROM t WHERE name = '\" + @V@ + \"'\")\n",
+    ),
+    ScanCase(
+        "llm-response-shell", "ai-response", "llm-js", ".js", "AIA-103",
+        "const OpenAI = require('openai');\nconst { execFile } = require('child_process');\nconst client = new OpenAI();\n\nasync function @FN@(q) {\n  const r = await client.chat.completions.create({ model: 'm', messages: [{ role: 'user', content: q }] });\n  const @V@ = r.choices[0].message.content;\n  execFile('echo', [@V@]);\n}\n",
+        "const OpenAI = require('openai');\nconst { exec } = require('child_process');\nconst client = new OpenAI();\n\nasync function @FN@(q) {\n  const r = await client.chat.completions.create({ model: 'm', messages: [{ role: 'user', content: q }] });\n  const @V@ = r.choices[0].message.content;\n  exec('echo ' + @V@);\n}\n",
+    ),
+    ScanCase(
+        "system-prompt-slot", "system-prompt", "llm-py", ".py", "AIA-104",
+        "from flask import request\nfrom openai import OpenAI\nclient = OpenAI()\n\ndef @FN@():\n    @V@ = request.args['q']\n    return client.chat.completions.create(model='m', messages=[{'role': 'system', 'content': 'You answer briefly.'}, {'role': 'user', 'content': @V@}])\n",
+        "from flask import request\nfrom openai import OpenAI\nclient = OpenAI()\n\ndef @FN@():\n    @V@ = request.args['q']\n    return client.chat.completions.create(model='m', messages=[{'role': 'system', 'content': 'Rules: ' + @V@}, {'role': 'user', 'content': 'hi'}])\n",
+    ),
+    ScanCase(
+        "mcp-tool-path", "mcp-tool", "mcp-py", ".py", "AIA-105",
+        "import os\nfrom mcp.server.fastmcp import FastMCP\nmcp = FastMCP('files')\nBASE = '/srv/docs'\n\n@mcp.tool()\ndef @FN@(@V@: str) -> str:\n    full = os.path.realpath(os.path.join(BASE, @V@))\n    if not full.startswith(BASE + os.sep):\n        raise ValueError('outside')\n    with open(full) as f:\n        return f.read()\n",
+        "import os\nfrom mcp.server.fastmcp import FastMCP\nmcp = FastMCP('files')\nBASE = '/srv/docs'\n\n@mcp.tool()\ndef @FN@(@V@: str) -> str:\n    full = os.path.join(BASE, @V@)\n    with open(full) as f:\n        return f.read()\n",
+    ),
     # ---- 허용 목록 검사 (flask) ----
     ScanCase(
         "py-cmd-allow-reassign", "allowlist", "flask", ".py", "IL-504",

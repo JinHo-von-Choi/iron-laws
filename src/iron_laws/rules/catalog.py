@@ -5,6 +5,7 @@
 """
 
 from iron_laws.core.config import ConfigError, IronLawsConfig
+from iron_laws.rules.ai_agent_surface import AGENT_SURFACE_RULES
 from iron_laws.rules.ai_attack import AIA_RULES
 from iron_laws.rules.ai_code import AI_RULES
 from iron_laws.rules.architecture import ARCH_RULES
@@ -24,6 +25,7 @@ ALL_RULES: list[type[BaseRule]] = [
     *CODE_QUALITY_RULES,
     *AI_RULES,
     *AIA_RULES,
+    *AGENT_SURFACE_RULES,
     *ARCH_RULES,
     *PERF_RULES,
     *TYPING_RULES,
@@ -59,4 +61,7 @@ def get_active_rules(
 
     if not instances:
         raise ConfigError("활성화된 규칙이 없습니다. enabled_rules와 disabled_rules를 확인하세요")
+    from iron_laws.core.custom_spec import apply_custom_spec
+
+    apply_custom_spec(instances, config.policies.custom_spec if config is not None else None)
     return instances

@@ -8,12 +8,13 @@ import fnmatch
 import hashlib
 import multiprocessing
 import os
+import re
 import sys
 from collections import Counter
 from collections.abc import Callable, Generator
 from concurrent.futures import ProcessPoolExecutor
 from concurrent.futures.process import BrokenProcessPool
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from iron_laws.core.approvals import (
     ApprovalStatusRow,
@@ -113,21 +114,43 @@ def _check_project_rule(rule: BaseRule, project: ProjectContext) -> tuple[list[V
     return violations, diagnostics
 
 
-def _scan_chunk(config_data: dict, items: list[tuple[str, str, bool]]) -> tuple[list[Violation], list[Diagnostic]]:
-    """작업 프로세스에서 파일 단위 규칙을 실행한다."""
+def _scan_chunk(config_data: dict, items: list[tuple[str, str, bool]]) -> tuple[list[Violation], list[Diagnostic], int, set, set, set]:
+    """작업 프로세스에서 파일 단위 규칙을 실행한다. 파일 간 해석 통계(한도 도달 수, 해석한 호출)도 함께 돌려준다."""
     config = IronLawsConfig(**config_data)
     rules = get_active_rules(
         enabled=config.enabled_rules, disabled=config.disabled_rules, config=config
     )
     violations: list[Violation] = []
     diagnostics: list[Diagnostic] = []
+    index = xfile.get_index()
+    before = index.limit_hits if index else 0
     for rel, content, in_test in items:
         src = SourceFile(Path(rel), content, is_test=in_test)
         found, diags = _check_file(src, rules)
         violations.extend(found)
         diagnostics.extend(diags)
         src.release()
-    return violations, diagnostics
+    if index is None:
+        return violations, diagnostics, 0, set(), set(), set()
+    return violations, diagnostics, index.limit_hits - before, set(index.resolved_keys), set(index.limit_keys), set(index.gap_keys)
+
+
+def _cross_file_by_language(index: xfile.ProjectIndex | None, sources: list[SourceFile]) -> dict[str, dict[str, int]]:
+    """해석한 호출, 해석 공백(프로젝트 안의 대상으로 보이지만 정하지 못한 호출), 한도에 걸린 위치를 호출한 파일의 언어별로 센다.
+    resolution_gap_rate = 공백 / (해석 + 공백)"""
+    if index is None:
+        return {}
+    langs = {s.path.as_posix(): (s.lang.value if s.lang else s.kind) for s in sources}
+    counts: dict[str, dict] = {}
+    gaps = {key[:3] for key in index.gap_keys}
+    for kind, keys in (("resolved_calls", index.resolved_keys), ("resolution_gaps", gaps), ("limit_hits", index.limit_keys)):
+        for key in keys:
+            lang = langs.get(key[0], "unknown")
+            counts.setdefault(lang, {"resolved_calls": 0, "resolution_gaps": 0, "limit_hits": 0})[kind] += 1
+    for row in counts.values():
+        attempted = row["resolved_calls"] + row["resolution_gaps"]
+        row["resolution_gap_rate"] = round(row["resolution_gaps"] / attempted, 4) if attempted else 0.0
+    return dict(sorted(counts.items()))
 
 
 def looks_minified(content: str) -> bool:
@@ -179,10 +202,12 @@ class AuditScanner(ScanEvidenceBuilder, ScanResultBuilder):
         directive_filter: Callable[[str, Directive], bool] | None = None,
         approvals: ApprovalStore | None = None,
         collect_dependencies: bool = False,
+        confine_root: Path | None = None,
     ):
         if not root_path.exists():
             raise InputPathError(f"점검 대상 경로가 없습니다: {root_path}")
         self.root_path = root_path.resolve()
+        self.confine_root = confine_root.resolve() if confine_root is not None else None  # 지정하면 이 폴더 밖을 가리키는 심볼릭 링크 파일은 읽지 않는다
         if config is not None:
             self.config, self.config_source = config, "코드에서 전달"
         else:
@@ -210,7 +235,9 @@ class AuditScanner(ScanEvidenceBuilder, ScanResultBuilder):
         self._excluded_files: Counter[str] = Counter()
         self._excluded_dirs: Counter[str] = Counter()
         self._unscanned_ext: Counter[str] = Counter()
-        self._cross_file: dict[str, int] = {"resolved_calls": 0, "limit_hits": 0}
+        self._cross_file: dict = {"resolved_calls": 0, "limit_hits": 0, "by_language": {}}
+        self._routes: list[dict] = []
+        self._suppression_rows: list[dict] = []
         self._secrets: set[str] = set()
         self._suppressed_lines: set[tuple[str, int, str]] = set()
         self.directives_seen: set[tuple[str, frozenset[str], str]] = set()  # 이번 점검에서 본 억제 주석(경로, 규칙, 사유)
@@ -280,6 +307,9 @@ class AuditScanner(ScanEvidenceBuilder, ScanResultBuilder):
                     self._excluded_files[pattern] += 1
                     continue
                 if self._is_included(fpath):
+                    if self.confine_root is not None and fpath.is_symlink() and not fpath.resolve().is_relative_to(self.confine_root):
+                        self._skipped.append({"path": self._relative(fpath).as_posix(), "reason": "허용된 폴더 밖을 가리키는 심볼릭 링크"})
+                        continue
                     yield fpath
                 else:
                     self._unscanned_ext[fpath.suffix.lower() or "(확장자 없음)"] += 1
@@ -345,11 +375,17 @@ class AuditScanner(ScanEvidenceBuilder, ScanResultBuilder):
         kept = []
         suppressed = 0
         self._suppressed_lines = set()
+        self._suppression_rows = []
         for v in violations:
             rules = table.get(v.file_path.as_posix())
-            if rules is not None and rules.covers(v):
+            directive = rules.covering(v) if rules is not None else None
+            if directive is not None:
                 suppressed += 1
                 self._suppressed_lines.add((v.file_path.as_posix(), v.line_number, v.rule_id))
+                self._suppression_rows.append({
+                    "rule_id": v.rule_id, "path": v.file_path.as_posix(), "line": v.line_number, "severity": v.severity.value,
+                    "reason": limit(mask_secrets(redact_text(directive.reason)), 200), "until": str(directive.expires) if directive.expires else "", "scope": directive.kind,
+                })
             else:
                 kept.append(v)
         for path, sup in table.items():
@@ -425,14 +461,20 @@ class AuditScanner(ScanEvidenceBuilder, ScanResultBuilder):
             )
             return self._run_file_rules_serial(sources)
         violations: list[Violation] = []
-        for found, diags in results:
+        index = xfile.get_index()
+        for found, diags, limit_hits, resolved_keys, limit_keys, gap_keys in results:
             violations.extend(found)
             self._diagnostics.extend(diags)
+            if index is not None:
+                index.limit_hits += limit_hits
+                index.resolved_keys |= resolved_keys
+                index.limit_keys |= limit_keys
+                index.gap_keys |= gap_keys
         return violations
 
     def _run_rules(self, sources: list[SourceFile]) -> list[Violation]:
         # 파일 간 색인은 장부 작성까지 유지한다. scan()이 끝나기 전에 지우지 않는다
-        xfile.set_index(xfile.ProjectIndex.build(sources, self.config.limits.max_cross_file_lookups))
+        xfile.set_index(xfile.ProjectIndex.build(sources, self.config.limits.max_cross_file_lookups, self.root_path))
         violations = self._run_file_rules(sources)
         project = ProjectContext(
             root=self.root_path,
@@ -445,9 +487,32 @@ class AuditScanner(ScanEvidenceBuilder, ScanResultBuilder):
             project_findings, diagnostics = _check_project_rule(rule, project)
             violations.extend(project_findings)
             self._diagnostics.extend(diagnostics)
+        self._routes = next((list(getattr(r, "last_routes", [])) for r in self.rules if r.rule_id == "IL-525"), [])
         for src in sources:
             src.release()
         return violations
+
+    def _package_index_diagnostics(self) -> list[Diagnostic]:
+        """패키지 색인을 지정했는데 읽을 수 없거나, 이 프로젝트가 쓰는 에코시스템의 색인이 없거나 불완전하면 판정 불가로 알린다."""
+        from iron_laws.deps.package_index import PackageIndexError, load_index
+
+        location = self.config.policies.package_index
+        if not location:
+            return []
+        try:
+            index = load_index(location)
+        except PackageIndexError as e:
+            return [Diagnostic(kind="package_index", severity="warning", message=f"패키지 색인을 쓸 수 없어 레지스트리 존재 여부를 판정하지 못했습니다: {e}")]
+        names = {PurePosixPath(p).name for p in self._all_paths}
+        used = set()
+        if names & {"package.json", "package-lock.json", "pnpm-lock.yaml"}:
+            used.add("npm")
+        if names & {"pyproject.toml", "uv.lock", "poetry.lock"} or any(re.fullmatch(r"requirements.*\.txt", n) for n in names):
+            used.add("pypi")
+        missing = sorted(e for e in used if index.usable(e) is None)
+        if not missing:
+            return []
+        return [Diagnostic(kind="package_index", severity="info", message=f"{', '.join(missing)} 색인이 없거나 완전한 목록이 아니어서 레지스트리에 없는 이름은 판정하지 못했습니다(철자 유사 검사만 했습니다).")]
 
     # -- 가림 --
     def _redact(self, violations: list[Violation], sources: list[SourceFile]) -> None:
@@ -532,8 +597,18 @@ class AuditScanner(ScanEvidenceBuilder, ScanResultBuilder):
             index = xfile.get_index()
             self._cross_file = {
                 "resolved_calls": index.resolved if index else 0,
-                "limit_hits": index.limit_hits if index else 0,
+                "limit_hits": len(index.limit_keys) if index else 0,
+                "by_language": _cross_file_by_language(index, sources),
             }
+            self._diagnostics.extend(self._package_index_diagnostics())
+            if index is not None and index.config_errors:
+                self._diagnostics.append(
+                    Diagnostic(
+                        kind="analysis_limit",
+                        severity="warning",
+                        message=f"tsconfig를 읽지 못해 경로 별칭 없이 파일 간 해석을 했습니다: {', '.join(sorted(index.config_errors)[:5])}",
+                    )
+                )
             xfile.set_index(None)
         if self._cross_file["limit_hits"]:
             self._diagnostics.append(

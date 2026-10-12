@@ -5,7 +5,7 @@
 최상위 키: `schema_version`, `document_id`, `title`, `auditor`, `audit_date`, `target_path`, `summary`, `violations`, `diagnostics`, `coverage_ledger`, `execution`, `approval_checks`, `metadata`.
 
 ### 버전 정책
-- `schema_version`은 `주.부` 형식이다. 현재 `1.4`(1.4에서 신뢰 지표와 상한 정책 필드, 지적의 `verification_grade`를 추가했다. 1.3에서 `finding_id`·`execution`·`approval_checks`와 장부 근거 필드를 추가했다). 독립 검증기는 1.3과 1.4를 확인하며, 그 밖의 버전은 통과가 아니라 `판정 불가`로 끝낸다([EVIDENCE_VERIFICATION.md](EVIDENCE_VERIFICATION.md)).
+- `schema_version`은 `주.부` 형식이다. 현재 `1.5`(1.5에서 지적의 선택형 `review_opinion`(LLM 검토 의견: `source`·`verdict`·`reason`, 판정에 쓰지 않음), 지적의 `standards`(기준 팩 항목: `pack_id`·`edition`·`item_id`·`item_name`·`mapping_verified`)와 `metadata.standard_packs`(팩별 `id`·`title`·`edition`·`source_url`·`retrieved_at`·`sha256`·`mapping_verified`), 장부 지점의 `linked_columns`(같은 줄의 중첩 호출 `open(os.path.join(...))`에서 함께 연결한 다른 호출 지적의 열)를 추가했다. `gov_standard`는 그대로 둔다. 1.4에서 신뢰 지표와 상한 정책 필드, 지적의 `verification_grade`를 추가했다. 1.3에서 `finding_id`·`execution`·`approval_checks`와 장부 근거 필드를 추가했다). 독립 검증기는 1.3·1.4·1.5를 확인하며, 그 밖의 버전은 통과가 아니라 `판정 불가`로 끝낸다([EVIDENCE_VERIFICATION.md](EVIDENCE_VERIFICATION.md)).
 - 키를 **추가**하면 부 버전을 올린다. 소비하는 쪽은 모르는 키를 무시해야 한다.
 - 키를 **삭제하거나 의미를 바꾸면** 주 버전을 올리고 CHANGELOG에 알린다. 주 버전이 같으면 기존 키는 유지된다.
 - 기준선 파일(`.iron-laws-baseline.json`)은 별도의 `schema_version`(정수)을 가진다. 형식이 바뀌면 이전 기준선은 읽지 않고 다시 만들도록 안내한다.
@@ -38,7 +38,7 @@
 ### `coverage_ledger`
 `contract_*`(버전·모드·범위·해시·출처), `digests`(code·tool·config·contract), `run_id`(지문 묶음에서 만든 실행 식별자 `R-…`), `requirements`(계열별 필수 여부·차단 상태. 독립 검증기가 차단 사유를 다시 계산하는 입력), `families[]`(계열별 지점 수와 상태별 수), `points[]`(계열·경로·줄·열·호출·상태·이유·범위 안 여부·지적 여부), `files[]`(분류: analyzed / unsupported_language / out_of_scope / policy_excluded / unclassified), `unclassified_changed_files`, `status`, `blockers`, `limitations`. 자세한 의미는 [PATCH_VERIFICATION.md](PATCH_VERIFICATION.md).
 
-`points[]`의 근거 필드(1.3): `finding_ids`(그 지점·계열의 규칙이 실제로 낸 확정 지적의 `finding_id`), `evidence_kind`(`finding` 지적이 났다 / `closed_value` 모든 입력이 닫혀 있다 / `guard` 규칙이 인정한 안전 조건(허용 목록·범위 검증·셸을 거치지 않는 호출) / `none`), `suppressed_rules`(이 지점에서 억제된 규칙. 억제는 그 계열 규칙에만 적용한다). `finding`은 `finding_ids`가 비어 있지 않을 때만 참이며, 장부는 흐름을 따로 평가해 지적이 있다고 추정하지 않는다.
+`points[]`의 근거 필드(1.3): `finding_ids`(그 지점·계열의 규칙이 실제로 낸 확정 지적의 `finding_id`), `evidence_kind`(`finding` 지적이 났다 / `closed_value` 모든 입력이 닫혀 있다 / `guard` 규칙이 인정한 안전 조건(허용 목록·범위 검증·셸을 거치지 않는 호출) / `none`), `suppressed_rules`(이 지점에서 억제된 규칙. 억제는 그 계열 규칙에만 적용한다). `finding`은 `finding_ids`가 비어 있지 않을 때만 참이며, 장부는 흐름을 따로 평가해 지적이 있다고 추정하지 않는다. 지점과 다른 열의 지적은 그 열이 `linked_columns`(1.5)에 있을 때만 연결할 수 있다.
 상태 계산 순서: 차단 사유가 하나라도 있으면 `unmet`(비적용·충족보다 먼저), 정책 변경이 있으면 `policy_change_review`, 차단 사유가 없고 분석한 파일이 없을 때만 `not_applicable`, 그 밖에는 `met`.
 
 ### `execution`(1.3)
@@ -52,7 +52,7 @@
 `error`가 하나라도 있으면 `scan_status`가 `incomplete`다. `consistency`는 보고서를 내보내기 전에 독립 검증기가 찾은 내부 모순이며, 있으면 통과로 내보내지 않고 `incomplete`로 표시한다.
 
 ### `metadata`
-`tool_version`, `ruleset`(규칙 수·해시·규칙별 버전), `config`·`config_source`·`config_hash`·`fail_on_source`, `files_by_language`, `skipped_files`, `excluded_summary`(제외 패턴별 파일·폴더 수), `unscanned_by_extension`(지원하지 않는 확장자 파일 수), `cross_file`(파일 간 해석 횟수와 한도 초과 수), `repo_relative_prefix`, `scope`(`--changed-since` 사용 시: `mode`·`ref`·`changed_files`·`changed_paths`·`renames`(이름이 바뀐 파일의 `from`·`to`)·`full_findings`), `baseline`. `ruleset`에는 `support_manifest`(규칙 검증 등급의 근거 지문)가 있으며 규칙 집합 `hash`에 포함된다.
+`tool_version`, `ruleset`(규칙 수·해시·규칙별 버전), `config`·`config_source`·`config_hash`·`fail_on_source`, `files_by_language`, `skipped_files`, `excluded_summary`(제외 패턴별 파일·폴더 수), `unscanned_by_extension`(지원하지 않는 확장자 파일 수), `cross_file`(파일 간 해석 횟수, 한도에 걸린 위치 수, 호출한 파일의 언어별 `resolved_calls`·`resolution_gaps`·`limit_hits`·`resolution_gap_rate` = 공백 / (해석 + 공백)), `repo_relative_prefix`, `scope`(`--changed-since` 사용 시: `mode`·`ref`·`changed_files`·`changed_paths`·`renames`(이름이 바뀐 파일의 `from`·`to`)·`full_findings`), `baseline`. `ruleset`에는 `support_manifest`(규칙 검증 등급의 근거 지문)가 있으며 규칙 집합 `hash`에 포함된다.
 
 ## SARIF (`audit --format sarif`)
 - 버전 2.1.0. 결과 위치는 **저장소 루트(`.git`이 있는 가장 가까운 상위 폴더) 기준 상대 경로**이고 `uriBaseId`는 `%SRCROOT%`, 경로 구간은 URI 인코딩된다.

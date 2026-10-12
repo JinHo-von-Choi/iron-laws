@@ -37,6 +37,10 @@ def _detail(idx: int, v: Violation) -> list[str]:
         )
     else:
         md.append(f"- **적용 기준**: {BASIS_NONE}")
+    others = [s for s in v.standards if s.pack_id != "mois-2021-impl"]
+    if others:
+        listed = ", ".join(f"{s.pack_id} {s.item_id}{'' if s.mapping_verified else '(대응표 미확인)'}" for s in others)
+        md.append(f"- **다른 기준**: {listed}")
     md.append(f"- **위치**: `{v.file_path}:{v.line_number}`")
     md.append(f"- **현황**: {v.message}")
     if v.evidence:

@@ -1,0 +1,48 @@
+{
+  "tool_version": "1.6.0 출시 전 개발 판",
+  "method": "파일 간 해석이 없는 1.5.0과 이 판을 같은 장비에서 점검해, 달라진 보안 규칙 지적을 모두 직접 분류했다(각 50건 상한). 처리 시간은 작업 프로세스 1개, 3회 중앙값.",
+  "projects": {
+    "WebGoat": {
+      "commit": "10cecda8b93f9ea1439188a6257dfb7fc9c954d5",
+      "seconds": {
+        "before": 11.74,
+        "after": 12.88,
+        "ratio": 1.1
+      },
+      "cross_file": {
+        "resolved_calls": 29,
+        "resolution_gaps": 1,
+        "resolution_gap_rate": 0.0333
+      },
+      "new": [
+        {
+          "rule": "IL-501",
+          "path": "src/main/java/org/owasp/webgoat/lessons/sqlinjection/introduction/SqlInjectionLesson9.java",
+          "line": 45,
+          "severity": "CRITICAL",
+          "verdict": "TP(조건부)",
+          "reason": "외부 입력 name·auth_tan이 SqlInjectionLesson8.log(다른 파일의 static 메서드)에서 작은따옴표만 큰따옴표로 바꾼 뒤 INSERT 문에 결합되어 실행된다. 백슬래시 이스케이프를 쓰는 DB에서는 우회되며, WebGoat가 쓰는 HSQLDB에서는 실제 우회가 어렵다."
+        }
+      ],
+      "removed": []
+    },
+    "BenchmarkJava": {
+      "commit": "8b67a88d73b2594570fc21150705283de884620b",
+      "result": "confirmed 모드 범주별 TP·FN·FP·TN이 전후 같다(비회귀)."
+    },
+    "spring-petclinic": {
+      "commit": "500158f732419217507c7656904b8e6aa1bcc0d6",
+      "seconds": {
+        "before": 0.76,
+        "after": 0.82
+      },
+      "cross_file": {
+        "resolved_calls": 0,
+        "resolution_gaps": 0
+      },
+      "new": [],
+      "removed": [],
+      "result": "static 도우미 호출이 없는 구조(주입된 리포지토리 객체 메서드)라 해석 대상이 없고 지적 변화도 없다."
+    }
+  }
+}

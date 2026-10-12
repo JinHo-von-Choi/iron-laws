@@ -83,23 +83,25 @@ def _build_callers(sources: list[SourceFile]) -> dict[tuple[str, int], list[tupl
     return callers
 
 
-def _findings_of(src: SourceFile, call: Call, rule_id: str, findings: dict[tuple[str, str, int, int], list[str]]) -> list[str]:
+def _findings_of(src: SourceFile, call: Call, rule_id: str, findings: dict[tuple[str, str, int, int], list[str]]) -> tuple[list[str], list[int]]:
     """이 호출의 지적. 열까지 같은 호출의 지적이 기본이다. 같은 줄의 다른 호출이 낸 지적은 근거로 쓰지 않되,
     그 호출과 이 호출이 서로 안에 들어 있는(`open(os.path.join(...))`) 같은 흐름이면 한 지적으로 함께 본다. 나란히 있는 호출(`a(); b()`)은 따로 본다."""
     path = src.path.as_posix()
     column = call.node.start_point[1] + 1
     exact = findings.get((rule_id, path, call.line, column))
     if exact:
-        return list(exact)
+        return list(exact), []
     linked: list[str] = []
+    columns: list[int] = []
     for (r, p, line, col), ids in findings.items():
         if r != rule_id or p != path or line != call.line or col == column:
             continue
         for other in _calls_on_line(src, call.line):
             if other.node.start_point[1] + 1 == col and _nested(call.node, other.node):
                 linked.extend(ids)
+                columns.append(col)
                 break
-    return linked
+    return linked, sorted(set(columns))
 
 
 def _nested(a, b) -> bool:
@@ -125,6 +127,7 @@ class _Verdict:
     reason: str
     finding_ids: list[str] = field(default_factory=list)
     evidence_kind: str = "none"
+    linked_columns: list[int] = field(default_factory=list)
 
 
 def _classify(
@@ -143,7 +146,7 @@ def _classify(
     index = xfile.get_index()
     before = index.limit_hits if index else 0
     args = rule.select_args(src, call, sink)
-    finding_ids = _findings_of(src, call, rule.rule_id, findings)
+    finding_ids, linked_columns = _findings_of(src, call, rule.rule_id, findings)
     unresolved: str | None = None
     guarded = False
     for arg in args:
@@ -171,7 +174,7 @@ def _classify(
             unresolved = reason
     after = index.limit_hits if index else 0
     if finding_ids:
-        return _Verdict(PointState.EVIDENCE_MET.value, "외부 입력 도달이 확인되어 지적으로 보고되었다", finding_ids, "finding")
+        return _Verdict(PointState.EVIDENCE_MET.value, "외부 입력 도달이 확인되어 지적으로 보고되었다", finding_ids, "finding", linked_columns)
     if after > before:
         return _Verdict(PointState.BUDGET_EXCEEDED.value, "함수 간·파일 간 해석 한도에 도달해 흐름을 끝까지 따라가지 못했다")
     if unresolved is not None:
@@ -301,6 +304,7 @@ def _collect_points(inputs: LedgerInputs, ctx: _Context) -> tuple[list[LedgerFil
                         finding_ids=verdict.finding_ids,
                         evidence_kind=verdict.evidence_kind if state == PointState.EVIDENCE_MET.value else "none",
                         suppressed_rules=suppressed_here,
+                        linked_columns=verdict.linked_columns if state == PointState.EVIDENCE_MET.value else [],
                     )
                 )
                 file_points += 1

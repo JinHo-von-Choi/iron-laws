@@ -38,7 +38,7 @@ def test_the_report_carries_both_rates_with_their_own_denominators(tmp_path: Pat
     assert s.analysis_unknown_rate == 1.0  # 범위 안 관심 지점은 os.system 하나이고 해석 미확정이다
     assert s.evaluated_rule_language_pairs and 0 < s.unverified_rule_language_pairs <= s.evaluated_rule_language_pairs
     assert s.unverified_rule_language_rate == round(s.unverified_rule_language_pairs / s.evaluated_rule_language_pairs, 4)
-    assert report.schema_version == "1.4"
+    assert report.schema_version == "1.5"
     assert verify_report(report.model_dump(mode="json")).ok
 
 

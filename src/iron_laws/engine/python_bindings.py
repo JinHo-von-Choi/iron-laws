@@ -187,10 +187,6 @@ def _imported_kind(src: SourceFile, kind: str | None, depth: int = 0) -> str | N
         return None
 
     def resolve():
-        if index.budget <= 0:
-            index.limit_hits += 1
-            return None
-        index.budget -= 1
         _, module, name = kind.split(':', 2)
         path = index.lookup_module(module, src.path.as_posix())
         if path is None:

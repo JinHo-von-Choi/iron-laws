@@ -2,16 +2,20 @@
  "AI-101": {
   "javascript": {
    "negative": 1,
-   "positive": 0
+   "positive": 1
   },
   "python": {
    "negative": 3,
    "positive": 5
+  },
+  "typescript": {
+   "negative": 1,
+   "positive": 1
   }
  },
  "AI-102": {
   "javascript": {
-   "negative": 0,
+   "negative": 1,
    "positive": 1
   },
   "kind:compose": {
@@ -19,6 +23,10 @@
    "positive": 1
   },
   "python": {
+   "negative": 1,
+   "positive": 1
+  },
+  "typescript": {
    "negative": 1,
    "positive": 1
   }
@@ -29,7 +37,7 @@
    "positive": 1
   },
   "typescript": {
-   "negative": 0,
+   "negative": 1,
    "positive": 1
   }
  },
@@ -45,7 +53,7 @@
  },
  "AI-105": {
   "java": {
-   "negative": 0,
+   "negative": 1,
    "positive": 1
   },
   "javascript": {
@@ -83,7 +91,11 @@
  },
  "AI-109": {
   "javascript": {
-   "negative": 0,
+   "negative": 1,
+   "positive": 1
+  },
+  "typescript": {
+   "negative": 1,
    "positive": 1
   }
  },
@@ -119,10 +131,14 @@
  },
  "AI-113": {
   "javascript": {
-   "negative": 0,
+   "negative": 1,
    "positive": 1
   },
   "python": {
+   "negative": 1,
+   "positive": 1
+  },
+  "typescript": {
    "negative": 1,
    "positive": 1
   }
@@ -169,7 +185,7 @@
    "positive": 1
   },
   "javascript": {
-   "negative": 0,
+   "negative": 1,
    "positive": 1
   }
  },
@@ -346,15 +362,15 @@
   },
   "php": {
    "negative": 1,
-   "positive": 0
+   "positive": 1
   },
   "python": {
-   "negative": 5,
-   "positive": 4
+   "negative": 7,
+   "positive": 5
   },
   "typescript": {
-   "negative": 0,
-   "positive": 1
+   "negative": 1,
+   "positive": 2
   }
  },
  "IL-102": {
@@ -389,20 +405,24 @@
  },
  "IL-105": {
   "python": {
-   "negative": 0,
+   "negative": 1,
    "positive": 1
   }
  },
  "IL-106": {
   "go": {
-   "negative": 0,
+   "negative": 1,
    "positive": 1
   },
   "javascript": {
-   "negative": 0,
+   "negative": 1,
    "positive": 1
   },
   "python": {
+   "negative": 1,
+   "positive": 1
+  },
+  "typescript": {
    "negative": 1,
    "positive": 1
   }
@@ -427,19 +447,19 @@
  },
  "IL-110": {
   "python": {
-   "negative": 0,
+   "negative": 1,
    "positive": 1
   }
  },
  "IL-111": {
   "python": {
-   "negative": 0,
+   "negative": 1,
    "positive": 1
   }
  },
  "IL-112": {
   "python": {
-   "negative": 0,
+   "negative": 1,
    "positive": 1
   }
  },
@@ -473,7 +493,7 @@
    "positive": 6
   },
   "php": {
-   "negative": 0,
+   "negative": 1,
    "positive": 2
   },
   "python": {
@@ -483,19 +503,23 @@
   "rust": {
    "negative": 1,
    "positive": 3
+  },
+  "typescript": {
+   "negative": 1,
+   "positive": 1
   }
  },
  "IL-302": {
   "csharp": {
-   "negative": 0,
+   "negative": 1,
    "positive": 1
   },
   "java": {
-   "negative": 0,
+   "negative": 1,
    "positive": 1
   },
   "javascript": {
-   "negative": 0,
+   "negative": 1,
    "positive": 1
   },
   "kind:sql": {
@@ -505,25 +529,33 @@
   "python": {
    "negative": 1,
    "positive": 1
+  },
+  "typescript": {
+   "negative": 1,
+   "positive": 1
   }
  },
  "IL-303": {
   "java": {
-   "negative": 0,
+   "negative": 1,
    "positive": 1
   },
   "javascript": {
-   "negative": 0,
+   "negative": 1,
    "positive": 2
   },
   "python": {
+   "negative": 1,
+   "positive": 1
+  },
+  "typescript": {
    "negative": 1,
    "positive": 1
   }
  },
  "IL-304": {
   "java": {
-   "negative": 0,
+   "negative": 1,
    "positive": 1
   },
   "python": {
@@ -533,25 +565,7 @@
  },
  "IL-305": {
   "go": {
-   "negative": 0,
-   "positive": 1
-  },
-  "javascript": {
-   "negative": 0,
-   "positive": 1
-  },
-  "python": {
-   "negative": 0,
-   "positive": 1
-  }
- },
- "IL-306": {
-  "go": {
-   "negative": 0,
-   "positive": 1
-  },
-  "java": {
-   "negative": 0,
+   "negative": 1,
    "positive": 1
   },
   "javascript": {
@@ -559,6 +573,32 @@
    "positive": 1
   },
   "python": {
+   "negative": 1,
+   "positive": 1
+  },
+  "typescript": {
+   "negative": 1,
+   "positive": 1
+  }
+ },
+ "IL-306": {
+  "go": {
+   "negative": 1,
+   "positive": 1
+  },
+  "java": {
+   "negative": 1,
+   "positive": 1
+  },
+  "javascript": {
+   "negative": 1,
+   "positive": 1
+  },
+  "python": {
+   "negative": 1,
+   "positive": 1
+  },
+  "typescript": {
    "negative": 1,
    "positive": 1
   }
@@ -579,8 +619,8 @@
    "positive": 1
   },
   "go": {
-   "negative": 2,
-   "positive": 2
+   "negative": 3,
+   "positive": 3
   },
   "java": {
    "negative": 1,
@@ -594,9 +634,13 @@
    "negative": 1,
    "positive": 1
   },
-  "php": {
+  "kotlin": {
    "negative": 1,
    "positive": 1
+  },
+  "php": {
+   "negative": 2,
+   "positive": 2
   },
   "python": {
    "negative": 8,
@@ -605,16 +649,20 @@
   "rust": {
    "negative": 1,
    "positive": 1
+  },
+  "typescript": {
+   "negative": 1,
+   "positive": 1
   }
  },
  "IL-502": {
   "csharp": {
    "negative": 1,
-   "positive": 0
+   "positive": 1
   },
   "go": {
-   "negative": 0,
-   "positive": 1
+   "negative": 1,
+   "positive": 2
   },
   "java": {
    "negative": 1,
@@ -625,12 +673,16 @@
    "positive": 1
   },
   "php": {
-   "negative": 0,
-   "positive": 1
+   "negative": 1,
+   "positive": 2
   },
   "python": {
    "negative": 7,
    "positive": 7
+  },
+  "typescript": {
+   "negative": 1,
+   "positive": 1
   }
  },
  "IL-503": {
@@ -639,18 +691,22 @@
    "positive": 1
   },
   "php": {
-   "negative": 0,
-   "positive": 1
+   "negative": 1,
+   "positive": 2
   },
   "python": {
    "negative": 2,
    "positive": 2
+  },
+  "typescript": {
+   "negative": 1,
+   "positive": 1
   }
  },
  "IL-504": {
   "go": {
-   "negative": 1,
-   "positive": 1
+   "negative": 3,
+   "positive": 3
   },
   "java": {
    "negative": 1,
@@ -660,18 +716,26 @@
    "negative": 2,
    "positive": 2
   },
+  "kotlin": {
+   "negative": 1,
+   "positive": 2
+  },
   "php": {
-   "negative": 0,
-   "positive": 1
+   "negative": 2,
+   "positive": 3
   },
   "python": {
    "negative": 4,
    "positive": 5
+  },
+  "typescript": {
+   "negative": 1,
+   "positive": 1
   }
  },
  "IL-505": {
   "java": {
-   "negative": 0,
+   "negative": 1,
    "positive": 1
   },
   "javascript": {
@@ -683,18 +747,22 @@
    "positive": 3
   },
   "php": {
+   "negative": 2,
+   "positive": 2
+  },
+  "python": {
    "negative": 1,
    "positive": 1
   },
-  "python": {
+  "typescript": {
    "negative": 1,
    "positive": 1
   }
  },
  "IL-506": {
   "go": {
-   "negative": 0,
-   "positive": 2
+   "negative": 1,
+   "positive": 3
   },
   "javascript": {
    "negative": 3,
@@ -703,18 +771,34 @@
   "python": {
    "negative": 2,
    "positive": 3
+  },
+  "typescript": {
+   "negative": 1,
+   "positive": 1
   }
  },
  "IL-507": {
+  "go": {
+   "negative": 1,
+   "positive": 1
+  },
   "java": {
-   "negative": 0,
+   "negative": 1,
    "positive": 1
   },
   "javascript": {
-   "negative": 0,
+   "negative": 1,
+   "positive": 1
+  },
+  "php": {
+   "negative": 1,
    "positive": 1
   },
   "python": {
+   "negative": 1,
+   "positive": 1
+  },
+  "typescript": {
    "negative": 1,
    "positive": 1
   }
@@ -731,13 +815,13 @@
    "positive": 4
   },
   "python": {
-   "negative": 0,
+   "negative": 1,
    "positive": 1
   }
  },
  "IL-510": {
   "java": {
-   "negative": 0,
+   "negative": 1,
    "positive": 1
   },
   "javascript": {
@@ -751,14 +835,26 @@
  },
  "IL-511": {
   "java": {
-   "negative": 0,
+   "negative": 1,
+   "positive": 1
+  },
+  "javascript": {
+   "negative": 1,
+   "positive": 1
+  },
+  "typescript": {
+   "negative": 1,
    "positive": 1
   }
  },
  "IL-512": {
   "csharp": {
    "negative": 1,
-   "positive": 0
+   "positive": 1
+  },
+  "javascript": {
+   "negative": 1,
+   "positive": 1
   },
   "python": {
    "negative": 1,
@@ -779,16 +875,16 @@
  },
  "IL-515": {
   "csharp": {
-   "negative": 0,
+   "negative": 1,
    "positive": 1
   },
   "java": {
-   "negative": 0,
+   "negative": 1,
    "positive": 1
   },
   "php": {
-   "negative": 0,
-   "positive": 1
+   "negative": 1,
+   "positive": 2
   },
   "python": {
    "negative": 2,
@@ -804,7 +900,11 @@
  "IL-517": {
   "go": {
    "negative": 1,
-   "positive": 0
+   "positive": 1
+  },
+  "javascript": {
+   "negative": 1,
+   "positive": 1
   },
   "python": {
    "negative": 1,
@@ -841,16 +941,20 @@
  },
  "IL-520": {
   "javascript": {
-   "negative": 0,
+   "negative": 1,
    "positive": 1
   },
   "php": {
-   "negative": 0,
+   "negative": 1,
    "positive": 1
   },
   "python": {
    "negative": 2,
    "positive": 2
+  },
+  "typescript": {
+   "negative": 1,
+   "positive": 1
   }
  },
  "IL-521": {
@@ -867,7 +971,7 @@
  },
  "IL-523": {
   "python": {
-   "negative": 0,
+   "negative": 1,
    "positive": 1
   }
  },
@@ -879,7 +983,7 @@
  },
  "IL-525": {
   "csharp": {
-   "negative": 0,
+   "negative": 1,
    "positive": 1
   },
   "java": {
@@ -897,7 +1001,7 @@
  },
  "IL-526": {
   "java": {
-   "negative": 0,
+   "negative": 1,
    "positive": 1
   },
   "python": {
@@ -907,7 +1011,7 @@
  },
  "IL-527": {
   "java": {
-   "negative": 0,
+   "negative": 1,
    "positive": 1
   },
   "python": {
@@ -933,7 +1037,7 @@
    "positive": 1
   },
   "python": {
-   "negative": 0,
+   "negative": 1,
    "positive": 1
   }
  },
@@ -949,14 +1053,18 @@
  },
  "IL-532": {
   "javascript": {
-   "negative": 0,
+   "negative": 1,
    "positive": 1
   },
   "php": {
-   "negative": 0,
+   "negative": 1,
    "positive": 1
   },
   "python": {
+   "negative": 1,
+   "positive": 1
+  },
+  "typescript": {
    "negative": 1,
    "positive": 1
   }

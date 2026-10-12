@@ -57,6 +57,16 @@ class CodeFix(BaseModel):
     rationale: str = Field(..., description="수정 근거 및 이유")
 
 
+class StandardRef(BaseModel):
+    """지적이 가리키는 기준 팩의 항목. mapping_verified가 거짓이면 대응표를 사람이 그 판본으로 확인하지 않았다는 뜻이다"""
+
+    pack_id: str
+    edition: str
+    item_id: str
+    item_name: str = ""
+    mapping_verified: bool = False
+
+
 class EvidenceStep(BaseModel):
     """판단 근거의 한 단계. 입력 유입 → 전파 → 싱크 순서로 위치와 변수 이름만 담는다 (코드 원문과 비밀값은 담지 않는다)"""
 
@@ -85,6 +95,8 @@ class Violation(BaseModel):
     snippet: str
     message: str
     gov_standard: GovStandard | None = None
+    standards: list[StandardRef] = Field(default_factory=list)  # 기준 팩별 항목(1.5 이후). gov_standard는 행안부 근거를 하위 호환으로 유지한다
+    review_opinion: dict | None = None  # 선택형 LLM 검토 의견(1.5 이후). 판정·심각도·통과 여부에 쓰지 않는다
     fix: CodeFix | None = None
     layer: RuleLayer = RuleLayer.STANDARD
     confidence: Confidence = Confidence.CONFIRMED
@@ -167,6 +179,7 @@ class InterestPoint(BaseModel):
     finding_ids: list[str] = Field(default_factory=list, description="이 지점·계열의 규칙이 실제로 낸 확정 지적의 finding_id")
     evidence_kind: str = Field(default="none", description="finding / closed_value / guard / none — 충족 근거의 종류")
     suppressed_rules: list[str] = Field(default_factory=list, description="이 지점에서 억제된 규칙 ID(정확한 억제 범위)")
+    linked_columns: list[int] = Field(default_factory=list, description="같은 줄에서 이 호출을 감싸거나 이 호출 안에 든 다른 호출(`open(os.path.join(...))`)의 지적을 함께 연결했을 때 그 지적의 열")
 
 
 class LedgerFile(BaseModel):
@@ -238,7 +251,7 @@ class CoverageLedger(BaseModel):
     limitations: list[str] = Field(default_factory=list)
 
 
-REPORT_SCHEMA_VERSION = "1.4"
+REPORT_SCHEMA_VERSION = "1.5"
 
 
 class AuditReport(BaseModel):

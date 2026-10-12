@@ -82,11 +82,16 @@ def support_command(
 
 
 @app.command("coverage")
-def coverage_command() -> None:
+def coverage_command(
+    standard: str | None = typer.Option(None, "--standard", help="기준 팩 id(예: owasp-top10-2025, owasp-asi-2026, cwe-top25-2025). 생략하면 행안부 2021 구현단계"),
+) -> None:
     """
-    행안부 SW 개발보안 가이드(2021) 구현단계 49개 항목 중 어떤 항목을 점검하는지 보여 줍니다.
+    행안부 SW 개발보안 가이드(2021) 구현단계 49개 항목 중 어떤 항목을 점검하는지 보여 줍니다. --standard로 다른 기준 팩의 대응을 봅니다.
     """
     rules = get_active_rules()
+    if standard is not None and standard != "mois-2021-impl":
+        _pack_coverage(standard, rules)
+        return
     empty = AuditReport(
         document_id="COVERAGE",
         audit_date="",
@@ -162,3 +167,29 @@ def init_command(target_dir: Path = typer.Argument(Path("."), help="설정 파�
     content = f"# 오철칙 (Iron Laws) 프로젝트 설정 파일\n{body}"
     config_path.write_text(content, encoding="utf-8")
     err.print(f"[bold green]기본 설정 파일이 생성되었습니다: {config_path}[/bold green]")
+
+
+def _pack_coverage(pack_id: str, rules) -> None:
+    from iron_laws.standards.pack_registry import all_packs
+
+    pack = next((p for p in all_packs() if p.id == pack_id), None)
+    if pack is None:
+        err.print(f"[bold red]기준 팩을 찾을 수 없습니다: {escape(pack_id)} (있는 팩: {', '.join(p.id for p in all_packs())})[/bold red]")
+        raise typer.Exit(2)
+    active = {r.rule_id for r in rules}
+    by_item: dict[str, list[str]] = {}
+    for rule_id, item_ids in pack.mapping.items():
+        if rule_id in active:
+            for item_id in item_ids:
+                by_item.setdefault(item_id, []).append(rule_id)
+    table = Table(title=f"[{pack.title} ({pack.edition}) 항목별 대응 규칙]", expand=True)
+    table.add_column("항목", style="bold cyan", width=8)
+    table.add_column("명칭")
+    table.add_column("대응 규칙")
+    for item in pack.items:
+        table.add_row(item.id, item.name, ", ".join(sorted(by_item.get(item.id, []))) or "-")
+    console.print(table)
+    covered = sum(1 for item in pack.items if by_item.get(item.id))
+    state = "사람이 이 판본으로 확인함" if pack.mapping_verified else "미확인(오철칙이 정한 대응이며 사람이 이 판본으로 확인하지 않음)"
+    console.print(f"대응 규칙이 있는 항목 {covered}개 / 전체 {len(pack.items)}개 · 대응표: {state}")
+    console.print(f"[dim]출처 {pack.source_url} (수집 {pack.retrieved_at}) · 내용 해시 {pack.content_sha256()[:16]}[/dim]")

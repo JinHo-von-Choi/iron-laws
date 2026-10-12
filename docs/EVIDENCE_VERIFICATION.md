@@ -1,6 +1,6 @@
 # 근거 검증: 점검 보고서와 검증 기록의 독립 검증기
 
-같은 점검의 **지적·장부(계약)·승인·신뢰 지표**가 서로 모순되지 않는지 엔진과 독립으로 확인하는 검증기입니다. 보고서 형식 1.3과 1.4를 읽습니다.
+같은 점검의 **지적·장부(계약)·승인·신뢰 지표**가 서로 모순되지 않는지 엔진과 독립으로 확인하는 검증기입니다. 보고서 형식 1.3·1.4·1.5를 읽습니다. 1.5 보고서에서는 지적의 기준 팩 항목이 보고서에 적힌 팩·판본을 가리키는지, 대응표 확인 여부가 팩의 값과 같은지도 확인합니다.
 검증기(`src/iron_laws/evidence/verifier.py`)는 표준 라이브러리만 쓰며 규칙·분석 엔진·장부 작성 코드를 호출하지 않습니다.
 
 보고서·Receipt의 객체, 목록, 숫자, 유한한 비율과 중첩 필드 형식을 먼저 검사합니다. 형식이 잘못된 입력은 traceback 대신 판정 불가(종료코드 2)로 반환합니다. 형식 검사를 통과해도 근거 사이의 모순 검사는 별도로 수행합니다.
@@ -44,7 +44,7 @@
 | 실행 | `run.id_mismatch` `run.id_not_derived` `run.code_digest_mismatch` `run.contract_digest_mismatch` `run.config_mismatch` | execution과 장부·metadata가 다른 실행의 값, 지문 묶음에서 나온 값이 아닌 `run_id` |
 | 실행 | `run.status_mismatch` `run.contract_status_mismatch` `run.error_count_mismatch` `run.files_mismatch` | 점검 상태·계약 상태·오류 수·점검 파일 수가 서로 다름 |
 | 실행 | `run.empty_not_marked` `run.incomplete_not_marked` `run.complete_expected` | 점검한 파일이 0개인데 `empty`가 아님, 오류가 있는데 `incomplete`가 아님 |
-| 장부 지점 | `point.finding_flag` `point.finding_missing` `point.finding_elsewhere` `point.finding_wrong_rule` `point.finding_not_confirmed` | 지적 없이 지적 표시, 존재하지 않는 지적·다른 파일·다른 줄·다른 규칙·확정되지 않은 지적의 연결 |
+| 장부 지점 | `point.finding_flag` `point.finding_missing` `point.finding_elsewhere` `point.finding_other_call` `point.finding_wrong_rule` `point.finding_not_confirmed` | 지적 없이 지적 표시, 존재하지 않는 지적·다른 파일·다른 줄·다른 열(1.5에서는 `linked_columns`에 없는 열)·다른 규칙·확정되지 않은 지적의 연결 |
 | 장부 지점 | `point.met_without_evidence` `point.kind_ids_mismatch` `point.unmet_with_kind` `point.unmet_with_ids` | 근거 종류 없는 '근거 충족', 충족이 아닌데 근거 종류나 지적이 붙어 있음 |
 | 장부 지점 | `point.suppression_too_wide` `point.excluded_unexplained` `point.file_not_analyzed` `point.id_duplicate` | 다른 규칙으로 번진 억제, 이유 없는 정책 제외, 분석 대상이 아닌 파일의 지점, 중복 id |
 | 집계·상태 | `tally.total` `tally.in_scope` `tally.by_state` `ledger.blocker_missing` `ledger.blocker_extra` `ledger.unclassified_mismatch` `ledger.unclassified_not_blocked` `ledger.status_mismatch` | 지점 목록과 집계의 불일치, 차단 상태 지점이 사유 목록에서 빠지거나 근거 없는 사유가 남음, 점검하지 못한 변경 파일이 사유에 없음, 사유·분석 파일에서 계산한 상태와 다름(비적용이나 충족이 차단을 가린 경우) |
@@ -58,7 +58,7 @@
 
 ## 이전 형식 기록 옮기기
 
-`run_id`는 점검 한 번의 식별자이고 `finding_id`는 그 실행 안에서 지적 하나의 식별자입니다([REPORT_FORMATS.md](REPORT_FORMATS.md)). `evidence upgrade old.json -o new.json`은 1.0~1.2 보고서를 1.3 형식으로 옮깁니다. 1.3과 1.4 보고서는 옮길 필요가 없습니다(`옮길 수 없는 형식 버전` 안내와 종료코드 1이 나옵니다). 장부 지점의 근거를 복원할 수 있는지 하나씩 보고,
+`run_id`는 점검 한 번의 식별자이고 `finding_id`는 그 실행 안에서 지적 하나의 식별자입니다([REPORT_FORMATS.md](REPORT_FORMATS.md)). `evidence upgrade old.json -o new.json`은 1.0~1.2 보고서를 1.3 형식으로 옮깁니다. 1.3 이후 보고서는 옮길 필요가 없습니다(`옮길 수 없는 형식 버전` 안내와 종료코드 1이 나옵니다). 장부 지점의 근거를 복원할 수 있는지 하나씩 보고,
 **복원할 수 없는 지점이 20% 이상이면 자동으로 옮기지 않고 종료코드 1로 멈춰** 같은 코드를 다시 점검하게 합니다(`--limit`로 비율 조정, 1.0은 한도 없음).
 
 - 복원할 수 있는 것: 같은 줄·같은 규칙의 확정 지적이 보고서에 있는 지점(`finding_ids`), 근거 충족이 아닌 지점.
@@ -69,6 +69,16 @@
 ## 한계
 
 - 구조적 모순만 잡습니다. 엔진이 같은 오판을 일관되게 보고서 전체에 반영하면 통과합니다.
+- 장부 지점의 `linked_columns`(중첩 호출로 함께 연결한 지적의 열)는 장부가 적은 값을 그대로 믿습니다. 검증기는 원본 코드를 다시 해석하지 않으므로, 두 호출이 실제로 중첩되어 있는지는 확인하지 않습니다.
 - 해시는 변조·불일치 탐지 근거이며 승인자나 실행자의 진위를 증명하지 않습니다.
 - `--checkout`의 코드 지문 재계산은 UTF-8 파일만 지원합니다. 그 밖의 인코딩은 `판정 불가`입니다.
 - 변경 범위(`--changed-since`)만 표시한 보고서에서는 변경되지 않은 파일의 지적이 목록에 없습니다. 보고서가 변경 경로(`metadata.scope.changed_paths`)를 알려 주는 경우에만 그 부재를 허용합니다.
+
+## 검증 기록 서명
+
+`verify-patch --out receipt.json --sign ssh:<개인키>`는 기록 파일 옆에 OpenSSH 서명(`receipt.json.sig`, 이름공간 `iron-laws-receipt`)을 남깁니다. `evidence verify receipt.json --allowed-signers <허용 서명자 목록>`은 구조 검사와 함께 서명이 목록의 키로 이 내용에 대해 만들어졌는지 확인하고, 서명이 없거나 내용이 바뀌었으면 `signature.invalid` 모순(종료코드 1)으로 셉니다. 허용 서명자 목록은 OpenSSH `allowed_signers` 형식입니다.
+
+```text
+reviewer@example.com namespaces="iron-laws-receipt" ssh-ed25519 AAAA...
+```
+

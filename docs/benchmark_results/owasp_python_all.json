@@ -1,0 +1,122 @@
+{
+  "tool_version": "1.6.0",
+  "dataset": "OWASP Benchmark for Python 0.1",
+  "dataset_commit": "f1291485808b66e20ddb6b01b10dc71b3df8c8ba",
+  "mode": "all",
+  "command": "benchmarks/owasp_benchmark_python.py <BenchmarkPython 폴더> f1291485808b66e20ddb6b01b10dc71b3df8c8ba all",
+  "files": 1230,
+  "categories": {
+    "cmdi": {
+      "TP": 11,
+      "FN": 2,
+      "FP": 7,
+      "TN": 0,
+      "TPR": 0.8462,
+      "FPR": 1.0
+    },
+    "codeinj": {
+      "TP": 14,
+      "FN": 6,
+      "FP": 20,
+      "TN": 13,
+      "TPR": 0.7,
+      "FPR": 0.6061
+    },
+    "deserialization": {
+      "TP": 18,
+      "FN": 0,
+      "FP": 12,
+      "TN": 24,
+      "TPR": 1.0,
+      "FPR": 0.3333
+    },
+    "hash": {
+      "TP": 71,
+      "FN": 0,
+      "FP": 0,
+      "TN": 80,
+      "TPR": 1.0,
+      "FPR": 0.0
+    },
+    "ldapi": {
+      "TP": 16,
+      "FN": 0,
+      "FP": 13,
+      "TN": 0,
+      "TPR": 1.0,
+      "FPR": 1.0
+    },
+    "pathtraver": {
+      "TP": 27,
+      "FN": 38,
+      "FP": 35,
+      "TN": 68,
+      "TPR": 0.4154,
+      "FPR": 0.3398
+    },
+    "redirect": {
+      "TP": 0,
+      "FN": 13,
+      "FP": 0,
+      "TN": 21,
+      "TPR": 0.0,
+      "FPR": 0.0
+    },
+    "securecookie": {
+      "TP": 24,
+      "FN": 0,
+      "FP": 0,
+      "TN": 15,
+      "TPR": 1.0,
+      "FPR": 0.0
+    },
+    "sqli": {
+      "TP": 5,
+      "FN": 0,
+      "FP": 0,
+      "TN": 11,
+      "TPR": 1.0,
+      "FPR": 0.0
+    },
+    "trustbound": {
+      "TP": 0,
+      "FN": 18,
+      "FP": 0,
+      "TN": 19,
+      "TPR": 0.0,
+      "FPR": 0.0
+    },
+    "weakrand": {
+      "TP": 0,
+      "FN": 99,
+      "FP": 0,
+      "TN": 227,
+      "TPR": 0.0,
+      "FPR": 0.0
+    },
+    "xpathi": {
+      "TP": 21,
+      "FN": 30,
+      "FP": 53,
+      "TN": 82,
+      "TPR": 0.4118,
+      "FPR": 0.3926
+    },
+    "xss": {
+      "TP": 0,
+      "FN": 31,
+      "FP": 0,
+      "TN": 58,
+      "TPR": 0.0,
+      "FPR": 0.0
+    },
+    "xxe": {
+      "TP": 8,
+      "FN": 0,
+      "FP": 7,
+      "TN": 13,
+      "TPR": 1.0,
+      "FPR": 0.35
+    }
+  }
+}

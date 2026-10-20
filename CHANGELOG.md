@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-10-21
+
 ### Added
 - `iron-laws spec check --against <저장소>`: 명세를 적용하기 전과 후를 같은 조건에서 두 번 돌려 비교한다. 명세 때문에 사라진 지적과 그 원인 후보(선언한 정제 함수), 근거 상태가 낮아진 검사 지점을 밝히고, 비교를 믿을 수 없으면 채택을 보류한다. 결과 형식은 console·markdown·json.
 - 교훈 저장소 `iron-laws experience add|list|invalidate|verify`: 채택한 명세와 규칙에 대한 교훈을 남긴다. 기록은 추가 전용으로 해시로 이어 붙는다. `iron-laws explain`이 그 규칙의 교훈을 함께 보여 주고, `spec draft --llm-cmd`가 관련 교훈을 지시문에 넣어 준다. 규칙 버전이나 명세 내용이 바뀌면 '다시 볼 것'으로 표시한다.

@@ -54,6 +54,8 @@ index_app = typer.Typer(help="오프라인 패키지 색인: 사용자가 받아
 app.add_typer(index_app, name="index")
 spec_app = typer.Typer(help="사용자 명세: 프로젝트 고유의 소스·싱크·정제 함수 초안을 만들고, 사람이 채운 예제로 확인합니다")
 app.add_typer(spec_app, name="spec")
+experience_app = typer.Typer(help="교훈 저장소: 채택한 명세와 규칙에 대한 교훈을 남기고 다음 명세·검토에 씁니다")
+app.add_typer(experience_app, name="experience")
 console = Console()  # 사람이 읽는 본문(표·보고서)은 stdout
 err = Console(stderr=True)  # 상태·오류 메시지는 stderr. JSON·SARIF 같은 기계용 stdout을 오염시키지 않는다
 
@@ -116,6 +118,34 @@ MaxUnverifiedOpt = typer.Option(
 def _gates(max_unknown: float | None, max_unverified: float | None) -> dict[str, float] | None:
     gates = {k: v for k, v in (("max_analysis_unknown_rate", max_unknown), ("max_unverified_rule_language_rate", max_unverified)) if v is not None}
     return gates or None
+
+
+FAMILY_RULE_IDS = frozenset({"IL-501", "IL-502", "IL-503", "IL-504"})
+
+
+def experience_lessons(rule_id: str = "", families: set[str] | None = None) -> list[str]:
+    """남겨 둔 활성 교훈을 읽는다. 기록을 못 읽으면 조용히 넘어가지 않고 알린다."""
+    from iron_laws.core.config import ConfigError
+    from iron_laws.core.experience import DEFAULT_EXPERIENCE_FILE, STATE_ACTIVE, ExperienceStore
+    from iron_laws.rules.catalog import get_active_rules
+
+    try:
+        store = ExperienceStore(Path(DEFAULT_EXPERIENCE_FILE))
+    except ConfigError as e:
+        err.print(f"[yellow]교훈 기록을 읽지 못해 교훈을 쓰지 못했습니다: {escape(str(e))}[/yellow]")
+        return []
+    versions = {r.rule_id: r.version for r in get_active_rules()}
+    lessons: list[str] = []
+    for item in store.entries(rule_versions=versions):
+        if item.state != STATE_ACTIVE:
+            continue
+        if rule_id and item.entry.rule_id != rule_id:
+            continue
+        if families is not None and item.entry.family not in families and item.entry.rule_id not in FAMILY_RULE_IDS:
+            continue
+        if item.entry.lesson not in lessons:
+            lessons.append(item.entry.lesson)
+    return lessons
 
 
 class ReportFormat(StrEnum):

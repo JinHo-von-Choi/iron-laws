@@ -445,6 +445,15 @@ def set_custom_spec(sources: dict, sanitizers: dict, kind: str) -> None:
     CUSTOM_SOURCES, CUSTOM_SANITIZERS, CUSTOM_KIND = dict(sources), dict(sanitizers), kind
 
 
+def custom_sanitizer_match(callee: str, ctx: Ctx, lang: Lang | None = None) -> bool:
+    """사용자가 명세로 선언한 정제 함수인지 확인한다. 도구가 이미 아는 정제 함수와 구분한다.
+    선언한 정제 함수는 근거가 아니라 사람이 한 약속이다."""
+    if lang is None:
+        return False
+    custom = CUSTOM_SANITIZERS.get((lang, ctx))
+    return custom is not None and bool(custom.search(callee))
+
+
 def sanitizer_name_matches(callee: str, ctx: Ctx, lang: Lang | None = None) -> bool:
     custom = CUSTOM_SANITIZERS.get((lang, ctx)) if lang is not None else None
     if custom is not None and custom.search(callee):

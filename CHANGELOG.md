@@ -5,6 +5,18 @@
 
 ## [Unreleased]
 
+### Added
+- `iron-laws spec check --against <저장소>`: 명세를 적용하기 전과 후를 같은 조건에서 두 번 돌려 비교한다. 명세 때문에 사라진 지적과 그 원인 후보(선언한 정제 함수), 근거 상태가 낮아진 검사 지점을 밝히고, 비교를 믿을 수 없으면 채택을 보류한다. 결과 형식은 console·markdown·json.
+- 교훈 저장소 `iron-laws experience add|list|invalidate|verify`: 채택한 명세와 규칙에 대한 교훈을 남긴다. 기록은 추가 전용으로 해시로 이어 붙는다. `iron-laws explain`이 그 규칙의 교훈을 함께 보여 주고, `spec draft --llm-cmd`가 관련 교훈을 지시문에 넣어 준다. 규칙 버전이나 명세 내용이 바뀌면 '다시 볼 것'으로 표시한다.
+- 설정 `policies.ledger_include_spec_points`: 켜면 사용자 명세의 싱크가 검사 공백 장부에도 지점으로 나타난다. 기본은 꺼짐이다.
+- 산출물 비교 측정기 `benchmarks/artifact_ab.py`: 수정 지시문·검토 묶음·MCP 도구 설명을 같은 결함 표본으로 비교한다.
+
+### Changed
+- `iron-laws spec check`의 예제 검증이 항목 하나만 명세에 넣어 판정한다. 다른 항목이 이 항목의 예제에 영향을 주지 않는다. 항목당 점검이 두 번에서 한 번으로 줄었다.
+- 검사 공백 장부의 `digests`에 적용된 사용자 명세의 지문(`spec`)을 담는다. 명세 내용이 바뀌면 실행 식별자(`run_id`)가 달라진다.
+- 명세로 선언한 정제 함수에 기대는 지점은 근거 종류가 `declared_sanitizer`로 표시되고 그 사실을 장부의 한계로 밝힌다. 근거를 확보했다고 말하면서 닫힌 값이라고 말하던 자리를 정정한다.
+
+
 ## [1.7.0] - 2026-10-12
 
 ### Added

@@ -36,9 +36,9 @@
 - `snippet`: 비밀값이 있을 수 있는 규칙(IL-101, IL-108, IL-111, AI-101~104)은 값을 `****`로 가린 줄이다.
 
 ### `coverage_ledger`
-`contract_*`(버전·모드·범위·해시·출처), `digests`(code·tool·config·contract), `run_id`(지문 묶음에서 만든 실행 식별자 `R-…`), `requirements`(계열별 필수 여부·차단 상태. 독립 검증기가 차단 사유를 다시 계산하는 입력), `families[]`(계열별 지점 수와 상태별 수), `points[]`(계열·경로·줄·열·호출·상태·이유·범위 안 여부·지적 여부), `files[]`(분류: analyzed / unsupported_language / out_of_scope / policy_excluded / unclassified), `unclassified_changed_files`, `status`, `blockers`, `limitations`. 자세한 의미는 [PATCH_VERIFICATION.md](PATCH_VERIFICATION.md).
+`contract_*`(버전·모드·범위·해시·출처), `digests`(code·tool·config·contract·spec. `spec`는 적용된 사용자 명세의 지문이며 명세가 없으면 빈 문자열이다), `run_id`(지문 묶음에서 만든 실행 식별자 `R-…`), `requirements`(계열별 필수 여부·차단 상태. 독립 검증기가 차단 사유를 다시 계산하는 입력), `families[]`(계열별 지점 수와 상태별 수), `points[]`(계열·경로·줄·열·호출·상태·이유·범위 안 여부·지적 여부), `files[]`(분류: analyzed / unsupported_language / out_of_scope / policy_excluded / unclassified), `unclassified_changed_files`, `status`, `blockers`, `limitations`. 자세한 의미는 [PATCH_VERIFICATION.md](PATCH_VERIFICATION.md).
 
-`points[]`의 근거 필드(1.3): `finding_ids`(그 지점·계열의 규칙이 실제로 낸 확정 지적의 `finding_id`), `evidence_kind`(`finding` 지적이 났다 / `closed_value` 모든 입력이 닫혀 있다 / `guard` 규칙이 인정한 안전 조건(허용 목록·범위 검증·셸을 거치지 않는 호출) / `none`), `suppressed_rules`(이 지점에서 억제된 규칙. 억제는 그 계열 규칙에만 적용한다). `finding`은 `finding_ids`가 비어 있지 않을 때만 참이며, 장부는 흐름을 따로 평가해 지적이 있다고 추정하지 않는다. 지점과 다른 열의 지적은 그 열이 `linked_columns`(1.5)에 있을 때만 연결할 수 있다.
+`points[]`의 근거 필드(1.3): `finding_ids`(그 지점·계열의 규칙이 실제로 낸 확정 지적의 `finding_id`), `evidence_kind`(`finding` 지적이 났다 / `closed_value` 모든 입력이 닫혀 있다 / `guard` 규칙이 인정한 안전 조건(허용 목록·범위 검증·셸을 거치지 않는 호출) / `declared_sanitizer` 사용자가 명세로 선언한 정제 함수가 막는다고 선언된 흐름 / `none`), `suppressed_rules`(이 지점에서 억제된 규칙. 억제는 그 계열 규칙에만 적용한다). `finding`은 `finding_ids`가 비어 있지 않을 때만 참이며, 장부는 흐름을 따로 평가해 지적이 있다고 추정하지 않는다. 지점과 다른 열의 지적은 그 열이 `linked_columns`(1.5)에 있을 때만 연결할 수 있다.
 상태 계산 순서: 차단 사유가 하나라도 있으면 `unmet`(비적용·충족보다 먼저), 정책 변경이 있으면 `policy_change_review`, 차단 사유가 없고 분석한 파일이 없을 때만 `not_applicable`, 그 밖에는 `met`.
 
 ### `execution`(1.3)

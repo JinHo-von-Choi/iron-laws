@@ -133,6 +133,10 @@ class Policies(BaseModel):
         default=None,
         description="사용자 명세 파일(소스·싱크·정제 함수). 모든 항목의 양성·음성 예제가 기대대로 판정될 때만 불러온다",
     )
+    ledger_include_spec_points: bool = Field(
+        default=False,
+        description="사용자 명세의 싱크를 검사 공백 장부에도 반영합니다. 켜면 명세가 더한 싱크가 장부 지점으로 나타나고 장부 상태가 바뀔 수 있습니다",
+    )
     private_packages: list[str] = Field(
         default_factory=list,
         description="사설 레지스트리 패키지 이름 패턴(glob). 예: ['@acme/*', 'acme-*']. 공개 색인 점검에서 뺀다",

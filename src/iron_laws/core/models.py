@@ -177,7 +177,7 @@ class InterestPoint(BaseModel):
     in_scope: bool = True  # 계약 범위(전체 또는 변경 파일) 안에 있는가
     finding: bool = False  # 같은 지점에서 지적이 나왔는가
     finding_ids: list[str] = Field(default_factory=list, description="이 지점·계열의 규칙이 실제로 낸 확정 지적의 finding_id")
-    evidence_kind: str = Field(default="none", description="finding / closed_value / guard / none — 충족 근거의 종류")
+    evidence_kind: str = Field(default="none", description="finding / closed_value / guard / declared_sanitizer / none — 충족 근거의 종류")
     suppressed_rules: list[str] = Field(default_factory=list, description="이 지점에서 억제된 규칙 ID(정확한 억제 범위)")
     linked_columns: list[int] = Field(default_factory=list, description="같은 줄에서 이 호출을 감싸거나 이 호출 안에 든 다른 호출(`open(os.path.join(...))`)의 지적을 함께 연결했을 때 그 지적의 열")
 

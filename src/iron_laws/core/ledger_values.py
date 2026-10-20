@@ -20,6 +20,7 @@ from iron_laws.engine.source import SourceFile
 from iron_laws.engine.taint import (
     WEB_SOURCE_RE,
     Ctx,
+    custom_sanitizer_match,
     definitions,
     param_name,
     reaching_definitions,
@@ -58,6 +59,11 @@ class _Context:
     callers: dict[tuple[str, int], list[tuple[SourceFile, Call]]] = field(default_factory=dict)
     modeled: dict[str, list] = field(default_factory=dict)
     rules: dict[str, SinkRule] = field(default_factory=dict)
+    spec_sinks: dict[str, list] = field(default_factory=dict)  # 계열별로 사용자가 명세로 더한 싱크
+
+    def is_spec_sink(self, family: str, callee: str) -> bool:
+        """사용자가 명세로 선언한 싱크인지 확인한다. 프로젝트 함수를 지점으로 건너뛸 때 예외로 쓴다."""
+        return any(s.callee.search(callee) for s in self.spec_sinks.get(family, ()))
 
 
 class _Closed:
@@ -114,6 +120,21 @@ class _Closed:
         if call is None or resolve_any(self.src, call.callee, len(call.args)):
             return False
         return sanitizer_name_matches(call.callee, self.taint_ctx, self.src.lang)
+
+    def declared_sanitizer(self, node: Node) -> str | None:
+        """이 식이 닫혀 있는 이유가 사용자가 선언한 정제 함수라면 그 함수 이름을 돌려준다.
+        도구가 이미 아는 정제 함수와 사용자의 선언을 구분한다."""
+        index = self.src.memo("call_by_id", lambda: {c.node.id: c for c in iter_calls(self.src)})
+        stack = [node]
+        while stack:
+            current = stack.pop()
+            if current.type in CALL_TYPES.get(Lang.PYTHON, set()):
+                call = index.get(current.id)
+                if call is not None and not resolve_any(self.src, call.callee, len(call.args)):
+                    if custom_sanitizer_match(call.callee, self.taint_ctx, self.src.lang):
+                        return call.callee
+            stack.extend(current.named_children)
+        return None
 
     def _identifier(self, node: Node, depth: int, seen: frozenset[int]) -> tuple[bool, str]:
         name = self.src.text_of(node)

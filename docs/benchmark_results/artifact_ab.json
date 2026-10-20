@@ -1,0 +1,1025 @@
+{
+  "ai_cmd": "claude -p --agents fixer --model sonnet (도구 없음)",
+  "runner": "docker",
+  "cases": 21,
+  "baseline": "fix_prompt",
+  "summary": {
+    "fix_prompt": {
+      "outcomes": {
+        "bypass": 0,
+        "tests_failed": 0,
+        "undeterminable": 2,
+        "static_not_resolved": 3,
+        "behavior_not_removed": 2,
+        "resolved_with_new_debt": 0,
+        "new_findings": 0,
+        "check_failed": 0,
+        "resolved": 14
+      },
+      "static_resolved_rate": 0.8571,
+      "behavior_removed_rate": 0.7143,
+      "success_rate": 0.6667
+    },
+    "review_bundle": {
+      "outcomes": {
+        "bypass": 0,
+        "tests_failed": 0,
+        "undeterminable": 0,
+        "static_not_resolved": 9,
+        "behavior_not_removed": 2,
+        "resolved_with_new_debt": 0,
+        "new_findings": 0,
+        "check_failed": 1,
+        "resolved": 9
+      },
+      "static_resolved_rate": 0.5714,
+      "behavior_removed_rate": 0.7143,
+      "success_rate": 0.4286
+    },
+    "mcp_guidance": {
+      "outcomes": {
+        "bypass": 0,
+        "tests_failed": 0,
+        "undeterminable": 1,
+        "static_not_resolved": 9,
+        "behavior_not_removed": 1,
+        "resolved_with_new_debt": 0,
+        "new_findings": 0,
+        "check_failed": 0,
+        "resolved": 10
+      },
+      "static_resolved_rate": 0.5714,
+      "behavior_removed_rate": 0.8571,
+      "success_rate": 0.4762
+    },
+    "fix_prompt_review": {
+      "outcomes": {
+        "bypass": 0,
+        "tests_failed": 0,
+        "undeterminable": 0,
+        "static_not_resolved": 4,
+        "behavior_not_removed": 3,
+        "resolved_with_new_debt": 0,
+        "new_findings": 0,
+        "check_failed": 0,
+        "resolved": 14
+      },
+      "static_resolved_rate": 0.8095,
+      "behavior_removed_rate": 0.7619,
+      "success_rate": 0.6667
+    }
+  },
+  "behavior_removed_by_rule": {
+    "fix_prompt": {
+      "IL-501": "7/7",
+      "IL-502": "4/7",
+      "IL-504": "4/7"
+    },
+    "review_bundle": {
+      "IL-501": "7/7",
+      "IL-502": "5/7",
+      "IL-504": "3/7"
+    },
+    "mcp_guidance": {
+      "IL-501": "7/7",
+      "IL-502": "5/7",
+      "IL-504": "6/7"
+    },
+    "fix_prompt_review": {
+      "IL-501": "7/7",
+      "IL-502": "5/7",
+      "IL-504": "4/7"
+    }
+  },
+  "comparison_with_baseline": {
+    "review_bundle": {
+      "changed_cases": [
+        {
+          "id": "cmd-flask-os-system",
+          "baseline": "resolved",
+          "variant": "behavior_not_removed"
+        },
+        {
+          "id": "cmd-param-os-system",
+          "baseline": "behavior_not_removed",
+          "variant": "static_not_resolved"
+        },
+        {
+          "id": "cmd-json-validate",
+          "baseline": "resolved",
+          "variant": "behavior_not_removed"
+        },
+        {
+          "id": "path-param-basename",
+          "baseline": "behavior_not_removed",
+          "variant": "static_not_resolved"
+        },
+        {
+          "id": "path-flask-guard",
+          "baseline": "resolved",
+          "variant": "static_not_resolved"
+        },
+        {
+          "id": "path-fstring-basename",
+          "baseline": "resolved",
+          "variant": "static_not_resolved"
+        },
+        {
+          "id": "path-remove",
+          "baseline": "undeterminable",
+          "variant": "static_not_resolved"
+        },
+        {
+          "id": "path-direct-param",
+          "baseline": "undeterminable",
+          "variant": "check_failed"
+        },
+        {
+          "id": "path-form-name",
+          "baseline": "resolved",
+          "variant": "static_not_resolved"
+        }
+      ],
+      "transitions": {
+        "resolved->other": 5,
+        "other->other": 4
+      },
+      "resolved_only_in_variant": [],
+      "resolved_only_in_baseline": [
+        "cmd-flask-os-system",
+        "cmd-json-validate",
+        "path-flask-guard",
+        "path-form-name",
+        "path-fstring-basename"
+      ]
+    },
+    "mcp_guidance": {
+      "changed_cases": [
+        {
+          "id": "cmd-param-os-system",
+          "baseline": "behavior_not_removed",
+          "variant": "static_not_resolved"
+        },
+        {
+          "id": "cmd-json-validate",
+          "baseline": "resolved",
+          "variant": "behavior_not_removed"
+        },
+        {
+          "id": "path-param-basename",
+          "baseline": "behavior_not_removed",
+          "variant": "static_not_resolved"
+        },
+        {
+          "id": "path-flask-guard",
+          "baseline": "resolved",
+          "variant": "static_not_resolved"
+        },
+        {
+          "id": "path-fstring-basename",
+          "baseline": "resolved",
+          "variant": "static_not_resolved"
+        },
+        {
+          "id": "path-remove",
+          "baseline": "undeterminable",
+          "variant": "static_not_resolved"
+        },
+        {
+          "id": "path-direct-param",
+          "baseline": "undeterminable",
+          "variant": "static_not_resolved"
+        },
+        {
+          "id": "path-form-name",
+          "baseline": "resolved",
+          "variant": "undeterminable"
+        }
+      ],
+      "transitions": {
+        "other->other": 4,
+        "resolved->other": 4
+      },
+      "resolved_only_in_variant": [],
+      "resolved_only_in_baseline": [
+        "cmd-json-validate",
+        "path-flask-guard",
+        "path-form-name",
+        "path-fstring-basename"
+      ]
+    },
+    "fix_prompt_review": {
+      "changed_cases": [
+        {
+          "id": "cmd-flask-os-system",
+          "baseline": "resolved",
+          "variant": "behavior_not_removed"
+        },
+        {
+          "id": "cmd-param-os-system",
+          "baseline": "behavior_not_removed",
+          "variant": "static_not_resolved"
+        },
+        {
+          "id": "path-param-basename",
+          "baseline": "behavior_not_removed",
+          "variant": "resolved"
+        },
+        {
+          "id": "path-flask-guard",
+          "baseline": "resolved",
+          "variant": "behavior_not_removed"
+        },
+        {
+          "id": "path-remove",
+          "baseline": "undeterminable",
+          "variant": "resolved"
+        },
+        {
+          "id": "path-direct-param",
+          "baseline": "undeterminable",
+          "variant": "behavior_not_removed"
+        }
+      ],
+      "transitions": {
+        "resolved->other": 2,
+        "other->other": 2,
+        "other->resolved": 2
+      },
+      "resolved_only_in_variant": [
+        "path-param-basename",
+        "path-remove"
+      ],
+      "resolved_only_in_baseline": [
+        "cmd-flask-os-system",
+        "path-flask-guard"
+      ]
+    }
+  },
+  "rows": {
+    "fix_prompt": [
+      {
+        "id": "cmd-flask-os-system",
+        "outcome": "resolved",
+        "static_finding_resolved": "pass",
+        "defect_behavior_removed": "pass",
+        "new_debt": false,
+        "verdict": "verified",
+        "receipt_digest": "d59367172504b29e2c19c1ce"
+      },
+      {
+        "id": "cmd-param-os-system",
+        "outcome": "behavior_not_removed",
+        "static_finding_resolved": "pass",
+        "defect_behavior_removed": "fail",
+        "new_debt": false,
+        "verdict": "failed",
+        "receipt_digest": "36fc788ddfdfd99c982e4582"
+      },
+      {
+        "id": "cmd-param-shell-true",
+        "outcome": "static_not_resolved",
+        "static_finding_resolved": "fail",
+        "defect_behavior_removed": "fail",
+        "new_debt": false,
+        "verdict": "failed",
+        "receipt_digest": "753d2738e941a8d9e1015f0a"
+      },
+      {
+        "id": "cmd-popen-form",
+        "outcome": "resolved",
+        "static_finding_resolved": "pass",
+        "defect_behavior_removed": "pass",
+        "new_debt": false,
+        "verdict": "verified",
+        "receipt_digest": "0be855cf9e9fc39e51b17e88"
+      },
+      {
+        "id": "cmd-check-output-host",
+        "outcome": "resolved",
+        "static_finding_resolved": "pass",
+        "defect_behavior_removed": "pass",
+        "new_debt": false,
+        "verdict": "verified",
+        "receipt_digest": "289b963321b37b95974ebcbd"
+      },
+      {
+        "id": "cmd-json-validate",
+        "outcome": "resolved",
+        "static_finding_resolved": "pass",
+        "defect_behavior_removed": "pass",
+        "new_debt": false,
+        "verdict": "verified",
+        "receipt_digest": "e7765439c703dfdb9349bdc6"
+      },
+      {
+        "id": "cmd-popen-shell",
+        "outcome": "static_not_resolved",
+        "static_finding_resolved": "fail",
+        "defect_behavior_removed": "fail",
+        "new_debt": false,
+        "verdict": "failed",
+        "receipt_digest": "9765905c89ff3de48e7156db"
+      },
+      {
+        "id": "path-param-basename",
+        "outcome": "behavior_not_removed",
+        "static_finding_resolved": "pass",
+        "defect_behavior_removed": "fail",
+        "new_debt": false,
+        "verdict": "failed",
+        "receipt_digest": "464f5b48e14cf6f5e2a23556"
+      },
+      {
+        "id": "path-flask-guard",
+        "outcome": "resolved",
+        "static_finding_resolved": "pass",
+        "defect_behavior_removed": "pass",
+        "new_debt": false,
+        "verdict": "verified",
+        "receipt_digest": "e41544851d8bf522bde483ad"
+      },
+      {
+        "id": "path-pathlib-read-text",
+        "outcome": "resolved",
+        "static_finding_resolved": "pass",
+        "defect_behavior_removed": "pass",
+        "new_debt": false,
+        "verdict": "verified",
+        "receipt_digest": "3a1527dc38022ae7c27acae5"
+      },
+      {
+        "id": "path-fstring-basename",
+        "outcome": "resolved",
+        "static_finding_resolved": "pass",
+        "defect_behavior_removed": "pass",
+        "new_debt": false,
+        "verdict": "verified",
+        "receipt_digest": "ca29390df8479a99d3b4b8f0"
+      },
+      {
+        "id": "path-remove",
+        "outcome": "undeterminable",
+        "static_finding_resolved": "pass",
+        "defect_behavior_removed": "unknown",
+        "new_debt": false,
+        "verdict": "undeterminable",
+        "receipt_digest": "2e581e09b9c44619e048fb27"
+      },
+      {
+        "id": "path-direct-param",
+        "outcome": "undeterminable",
+        "static_finding_resolved": "pass",
+        "defect_behavior_removed": "unknown",
+        "new_debt": false,
+        "verdict": "undeterminable",
+        "receipt_digest": "281e4f9ebeb023a283a4ef27"
+      },
+      {
+        "id": "path-form-name",
+        "outcome": "resolved",
+        "static_finding_resolved": "pass",
+        "defect_behavior_removed": "pass",
+        "new_debt": false,
+        "verdict": "verified",
+        "receipt_digest": "3daac921b284eac213f4b9a5"
+      },
+      {
+        "id": "sql-cursor-fstring",
+        "outcome": "resolved",
+        "static_finding_resolved": "pass",
+        "defect_behavior_removed": "pass",
+        "new_debt": false,
+        "verdict": "verified",
+        "receipt_digest": "310c5436a02bc5b578f0f04e"
+      },
+      {
+        "id": "sql-conn-concat",
+        "outcome": "resolved",
+        "static_finding_resolved": "pass",
+        "defect_behavior_removed": "pass",
+        "new_debt": false,
+        "verdict": "verified",
+        "receipt_digest": "0d4eabaa9480e732884c9c81"
+      },
+      {
+        "id": "sql-flask-cursor",
+        "outcome": "resolved",
+        "static_finding_resolved": "pass",
+        "defect_behavior_removed": "pass",
+        "new_debt": false,
+        "verdict": "verified",
+        "receipt_digest": "12fdd92be86bf71e128e1fef"
+      },
+      {
+        "id": "sql-percent-format",
+        "outcome": "resolved",
+        "static_finding_resolved": "pass",
+        "defect_behavior_removed": "pass",
+        "new_debt": false,
+        "verdict": "verified",
+        "receipt_digest": "98caa60ce5f0e83dd309ad18"
+      },
+      {
+        "id": "sql-like",
+        "outcome": "resolved",
+        "static_finding_resolved": "pass",
+        "defect_behavior_removed": "pass",
+        "new_debt": false,
+        "verdict": "verified",
+        "receipt_digest": "b302a6f32e1b1c450eac147a"
+      },
+      {
+        "id": "sql-login-form",
+        "outcome": "resolved",
+        "static_finding_resolved": "pass",
+        "defect_behavior_removed": "pass",
+        "new_debt": false,
+        "verdict": "verified",
+        "receipt_digest": "7aaa28084dd47d920d5a13fc"
+      },
+      {
+        "id": "sql-order-by-allowlist",
+        "outcome": "static_not_resolved",
+        "static_finding_resolved": "fail",
+        "defect_behavior_removed": "pass",
+        "new_debt": false,
+        "verdict": "failed",
+        "receipt_digest": "e4db5f9be89cdf3547f83068"
+      }
+    ],
+    "review_bundle": [
+      {
+        "id": "cmd-flask-os-system",
+        "outcome": "behavior_not_removed",
+        "static_finding_resolved": "pass",
+        "defect_behavior_removed": "fail",
+        "new_debt": true,
+        "verdict": "failed",
+        "receipt_digest": "07c13abf7cf98b93efce0c11"
+      },
+      {
+        "id": "cmd-param-os-system",
+        "outcome": "static_not_resolved",
+        "static_finding_resolved": "fail",
+        "defect_behavior_removed": "fail",
+        "new_debt": false,
+        "verdict": "failed",
+        "receipt_digest": "89fe02758e6af81dac21e116"
+      },
+      {
+        "id": "cmd-param-shell-true",
+        "outcome": "static_not_resolved",
+        "static_finding_resolved": "fail",
+        "defect_behavior_removed": "pass",
+        "new_debt": false,
+        "verdict": "failed",
+        "receipt_digest": "6f6db18eb497190f62ba6478"
+      },
+      {
+        "id": "cmd-popen-form",
+        "outcome": "resolved",
+        "static_finding_resolved": "pass",
+        "defect_behavior_removed": "pass",
+        "new_debt": false,
+        "verdict": "verified",
+        "receipt_digest": "e87987bf89e90a1895f9542b"
+      },
+      {
+        "id": "cmd-check-output-host",
+        "outcome": "resolved",
+        "static_finding_resolved": "pass",
+        "defect_behavior_removed": "pass",
+        "new_debt": false,
+        "verdict": "verified",
+        "receipt_digest": "39e62152d1b4ecd04d407031"
+      },
+      {
+        "id": "cmd-json-validate",
+        "outcome": "behavior_not_removed",
+        "static_finding_resolved": "pass",
+        "defect_behavior_removed": "fail",
+        "new_debt": true,
+        "verdict": "failed",
+        "receipt_digest": "89ef7b11b69e906844178566"
+      },
+      {
+        "id": "cmd-popen-shell",
+        "outcome": "static_not_resolved",
+        "static_finding_resolved": "fail",
+        "defect_behavior_removed": "fail",
+        "new_debt": false,
+        "verdict": "failed",
+        "receipt_digest": "d0d9d2e4bf92c39c805cef71"
+      },
+      {
+        "id": "path-param-basename",
+        "outcome": "static_not_resolved",
+        "static_finding_resolved": "fail",
+        "defect_behavior_removed": "pass",
+        "new_debt": false,
+        "verdict": "failed",
+        "receipt_digest": "ae30e054df8e85d3b2ed03d0"
+      },
+      {
+        "id": "path-flask-guard",
+        "outcome": "static_not_resolved",
+        "static_finding_resolved": "fail",
+        "defect_behavior_removed": "fail",
+        "new_debt": false,
+        "verdict": "failed",
+        "receipt_digest": "16ffbe8e48d36b224ae5f672"
+      },
+      {
+        "id": "path-pathlib-read-text",
+        "outcome": "resolved",
+        "static_finding_resolved": "pass",
+        "defect_behavior_removed": "pass",
+        "new_debt": false,
+        "verdict": "verified",
+        "receipt_digest": "c9b9d178fdde0060a2f7b277"
+      },
+      {
+        "id": "path-fstring-basename",
+        "outcome": "static_not_resolved",
+        "static_finding_resolved": "fail",
+        "defect_behavior_removed": "pass",
+        "new_debt": false,
+        "verdict": "failed",
+        "receipt_digest": "d96604c6e9d74472d1d905af"
+      },
+      {
+        "id": "path-remove",
+        "outcome": "static_not_resolved",
+        "static_finding_resolved": "fail",
+        "defect_behavior_removed": "pass",
+        "new_debt": false,
+        "verdict": "failed",
+        "receipt_digest": "514df5ee4d604a990bc3716a"
+      },
+      {
+        "id": "path-direct-param",
+        "outcome": "check_failed",
+        "static_finding_resolved": "pass",
+        "defect_behavior_removed": "unknown",
+        "new_debt": false,
+        "verdict": "failed",
+        "receipt_digest": "9dd50f29e83f38d7df652c52"
+      },
+      {
+        "id": "path-form-name",
+        "outcome": "static_not_resolved",
+        "static_finding_resolved": "fail",
+        "defect_behavior_removed": "pass",
+        "new_debt": false,
+        "verdict": "failed",
+        "receipt_digest": "4f976ddc0862dac7fb796c7d"
+      },
+      {
+        "id": "sql-cursor-fstring",
+        "outcome": "resolved",
+        "static_finding_resolved": "pass",
+        "defect_behavior_removed": "pass",
+        "new_debt": false,
+        "verdict": "verified",
+        "receipt_digest": "c55c009f572446d1c16d3c4f"
+      },
+      {
+        "id": "sql-conn-concat",
+        "outcome": "resolved",
+        "static_finding_resolved": "pass",
+        "defect_behavior_removed": "pass",
+        "new_debt": false,
+        "verdict": "verified",
+        "receipt_digest": "01aa4aa4d06ee8770267097f"
+      },
+      {
+        "id": "sql-flask-cursor",
+        "outcome": "resolved",
+        "static_finding_resolved": "pass",
+        "defect_behavior_removed": "pass",
+        "new_debt": false,
+        "verdict": "verified",
+        "receipt_digest": "88e89cdb5750ffe447a3a0b7"
+      },
+      {
+        "id": "sql-percent-format",
+        "outcome": "resolved",
+        "static_finding_resolved": "pass",
+        "defect_behavior_removed": "pass",
+        "new_debt": false,
+        "verdict": "verified",
+        "receipt_digest": "636cf43ef8d657106d0a9d1a"
+      },
+      {
+        "id": "sql-like",
+        "outcome": "resolved",
+        "static_finding_resolved": "pass",
+        "defect_behavior_removed": "pass",
+        "new_debt": false,
+        "verdict": "verified",
+        "receipt_digest": "19cdd12d8f918f95f61baf55"
+      },
+      {
+        "id": "sql-login-form",
+        "outcome": "resolved",
+        "static_finding_resolved": "pass",
+        "defect_behavior_removed": "pass",
+        "new_debt": false,
+        "verdict": "verified",
+        "receipt_digest": "2582782bcd4506e0efaa2a17"
+      },
+      {
+        "id": "sql-order-by-allowlist",
+        "outcome": "static_not_resolved",
+        "static_finding_resolved": "fail",
+        "defect_behavior_removed": "pass",
+        "new_debt": false,
+        "verdict": "failed",
+        "receipt_digest": "34fad4c3966591f1ba0c2474"
+      }
+    ],
+    "mcp_guidance": [
+      {
+        "id": "cmd-flask-os-system",
+        "outcome": "resolved",
+        "static_finding_resolved": "pass",
+        "defect_behavior_removed": "pass",
+        "new_debt": false,
+        "verdict": "verified",
+        "receipt_digest": "0d0fd8b12610f01268ffb2cc"
+      },
+      {
+        "id": "cmd-param-os-system",
+        "outcome": "static_not_resolved",
+        "static_finding_resolved": "fail",
+        "defect_behavior_removed": "pass",
+        "new_debt": false,
+        "verdict": "failed",
+        "receipt_digest": "c705c4f4f4bf7135dc8f90f6"
+      },
+      {
+        "id": "cmd-param-shell-true",
+        "outcome": "static_not_resolved",
+        "static_finding_resolved": "fail",
+        "defect_behavior_removed": "pass",
+        "new_debt": false,
+        "verdict": "failed",
+        "receipt_digest": "f452d16b010dd5c801161bb4"
+      },
+      {
+        "id": "cmd-popen-form",
+        "outcome": "resolved",
+        "static_finding_resolved": "pass",
+        "defect_behavior_removed": "pass",
+        "new_debt": false,
+        "verdict": "verified",
+        "receipt_digest": "f854593b6c2f9e0669b69a22"
+      },
+      {
+        "id": "cmd-check-output-host",
+        "outcome": "resolved",
+        "static_finding_resolved": "pass",
+        "defect_behavior_removed": "pass",
+        "new_debt": false,
+        "verdict": "verified",
+        "receipt_digest": "e52ecf66cd050ff9db54bd2a"
+      },
+      {
+        "id": "cmd-json-validate",
+        "outcome": "behavior_not_removed",
+        "static_finding_resolved": "pass",
+        "defect_behavior_removed": "fail",
+        "new_debt": false,
+        "verdict": "failed",
+        "receipt_digest": "af0e59306c83ecc904c3f56c"
+      },
+      {
+        "id": "cmd-popen-shell",
+        "outcome": "static_not_resolved",
+        "static_finding_resolved": "fail",
+        "defect_behavior_removed": "pass",
+        "new_debt": false,
+        "verdict": "failed",
+        "receipt_digest": "6f9e5249177442908fef4afd"
+      },
+      {
+        "id": "path-param-basename",
+        "outcome": "static_not_resolved",
+        "static_finding_resolved": "fail",
+        "defect_behavior_removed": "pass",
+        "new_debt": false,
+        "verdict": "failed",
+        "receipt_digest": "eb5cac26da42c55507e4cb7f"
+      },
+      {
+        "id": "path-flask-guard",
+        "outcome": "static_not_resolved",
+        "static_finding_resolved": "fail",
+        "defect_behavior_removed": "fail",
+        "new_debt": false,
+        "verdict": "failed",
+        "receipt_digest": "2889398d9f84a8404042d8ed"
+      },
+      {
+        "id": "path-pathlib-read-text",
+        "outcome": "resolved",
+        "static_finding_resolved": "pass",
+        "defect_behavior_removed": "pass",
+        "new_debt": false,
+        "verdict": "verified",
+        "receipt_digest": "5d3539e6b434b0c3c183a7b9"
+      },
+      {
+        "id": "path-fstring-basename",
+        "outcome": "static_not_resolved",
+        "static_finding_resolved": "fail",
+        "defect_behavior_removed": "pass",
+        "new_debt": false,
+        "verdict": "failed",
+        "receipt_digest": "33c5edbe3ecea48f4b3d7bf6"
+      },
+      {
+        "id": "path-remove",
+        "outcome": "static_not_resolved",
+        "static_finding_resolved": "fail",
+        "defect_behavior_removed": "pass",
+        "new_debt": false,
+        "verdict": "failed",
+        "receipt_digest": "34461fdb0fa01d4d0c2be9b0"
+      },
+      {
+        "id": "path-direct-param",
+        "outcome": "static_not_resolved",
+        "static_finding_resolved": "fail",
+        "defect_behavior_removed": "pass",
+        "new_debt": false,
+        "verdict": "failed",
+        "receipt_digest": "1292e0913c3226ac75ab2e67"
+      },
+      {
+        "id": "path-form-name",
+        "outcome": "undeterminable",
+        "static_finding_resolved": "pass",
+        "defect_behavior_removed": "unknown",
+        "new_debt": false,
+        "verdict": "undeterminable",
+        "receipt_digest": "0d26f34545aab8d0e8e55448"
+      },
+      {
+        "id": "sql-cursor-fstring",
+        "outcome": "resolved",
+        "static_finding_resolved": "pass",
+        "defect_behavior_removed": "pass",
+        "new_debt": false,
+        "verdict": "verified",
+        "receipt_digest": "87438b53723da25f0ecb73e8"
+      },
+      {
+        "id": "sql-conn-concat",
+        "outcome": "resolved",
+        "static_finding_resolved": "pass",
+        "defect_behavior_removed": "pass",
+        "new_debt": false,
+        "verdict": "verified",
+        "receipt_digest": "dfd77a8409faec6a6f05b381"
+      },
+      {
+        "id": "sql-flask-cursor",
+        "outcome": "resolved",
+        "static_finding_resolved": "pass",
+        "defect_behavior_removed": "pass",
+        "new_debt": false,
+        "verdict": "verified",
+        "receipt_digest": "2c868ece1ed65a24a7e8d5ea"
+      },
+      {
+        "id": "sql-percent-format",
+        "outcome": "resolved",
+        "static_finding_resolved": "pass",
+        "defect_behavior_removed": "pass",
+        "new_debt": false,
+        "verdict": "verified",
+        "receipt_digest": "9619ff6b5f035548487fa2df"
+      },
+      {
+        "id": "sql-like",
+        "outcome": "resolved",
+        "static_finding_resolved": "pass",
+        "defect_behavior_removed": "pass",
+        "new_debt": false,
+        "verdict": "verified",
+        "receipt_digest": "58afcd41c437f12ef77fea08"
+      },
+      {
+        "id": "sql-login-form",
+        "outcome": "resolved",
+        "static_finding_resolved": "pass",
+        "defect_behavior_removed": "pass",
+        "new_debt": false,
+        "verdict": "verified",
+        "receipt_digest": "74a4a1408a6d2efc8552cc5d"
+      },
+      {
+        "id": "sql-order-by-allowlist",
+        "outcome": "static_not_resolved",
+        "static_finding_resolved": "fail",
+        "defect_behavior_removed": "pass",
+        "new_debt": false,
+        "verdict": "failed",
+        "receipt_digest": "c998c773e8d6618cc971c797"
+      }
+    ],
+    "fix_prompt_review": [
+      {
+        "id": "cmd-flask-os-system",
+        "outcome": "behavior_not_removed",
+        "static_finding_resolved": "pass",
+        "defect_behavior_removed": "fail",
+        "new_debt": false,
+        "verdict": "failed",
+        "receipt_digest": "42cb3f64043139a565985e70"
+      },
+      {
+        "id": "cmd-param-os-system",
+        "outcome": "static_not_resolved",
+        "static_finding_resolved": "fail",
+        "defect_behavior_removed": "fail",
+        "new_debt": false,
+        "verdict": "failed",
+        "receipt_digest": "806539e838a77a2f1cd69052"
+      },
+      {
+        "id": "cmd-param-shell-true",
+        "outcome": "static_not_resolved",
+        "static_finding_resolved": "fail",
+        "defect_behavior_removed": "pass",
+        "new_debt": false,
+        "verdict": "failed",
+        "receipt_digest": "eb0c1aecefa968b826e8d91b"
+      },
+      {
+        "id": "cmd-popen-form",
+        "outcome": "resolved",
+        "static_finding_resolved": "pass",
+        "defect_behavior_removed": "pass",
+        "new_debt": false,
+        "verdict": "verified",
+        "receipt_digest": "9bd8da4440b7b3391cc9d19d"
+      },
+      {
+        "id": "cmd-check-output-host",
+        "outcome": "resolved",
+        "static_finding_resolved": "pass",
+        "defect_behavior_removed": "pass",
+        "new_debt": false,
+        "verdict": "verified",
+        "receipt_digest": "dee2f323644e8f1ef0c3ea28"
+      },
+      {
+        "id": "cmd-json-validate",
+        "outcome": "resolved",
+        "static_finding_resolved": "pass",
+        "defect_behavior_removed": "pass",
+        "new_debt": false,
+        "verdict": "verified",
+        "receipt_digest": "c64d62bc93ca73b183d95ba0"
+      },
+      {
+        "id": "cmd-popen-shell",
+        "outcome": "static_not_resolved",
+        "static_finding_resolved": "fail",
+        "defect_behavior_removed": "fail",
+        "new_debt": false,
+        "verdict": "failed",
+        "receipt_digest": "04707b28418102be5b0ae014"
+      },
+      {
+        "id": "path-param-basename",
+        "outcome": "resolved",
+        "static_finding_resolved": "pass",
+        "defect_behavior_removed": "pass",
+        "new_debt": false,
+        "verdict": "verified",
+        "receipt_digest": "3cddf6b17e277943ad6fb36d"
+      },
+      {
+        "id": "path-flask-guard",
+        "outcome": "behavior_not_removed",
+        "static_finding_resolved": "pass",
+        "defect_behavior_removed": "fail",
+        "new_debt": false,
+        "verdict": "failed",
+        "receipt_digest": "02e65087a9b65733416fc8c6"
+      },
+      {
+        "id": "path-pathlib-read-text",
+        "outcome": "resolved",
+        "static_finding_resolved": "pass",
+        "defect_behavior_removed": "pass",
+        "new_debt": false,
+        "verdict": "verified",
+        "receipt_digest": "671f9265930b50fd4889af8a"
+      },
+      {
+        "id": "path-fstring-basename",
+        "outcome": "resolved",
+        "static_finding_resolved": "pass",
+        "defect_behavior_removed": "pass",
+        "new_debt": false,
+        "verdict": "verified",
+        "receipt_digest": "00a3f0ef55980910bae7dcba"
+      },
+      {
+        "id": "path-remove",
+        "outcome": "resolved",
+        "static_finding_resolved": "pass",
+        "defect_behavior_removed": "pass",
+        "new_debt": false,
+        "verdict": "verified",
+        "receipt_digest": "8a1d95600aeb691bd8e79c1f"
+      },
+      {
+        "id": "path-direct-param",
+        "outcome": "behavior_not_removed",
+        "static_finding_resolved": "pass",
+        "defect_behavior_removed": "fail",
+        "new_debt": false,
+        "verdict": "failed",
+        "receipt_digest": "95e2022e865e2238ab4af0a2"
+      },
+      {
+        "id": "path-form-name",
+        "outcome": "resolved",
+        "static_finding_resolved": "pass",
+        "defect_behavior_removed": "pass",
+        "new_debt": false,
+        "verdict": "verified",
+        "receipt_digest": "d4d19d367c85b0b1b81f94e1"
+      },
+      {
+        "id": "sql-cursor-fstring",
+        "outcome": "resolved",
+        "static_finding_resolved": "pass",
+        "defect_behavior_removed": "pass",
+        "new_debt": false,
+        "verdict": "verified",
+        "receipt_digest": "703d7b1ccdc9ada5070fb869"
+      },
+      {
+        "id": "sql-conn-concat",
+        "outcome": "resolved",
+        "static_finding_resolved": "pass",
+        "defect_behavior_removed": "pass",
+        "new_debt": false,
+        "verdict": "verified",
+        "receipt_digest": "d62f3b207dbd900d84f6e957"
+      },
+      {
+        "id": "sql-flask-cursor",
+        "outcome": "resolved",
+        "static_finding_resolved": "pass",
+        "defect_behavior_removed": "pass",
+        "new_debt": false,
+        "verdict": "verified",
+        "receipt_digest": "731e165c4fb07cce75e79556"
+      },
+      {
+        "id": "sql-percent-format",
+        "outcome": "resolved",
+        "static_finding_resolved": "pass",
+        "defect_behavior_removed": "pass",
+        "new_debt": false,
+        "verdict": "verified",
+        "receipt_digest": "0f9e050bcda58b397613c364"
+      },
+      {
+        "id": "sql-like",
+        "outcome": "resolved",
+        "static_finding_resolved": "pass",
+        "defect_behavior_removed": "pass",
+        "new_debt": false,
+        "verdict": "verified",
+        "receipt_digest": "391e7483108683d77ae9dd04"
+      },
+      {
+        "id": "sql-login-form",
+        "outcome": "resolved",
+        "static_finding_resolved": "pass",
+        "defect_behavior_removed": "pass",
+        "new_debt": false,
+        "verdict": "verified",
+        "receipt_digest": "211a3a53ac3e36afc71cfea9"
+      },
+      {
+        "id": "sql-order-by-allowlist",
+        "outcome": "static_not_resolved",
+        "static_finding_resolved": "fail",
+        "defect_behavior_removed": "pass",
+        "new_debt": false,
+        "verdict": "failed",
+        "receipt_digest": "3dcebff3b7de4b82c9b6117f"
+      }
+    ]
+  }
+}

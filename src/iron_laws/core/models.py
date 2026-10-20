@@ -251,7 +251,7 @@ class CoverageLedger(BaseModel):
     limitations: list[str] = Field(default_factory=list)
 
 
-REPORT_SCHEMA_VERSION = "1.5"
+REPORT_SCHEMA_VERSION = "1.6"
 
 
 class AuditReport(BaseModel):

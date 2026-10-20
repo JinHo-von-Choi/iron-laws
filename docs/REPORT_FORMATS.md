@@ -5,9 +5,20 @@
 최상위 키: `schema_version`, `document_id`, `title`, `auditor`, `audit_date`, `target_path`, `summary`, `violations`, `diagnostics`, `coverage_ledger`, `execution`, `approval_checks`, `metadata`.
 
 ### 버전 정책
-- `schema_version`은 `주.부` 형식이다. 현재 `1.5`(1.5에서 지적의 선택형 `review_opinion`(LLM 검토 의견: `source`·`verdict`·`reason`, 판정에 쓰지 않음), 지적의 `standards`(기준 팩 항목: `pack_id`·`edition`·`item_id`·`item_name`·`mapping_verified`)와 `metadata.standard_packs`(팩별 `id`·`title`·`edition`·`source_url`·`retrieved_at`·`sha256`·`mapping_verified`), 장부 지점의 `linked_columns`(같은 줄의 중첩 호출 `open(os.path.join(...))`에서 함께 연결한 다른 호출 지적의 열)를 추가했다. `gov_standard`는 그대로 둔다. 1.4에서 신뢰 지표와 상한 정책 필드, 지적의 `verification_grade`를 추가했다. 1.3에서 `finding_id`·`execution`·`approval_checks`와 장부 근거 필드를 추가했다). 독립 검증기는 1.3·1.4·1.5를 확인하며, 그 밖의 버전은 통과가 아니라 `판정 불가`로 끝낸다([EVIDENCE_VERIFICATION.md](EVIDENCE_VERIFICATION.md)).
+- `schema_version`은 `주.부` 형식이다. 현재 `1.6`이다.
 - 키를 **추가**하면 부 버전을 올린다. 소비하는 쪽은 모르는 키를 무시해야 한다.
 - 키를 **삭제하거나 의미를 바꾸면** 주 버전을 올리고 CHANGELOG에 알린다. 주 버전이 같으면 기존 키는 유지된다.
+- 판마다 무엇을 추가했는지:
+
+  | 판 | 추가한 것 |
+  |---|---|
+  | 1.6 | 장부 `digests.spec`(적용된 사용자 명세의 지문), 장부 지점의 근거 종류 `declared_sanitizer`, `metadata.custom_spec` |
+  | 1.5 | 지적의 `review_opinion`·`standards`, `metadata.standard_packs`, 장부 지점의 `linked_columns` |
+  | 1.4 | 신뢰 지표와 상한 정책 필드, 지적의 `verification_grade` |
+  | 1.3 | 지적의 `finding_id`, `execution`·`approval_checks`, 장부 근거 필드 |
+
+  `gov_standard`는 그대로 둔다.
+- 독립 검증기는 1.3·1.4·1.5·1.6을 확인하며, 그 밖의 버전은 통과가 아니라 `판정 불가`로 끝낸다([EVIDENCE_VERIFICATION.md](EVIDENCE_VERIFICATION.md)).
 - 기준선 파일(`.iron-laws-baseline.json`)은 별도의 `schema_version`(정수)을 가진다. 형식이 바뀌면 이전 기준선은 읽지 않고 다시 만들도록 안내한다.
 
 ### `summary`
@@ -52,7 +63,7 @@
 `error`가 하나라도 있으면 `scan_status`가 `incomplete`다. `consistency`는 보고서를 내보내기 전에 독립 검증기가 찾은 내부 모순이며, 있으면 통과로 내보내지 않고 `incomplete`로 표시한다.
 
 ### `metadata`
-`tool_version`, `ruleset`(규칙 수·해시·규칙별 버전), `config`·`config_source`·`config_hash`·`fail_on_source`, `files_by_language`, `skipped_files`, `excluded_summary`(제외 패턴별 파일·폴더 수), `unscanned_by_extension`(지원하지 않는 확장자 파일 수), `cross_file`(파일 간 해석 횟수, 한도에 걸린 위치 수, 호출한 파일의 언어별 `resolved_calls`·`resolution_gaps`·`limit_hits`·`resolution_gap_rate` = 공백 / (해석 + 공백)), `repo_relative_prefix`, `routes`(웹 라우트 수, 중요 기능 라우트의 인증·인가 yes/no/unknown 건수와 행), `suppressions`(적용된 억제 주석의 규칙·위치·사유·만료일·범위), `standard_packs`(1.5, 기준 팩 목록), `scope`(`--changed-since` 사용 시: `mode`·`ref`·`changed_files`·`changed_paths`·`renames`(이름이 바뀐 파일의 `from`·`to`)·`full_findings`), `baseline`. `ruleset`에는 `support_manifest`(규칙 검증 등급의 근거 지문)가 있으며 규칙 집합 `hash`에 포함된다.
+`tool_version`, `ruleset`(규칙 수·해시·규칙별 버전), `config`·`config_source`·`config_hash`·`fail_on_source`, `files_by_language`, `skipped_files`, `excluded_summary`(제외 패턴별 파일·폴더 수), `unscanned_by_extension`(지원하지 않는 확장자 파일 수), `cross_file`(파일 간 해석 횟수, 한도에 걸린 위치 수, 호출한 파일의 언어별 `resolved_calls`·`resolution_gaps`·`limit_hits`·`resolution_gap_rate` = 공백 / (해석 + 공백)), `repo_relative_prefix`, `routes`(웹 라우트 수, 중요 기능 라우트의 인증·인가 yes/no/unknown 건수와 행), `suppressions`(적용된 억제 주석의 규칙·위치·사유·만료일·범위), `standard_packs`(1.5, 기준 팩 목록), `custom_spec`(1.6, 적용한 사용자 명세의 경로·지문·장부 반영 여부), `scope`(`--changed-since` 사용 시: `mode`·`ref`·`changed_files`·`changed_paths`·`renames`(이름이 바뀐 파일의 `from`·`to`)·`full_findings`), `baseline`. `ruleset`에는 `support_manifest`(규칙 검증 등급의 근거 지문)가 있으며 규칙 집합 `hash`에 포함된다.
 
 ## SARIF (`audit --format sarif`)
 - 버전 2.1.0. 결과 위치는 **저장소 루트(`.git`이 있는 가장 가까운 상위 폴더) 기준 상대 경로**이고 `uriBaseId`는 `%SRCROOT%`, 경로 구간은 URI 인코딩된다.

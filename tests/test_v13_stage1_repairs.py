@@ -89,7 +89,7 @@ def test_every_met_point_has_an_evidence_kind_and_finding_ids_resolve(tmp_path_f
         ids = {v.finding_id: v for v in report.violations}
         for point in ledger.points:
             if point.state == "evidence_met":
-                assert point.evidence_kind in ("finding", "closed_value", "guard"), (files, point)
+                assert point.evidence_kind in ("finding", "closed_value", "guard", "declared_sanitizer"), (files, point)
             else:
                 assert point.evidence_kind == "none", (files, point)
             assert point.finding == bool(point.finding_ids)

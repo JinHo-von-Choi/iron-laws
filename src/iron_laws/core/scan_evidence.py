@@ -13,6 +13,7 @@ from iron_laws.core.dependencies import build_callers_index, dependency_snapshot
 from iron_laws.core.ledger import FAMILY_RULES
 from iron_laws.core.masking import mask_secrets
 from iron_laws.core.models import (
+    Diagnostic,
     Violation,
 )
 from iron_laws.core.redaction import redact_text
@@ -33,6 +34,12 @@ def self_shape(src: SourceFile | None, v: Violation, sensitive: set[str]) -> str
 
 
 class ScanEvidenceBuilder:
+    def _spec_digest(self) -> str:
+        """이번 점검이 반영한 사용자 명세의 지문. 명세가 없으면 빈 문자열이다."""
+        from iron_laws.engine import taint
+
+        return taint.CUSTOM_KIND
+
     def _build_ledger(self, sources: list[SourceFile], violations: list[Violation]):
         family_rules = {cls.rule_id for cls in FAMILY_RULES.values()}
         findings: dict[tuple[str, str, int, int], list[str]] = {}
@@ -44,8 +51,9 @@ class ScanEvidenceBuilder:
             "tool": f"{tool_version()}+{self._ruleset_info()['hash']}",
             "config": hashlib.sha256(self.config.model_dump_json().encode()).hexdigest()[:16],
             "contract": contract_digest(self.contract),
+            "spec": self._spec_digest(),
         }
-        return self._ledger_builder(
+        ledger = self._ledger_builder(
             sources,
             self._skipped,
             self.contract,
@@ -57,7 +65,26 @@ class ScanEvidenceBuilder:
             digests,
             policy_changed=self._contract_changed(),
             lookup_budget=self.config.limits.max_cross_file_lookups,
+            rules=self.rules if self.config.policies.ledger_include_spec_points else None,
         )
+        self._note_spec_scope(ledger)
+        return ledger
+    def _note_spec_scope(self, ledger) -> None:
+        """명세의 계열 중 장부가 다루지 않는 계열이 있으면 감추지 않고 밝힌다."""
+        if not self.config.policies.ledger_include_spec_points:
+            return
+        from iron_laws.core.custom_spec import current_spec
+
+        loaded = current_spec()
+        if loaded is None:
+            return
+        entries = list(loaded.spec.sources) + list(loaded.spec.sinks) + list(loaded.spec.sanitizers)
+        outside = sorted({e.family for e in entries if e.family not in set(FAMILY_RULES)})
+        if not outside:
+            return
+        message = f"명세의 {', '.join(outside)} 계열 항목은 검사 공백 장부에 계열이 없어 대조하지 않았습니다"
+        ledger.limitations.append(message)
+        self._diagnostics.append(Diagnostic(kind="spec_scope", severity="warning", message=message))
 
 
     def _attach_dependencies(self, sources: list[SourceFile], violations: list[Violation]) -> None:

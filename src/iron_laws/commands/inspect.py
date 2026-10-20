@@ -12,6 +12,7 @@ from iron_laws.commands.common import (
     _write_or_print,
     app,
     err,
+    experience_lessons,
     index_app,
     spec_app,
 )
@@ -304,8 +305,9 @@ def spec_draft_command(
     sources = AuditScanner(path)._read_sources()
     draft = build_draft(sources)
     if llm_cmd:
+        lessons = experience_lessons(families={"command", "path", "sql", "code"})
         try:
-            done = subprocess.run(shlex.split(llm_cmd), input=llm_prompt(draft, sources), capture_output=True, text=True, timeout=600)
+            done = subprocess.run(shlex.split(llm_cmd), input=llm_prompt(draft, sources, lessons=lessons), capture_output=True, text=True, timeout=600)
         except (OSError, subprocess.SubprocessError) as e:
             err.print(f"[bold red]LLM 명령을 실행하지 못했습니다: {escape(str(e))}[/bold red]")
             raise typer.Exit(2) from e
@@ -317,9 +319,17 @@ def spec_draft_command(
 
 
 @spec_app.command("check")
-def spec_check_command(spec: Path = typer.Argument(..., help="명세 파일(YAML)")):
+def spec_check_command(
+    spec: Path = typer.Argument(..., help="명세 파일(YAML)"),
+    against: Path | None = typer.Option(None, "--against", help="비교할 저장소 경로. 주면 명세를 적용하기 전과 후를 같은 조건에서 두 번 돌려 탐지가 줄어드는지 봅니다"),
+    config: Path | None = ConfigOpt,
+    contract: Path | None = typer.Option(None, "--contract", help="근거 계약 파일(YAML)"),
+    fmt: str = typer.Option("console", "--format", help="대조 결과 형식: console, markdown, json"),
+    output: Path | None = typer.Option(None, "--output", "-o", help="저장 파일"),
+):
     """
     명세의 모든 항목이 양성·음성 예제대로 판정되는지 확인합니다. 하나라도 어긋나면 종료코드 1이며 그 명세는 불러오지 않습니다.
+    --against로 저장소를 주면 그 저장소에서 명세를 적용하기 전과 후를 비교해 탐지가 줄어드는지 봅니다.
     """
     from iron_laws.core.custom_spec import example_results
 
@@ -333,6 +343,49 @@ def spec_check_command(spec: Path = typer.Argument(..., help="명세 파일(YAML
         err.print(f"{mark} {escape(name)} {form}: {escape(why)}")
     failed = sum(1 for r in results if not r[2])
     err.print(f"항목 예제 {len(results)}개 중 어긋남 {failed}개")
+    if against is None:
+        raise typer.Exit(1 if failed else 0)
+    if fmt not in ("console", "markdown", "json"):
+        err.print("[bold red]--format은 console·markdown·json 중 하나여야 합니다.[/bold red]")
+        raise typer.Exit(2)
+
+    from iron_laws.core.contract import load_contract
+    from iron_laws.core.spec_review import render_markdown, review_spec
+
+    try:
+        loaded_contract = None
+        if contract is not None:
+            loaded_contract, _digest = load_contract(contract)
+        review = review_spec(
+            against,
+            spec,
+            config_path=config,
+            contract=loaded_contract,
+            contract_source=str(contract) if contract else "기본값",
+        )
+    except ConfigError as e:
+        err.print(f"[bold red]입력 오류: {escape(str(e))}[/bold red]")
+        raise typer.Exit(2) from e
+
+    markdown = render_markdown(review)
+    if fmt == "json":
+        _write_or_print(json.dumps(review.to_dict(), ensure_ascii=False, indent=2), output, "명세 대조 결과")
+    elif fmt == "markdown":
+        _write_or_print(markdown, output, "명세 대조 결과")
+    else:
+        label = {"ok": "탐지 감소 없음", "review": "확인 필요", "blocked": "채택 보류"}[review.verdict]
+        err.print(f"명세 대조: {label}")
+        for item in review.blocking:
+            err.print(f"  [bold red]채택 보류[/bold red] {escape(item)}")
+        for item in review.review:
+            err.print(f"  [yellow]확인 필요[/yellow] {escape(item)}")
+        for item in review.limitations:
+            err.print(f"  [dim]{escape(item)}[/dim]")
+        if output:
+            _write_or_print(markdown, output, "명세 대조 결과")
+    if review.verdict != "ok":
+        err.print("[bold red]이 명세는 적용하기 전에 확인해야 합니다.[/bold red]")
+        raise typer.Exit(1)
     raise typer.Exit(1 if failed else 0)
 
 

@@ -158,6 +158,18 @@ from iron_laws.commands.common import (
 from iron_laws.commands.common import (
     regression_app as regression_app,
 )
+from iron_laws.commands.experience import (
+    experience_add_command as experience_add_command,
+)
+from iron_laws.commands.experience import (
+    experience_invalidate_command as experience_invalidate_command,
+)
+from iron_laws.commands.experience import (
+    experience_list_command as experience_list_command,
+)
+from iron_laws.commands.experience import (
+    experience_verify_command as experience_verify_command,
+)
 from iron_laws.commands.inspect import (
     architecture_command as architecture_command,
 )

@@ -84,6 +84,7 @@ CLAUDE.local.md
 *.sarif
 iron-laws-report*
 BenchmarkJava/
+.iron-laws-experience.jsonl
 
 # 내부 계획·결정·작업 기록 문서 (공개 저장소에 올리지 않는다)
 plan/
@@ -115,3 +116,6 @@ internal/
 .notes/
 scratch/
 drafts/
+
+# 로컬 도구 작업 산출물
+.samcheonpo/

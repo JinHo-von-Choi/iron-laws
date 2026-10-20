@@ -11,6 +11,7 @@
 - positive: 이 명세를 적용했을 때 그 규칙의 확정 지적이 나와야 하는 코드. negative: 나오지 않아야 하는 코드.
   정제 함수는 positive에 정제 없는 흐름을, negative에 정제를 거친 흐름을 둔다.
 - 모든 항목의 예제가 기대대로 판정될 때만 명세를 불러온다. 하나라도 어긋나면 불러오지 않고 오류로 끝낸다(조용히 빼지 않는다).
+- 예제는 항목 하나만 넣은 명세로 확인한다. 다른 항목이 이 항목의 예제에 영향을 주지 않게 하기 위해서다.
 작성자: 최진호
 작성일: 2026-10-12
 """
@@ -58,6 +59,12 @@ class LoadedSpec:
 
 
 _CACHE: dict[str, LoadedSpec] = {}
+_CURRENT: LoadedSpec | None = None
+
+
+def current_spec() -> LoadedSpec | None:
+    """이번 점검이 반영한 사용자 명세. 명세가 없으면 None이다."""
+    return _CURRENT
 
 
 def _check_entry(kind: str, entry: SpecEntry) -> None:
@@ -90,8 +97,16 @@ def read_spec(path: Path) -> LoadedSpec:
     return LoadedSpec(spec, hashlib.sha256(raw).hexdigest())
 
 
+def _single_entry_spec(entry: SpecEntry, kind: str) -> CustomSpec:
+    """항목 하나만 담은 명세. 항목끼리 간섭하지 않게 예제를 확인할 때 쓴다."""
+    spec = CustomSpec(version=1)
+    getattr(spec, kind).append(entry)
+    return spec
+
+
 def example_results(path: Path) -> list[tuple[str, str, bool, str]]:
-    """(항목, positive|negative, 맞았는지, 설명). 명세를 적용해 예제마다 해당 계열 규칙의 확정 지적 여부를 본다."""
+    """(항목, positive|negative, 맞았는지, 설명). 항목 하나만 명세에 넣어 예제마다 해당 계열 규칙의 확정 지적 여부를 본다.
+    양성·음성 예제를 같은 폴더에 두고 한 번에 점검하되, 항목 하나가 다른 항목의 예제에 영향을 주지 않게 한다."""
     global _VALIDATING
     from iron_laws.core.config import IronLawsConfig, Policies
     from iron_laws.core.scanner import AuditScanner
@@ -103,15 +118,29 @@ def example_results(path: Path) -> list[tuple[str, str, bool, str]]:
         for kind in ("sources", "sinks", "sanitizers"):
             for entry in getattr(loaded.spec, kind):
                 rule_id = FAMILY_RULE[entry.family]
+                extension = LANG_EXT[entry.languages[0]]
+                with tempfile.TemporaryDirectory() as tmp:
+                    base = Path(tmp)
+                    code_dir = base / "code"
+                    code_dir.mkdir()
+                    spec_file = base / "spec.yml"
+                    spec_file.write_text(
+                        yaml.safe_dump(_single_entry_spec(entry, kind).model_dump(mode="json"), allow_unicode=True, sort_keys=False),
+                        encoding="utf-8",
+                    )
+                    for form in ("positive", "negative"):
+                        (code_dir / f"{form}{extension}").write_text(getattr(entry, form), encoding="utf-8")
+                    config = IronLawsConfig(policies=Policies(custom_spec=str(spec_file)), enabled_rules=[rule_id])
+                    report = AuditScanner(code_dir, config).scan()
+                    flagged = {
+                        v.file_path.as_posix()
+                        for v in report.violations
+                        if v.rule_id == rule_id and v.confidence.value == "CONFIRMED"
+                    }
                 for form in ("positive", "negative"):
-                    with tempfile.TemporaryDirectory() as tmp:
-                        target = Path(tmp) / f"example{LANG_EXT[entry.languages[0]]}"
-                        target.write_text(getattr(entry, form), encoding="utf-8")
-                        config = IronLawsConfig(policies=Policies(custom_spec=str(path)), enabled_rules=[rule_id])
-                        report = AuditScanner(Path(tmp), config).scan()
-                        flagged = any(v.rule_id == rule_id and v.confidence.value == "CONFIRMED" for v in report.violations)
-                    ok = flagged if form == "positive" else not flagged
-                    results.append((f"{kind}.{entry.id}", form, ok, f"{rule_id} 확정 지적 {'있음' if flagged else '없음'}"))
+                    hit = f"{form}{extension}" in flagged
+                    ok = hit if form == "positive" else not hit
+                    results.append((f"{kind}.{entry.id}", form, ok, f"{rule_id} 확정 지적 {'있음' if hit else '없음'}"))
     finally:
         _VALIDATING = False
     return results
@@ -136,8 +165,10 @@ def apply_custom_spec(rules: list, location: str | None) -> None:
     from iron_laws.engine.taint import Ctx, set_custom_spec
     from iron_laws.rules.sinks import Sink
 
+    global _CURRENT
     if not location:
         set_custom_spec({}, {}, "")
+        _CURRENT = None
         return
     loaded = read_spec(Path(location)) if _VALIDATING else load_validated(Path(location))
     spec = loaded.spec
@@ -168,3 +199,4 @@ def apply_custom_spec(rules: list, location: str | None) -> None:
         for lang in langs_of(entry):
             merged(sanitizers, (lang, ctx), entry.name)
     set_custom_spec(sources, sanitizers, loaded.digest[:16])
+    _CURRENT = loaded

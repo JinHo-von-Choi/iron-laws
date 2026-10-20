@@ -284,10 +284,37 @@ iron-laws architecture . --compare before.json    # 이전 진단과 지표 비�
 ```bash
 iron-laws spec draft . -o iron-laws-spec.yml      # 후보 초안(예제는 비어 있음)
 iron-laws spec check iron-laws-spec.yml           # 예제 확인(어긋나면 종료코드 1)
+iron-laws spec check iron-laws-spec.yml --against .   # 적용 전후 비교(저장소를 주면)
 # .iron-laws.yml
 # policies:
 #   custom_spec: iron-laws-spec.yml
 ```
+
+명세는 소스·싱크·정제 함수를 더한다. 더하는 것만으로는 지적이 줄지 않는다. 줄게 할 수 있는 것은 정제 함수 선언뿐이라, 명세를 적용하기 전에 같은 저장소를 같은 조건으로 두 번 돌려 비교한다. `--against`는 기준 스캔(명세 없음)과 후보 스캔(명세 적용)의 차를 본다. 사라진 지적, 근거 상태가 낮아진 지점, 늘어난 공백을 함께 내고 판정을 준다.
+
+| 판정 | 뜻 | 종료코드 |
+|---|---|---|
+| `ok` | 탐지가 줄지 않았다 | 0 |
+| `review` | 정제 함수 선언 때문에 사라진 지적이 있어 사람이 확인해야 한다 | 1 |
+| `blocked` | 사유 없는 감소·점검 불완전 등 채택하면 안 되는 상태다 | 1 |
+
+비교 결과는 보고서와 별개 산출물이다(`--format console|markdown|json`, `--output`). 계약 언어와 장부 계열 밖은 대조하지 않으며, 명세에 그 밖의 계열 항목이 있으면 그 사실을 결과에 밝힌다.
+
+명세를 적용한 상태에서 근거 장부를 돌릴 때, 명세의 싱크를 장부 지점으로 반영하고 싶으면 `policies.ledger_include_spec_points: true`를 켠다(기본은 꺼짐). 켜면 명세가 더한 싱크가 장부 지점으로 나타나고 장부 상태가 바뀔 수 있다. 사용자가 선언한 정제 함수에 기대는 지점은 근거 종류가 `declared_sanitizer`로 표시되고, 선언이 사실을 대신하지 않는다는 사실이 장부 한계에 남는다. 명세의 내용은 `digests.spec` 지문으로 기록되어 명세가 바뀌면 실행 식별자(`run_id`)가 달라진다.
+
+## 교훈 저장소
+
+채택한 명세와 규칙에 대해 무엇을 왜 넣었는지 남겨 두면 다음 초안과 검토에 그대로 쓸 수 있다. 소스 코드는 저장하지 않고 판단의 근거가 되는 이름·조건·이유만 남긴다. 기록은 추가 전용으로 해시로 이어 붙으므로 무엇이 언제 왜 들어왔는지 남고, 지워지지 않는다.
+
+```bash
+iron-laws experience add --spec iron-laws-spec.yml --lesson "이 저장소는 내부 API 응답을 이미 정규화한 뒤 셸에 넘긴다"
+iron-laws experience add --rule IL-504 --lesson "인자 배열로 넘기면 셸 해석이 없다"
+iron-laws experience list --rule IL-504            # 남겨 둔 교훈 보기
+iron-laws experience invalidate E-9f3a2b1c4d5e6 --reason "정규화 함수가 바뀌었다"
+iron-laws experience verify                        # 기록 연결이 온전한지 확인
+```
+
+`iron-laws explain IL-504`는 그 규칙에 붙은 교훈을 함께 보여 주고, `iron-laws spec draft --llm-cmd`는 관련 교훈을 지시문에 넣어 준다. 규칙 버전이나 명세 내용이 바뀌면 그 교훈은 `stale`(다시 볼 것)로 표시된다.
 
 ## 지적을 억제하려면
 
@@ -308,6 +335,8 @@ except ImportError:  # iron-laws: ignore[IL-301] 선택 의존성이 없으면 �
 fail_on: HIGH            # CRITICAL, HIGH, MEDIUM, LOW
 excludes: [".git", "node_modules", "dist"]
 disabled_rules: ["ARC-206"]
+policies:
+  ledger_include_spec_points: false   # 켜면 사용자 명세의 싱크를 검사 공백 장부에도 반영
 limits:
   max_function_lines: 80
   max_file_lines: 600

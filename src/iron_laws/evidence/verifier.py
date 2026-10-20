@@ -92,7 +92,7 @@ SUPPORTED_RECEIPT_VERSIONS = ("1",)
 # 검사 계열 → 그 계열의 지적을 내는 규칙. 보고서가 다른 계열의 지적을 연결하면 모순이다.
 FAMILY_RULE = {"command": "IL-504", "path": "IL-502", "sql": "IL-501"}
 POINT_STATES = ("evidence_met", "unsupported", "unresolved", "budget_exceeded", "policy_excluded")
-EVIDENCE_KINDS = ("finding", "closed_value", "guard", "none")
+EVIDENCE_KINDS = ("finding", "closed_value", "guard", "declared_sanitizer", "none")
 APPROVAL_STATES = ("valid", "needs_review", "invalid", "revoked", "resolved", "unobserved")
 SEVERITY_RANK = {"CRITICAL": 4, "HIGH": 3, "MEDIUM": 2, "LOW": 1}
 CHECK_RESULTS = ("pass", "fail", "not_run", "unknown")
@@ -281,7 +281,7 @@ def _check_ledger(c: _Collector, ledger: dict[str, Any], findings: dict[str, dic
             c.check(target.get("rule_id") == rule, "point.finding_wrong_rule", f"{p.get('family')} 계열 지점에 다른 규칙({target.get('rule_id')})의 지적을 연결했다", where)
             c.check(target.get("confidence") in (None, "CONFIRMED"), "point.finding_not_confirmed", "확정되지 않은 지적을 근거로 삼았다", where)
         if state == "evidence_met":
-            c.check(kind in ("finding", "closed_value", "guard"), "point.met_without_evidence", "근거 종류 없이 '근거 충족'이다", where)
+            c.check(kind in ("finding", "closed_value", "guard", "declared_sanitizer"), "point.met_without_evidence", "근거 종류 없이 '근거 충족'이다", where)
             c.check((kind == "finding") == bool(ids), "point.kind_ids_mismatch", "근거 종류(finding)와 finding_ids가 맞지 않는다", where)
         else:
             c.check(kind == "none", "point.unmet_with_kind", f"{state} 상태인데 근거 종류가 {kind!r}이다", where)

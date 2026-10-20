@@ -161,6 +161,12 @@ class ScanResultBuilder:
             metadata["scope"] = scope_note
         if self.baseline is not None:
             metadata["baseline"] = {"entries": len(self.baseline.entries), "tool_version": self.baseline.tool_version}
+        if self.config.policies.custom_spec:
+            metadata["custom_spec"] = {
+                "path": self.config.policies.custom_spec,
+                "digest": ledger.digests.get("spec", ""),
+                "ledger_include_spec_points": self.config.policies.ledger_include_spec_points,
+            }
 
         execution = ExecutionRecord(
             run_id=ledger.run_id,

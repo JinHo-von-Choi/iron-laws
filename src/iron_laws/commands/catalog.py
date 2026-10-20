@@ -14,6 +14,7 @@ from iron_laws.commands.common import (
     app,
     console,
     err,
+    experience_lessons,
 )
 from iron_laws.core.config import IronLawsConfig
 from iron_laws.core.models import AuditReport, AuditSummary
@@ -145,6 +146,10 @@ def explain_command(rule_id: str = typer.Argument(..., help="규칙 ID (예: IL-
                 "",
                 f"[bold]고치는 방법[/bold]\n{rule.how_to_fix}" if rule.how_to_fix else "",
             ]
+            lessons = experience_lessons(rule_id=rule.rule_id)
+            if lessons:
+                lines += ["", "[bold]이 프로젝트에서 남긴 교훈[/bold]"]
+                lines += [f"- {lesson}" for lesson in lessons]
             console.print(Panel("\n".join(lines)))
             return
     err.print(f"[bold red]규칙을 찾을 수 없습니다: {escape(rule_id)}[/bold red]")

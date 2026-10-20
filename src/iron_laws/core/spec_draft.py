@@ -10,6 +10,7 @@
 
 import json
 import re
+from collections.abc import Sequence
 
 import yaml
 
@@ -65,7 +66,7 @@ def build_draft(sources: list[SourceFile]) -> dict:
     return {"version": 1, "sources": inputs, "sinks": sinks, "sanitizers": sanitizers}
 
 
-def llm_prompt(draft: dict, sources: list[SourceFile], budget: int = 12000) -> str:
+def llm_prompt(draft: dict, sources: list[SourceFile], budget: int = 12000, lessons: Sequence[str] = ()) -> str:
     excerpts = []
     used = 0
     for src in sources:
@@ -74,8 +75,16 @@ def llm_prompt(draft: dict, sources: list[SourceFile], budget: int = 12000) -> s
         piece = src.code_text[:2000]
         used += len(piece)
         excerpts.append(f"--- {src.path.as_posix()}\n{piece}")
+    known = ""
+    if lessons:
+        known = (
+            "이 프로젝트에서 이미 확인한 사실(교훈). 같은 실수를 반복하지 말고, 이미 확인한 이름과 조건을 그대로 쓰십시오.\n"
+            + "\n".join(f"- {lesson}" for lesson in lessons)
+            + "\n\n"
+        )
     return (
-        "아래 코드에서 웹 요청 외의 외부 입력(소스), 명령·SQL·경로·코드 실행으로 이어지는 프로젝트 감싼 함수(싱크), 정제 함수를 찾아 "
+        known
+        + "아래 코드에서 웹 요청 외의 외부 입력(소스), 명령·SQL·경로·코드 실행으로 이어지는 프로젝트 감싼 함수(싱크), 정제 함수를 찾아 "
         "오철칙 명세 YAML(version, sources, sinks, sanitizers; 각 항목 id·family·languages·pattern|callee|name·context)만 출력하라. "
         "positive·negative 예제는 비워 두라. 확실하지 않은 항목은 넣지 마라.\n\n현재 초안:\n"
         + yaml.safe_dump(draft, allow_unicode=True, sort_keys=False) + "\n코드:\n" + "\n".join(excerpts)

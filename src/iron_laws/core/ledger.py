@@ -149,6 +149,7 @@ def _classify(
     finding_ids, linked_columns = _findings_of(src, call, rule.rule_id, findings)
     unresolved: str | None = None
     guarded = False
+    declared: list[str] = []
     for arg in args:
         if is_literal(arg):
             continue
@@ -169,9 +170,16 @@ def _classify(
         if family != "sql" and rule.skip_hit(src, call, arg, flow):
             guarded = True
             continue  # 규칙이 안전한 호출 형태로 판정 (예: 셸을 거치지 않는 인자 배열, 정규화·범위 검사를 거친 경로). SQL의 skip은 소음 억제라 안전 근거가 아니다
-        ok, reason = _Closed(src, ctx, rule.taint_ctx).check(arg)
-        if not ok and unresolved is None:
-            unresolved = reason
+        closed = _Closed(src, ctx, rule.taint_ctx)
+        ok, reason = closed.check(arg)
+        if not ok:
+            if unresolved is None:
+                unresolved = reason
+            continue
+        # 닫힘의 이유가 사용자가 선언한 정제 함수라면 근거가 아니라 약속이다. 구분해 남긴다.
+        declared_sanitizer = closed.declared_sanitizer(arg)
+        if declared_sanitizer is not None:
+            declared.append(declared_sanitizer)
     after = index.limit_hits if index else 0
     if finding_ids:
         return _Verdict(PointState.EVIDENCE_MET.value, "외부 입력 도달이 확인되어 지적으로 보고되었다", finding_ids, "finding", linked_columns)
@@ -181,6 +189,14 @@ def _classify(
         return _Verdict(PointState.UNRESOLVED.value, unresolved)
     if guarded:
         return _Verdict(PointState.EVIDENCE_MET.value, "규칙이 인정한 안전 조건(허용 목록·범위 검증·셸을 거치지 않는 호출)이 확인되었다", [], "guard")
+    if declared:
+        names = ", ".join(sorted(set(declared)))
+        return _Verdict(
+            PointState.EVIDENCE_MET.value,
+            f"사용자가 선언한 정제 함수 {names}()가 이 흐름을 막는다고 선언되어 있다. 선언이 사실을 대신하지는 않는다.",
+            [],
+            "declared_sanitizer",
+        )
     return _Verdict(PointState.EVIDENCE_MET.value, "모든 입력이 상수이거나 닫힌 값으로 확인되었다", [], "closed_value")
 
 
@@ -202,6 +218,7 @@ class LedgerInputs:
     digests: dict[str, str]
     policy_changed: bool
     lookup_budget: int
+    rules: list | None = None
 
 
 def build_ledger(
@@ -216,22 +233,36 @@ def build_ledger(
     digests: dict[str, str],
     policy_changed: bool = False,
     lookup_budget: int = 2000,
+    rules: list | None = None,
 ) -> CoverageLedger:
-    """계약이 요구한 보안 관심 지점의 분석 근거 장부를 만든다. xfile 색인이 설정된 상태에서 호출한다."""
+    """계약이 요구한 보안 관심 지점의 분석 근거 장부를 만든다. xfile 색인이 설정된 상태에서 호출한다.
+    rules를 주면 그 인스턴스를 그대로 쓴다. 사용자 명세가 싱크를 더한 규칙 인스턴스라 장부가 그 싱크를 안다."""
     inputs = LedgerInputs(sources, skipped, contract, contract_source, config, findings, suppressed_lines,
-                          changed_files, digests, policy_changed, lookup_budget)
+                          changed_files, digests, policy_changed, lookup_budget, rules)
     ctx = _prepare_context(inputs)
     files, points = _collect_points(inputs, ctx)
     return _assemble_ledger(inputs, files, points)
+
+
+def _rule_for(family: str, rule_cls: type[SinkRule], active: list | None) -> SinkRule:
+    """활성 규칙 인스턴스를 그대로 쓰면 명세가 더한 싱크도 보인다. 없으면 기본 인스턴스를 만든다."""
+    if active:
+        for rule in active:
+            if getattr(rule, "rule_id", None) == rule_cls.rule_id:
+                return rule
+    return rule_cls()
 
 
 def _prepare_context(inputs: LedgerInputs) -> _Context:
     contract, config, sources, lookup_budget = inputs.contract, inputs.config, inputs.sources, inputs.lookup_budget
     ctx = _Context(contract=contract)
     for family, rule_cls in FAMILY_RULES.items():
-        rule = rule_cls()
+        rule = _rule_for(family, rule_cls, inputs.rules)
         rule.configure(config)
         ctx.rules[family] = rule
+        if inputs.rules:
+            # 활성 인스턴스에는 사용자 명세가 더한 싱크가 기본 싱크 뒤에 붙는다. 그 부분만 따로 기억한다.
+            ctx.spec_sinks[family] = list(rule.sinks)[len(rule_cls.sinks):]
     index = xfile.get_index()
     if index is not None:
         saved_cache = index._resolve_cache
@@ -274,8 +305,8 @@ def _collect_points(inputs: LedgerInputs, ctx: _Context) -> tuple[list[LedgerFil
                 modeled = any(src.lang in s.langs and s.callee.search(call.callee) for s in rule.sinks)
                 if not modeled and not BROAD_PATTERNS[family].search(call.callee):
                     continue
-                if resolve_any(src, call.callee, len(call.args)):
-                    continue  # 프로젝트가 정의한 함수의 호출은 라이브러리 관심 지점이 아니다. 그 함수 안의 호출이 지점으로 잡힌다
+                if resolve_any(src, call.callee, len(call.args)) and not ctx.is_spec_sink(family, call.callee):
+                    continue  # 프로젝트가 정의한 함수의 호출은 라이브러리 관심 지점이 아니다. 그 함수 안의 호출이 지점으로 잡힌다. 사용자가 명세로 선언한 싱크는 예외다
                 if family == "path" and not modeled and call.callee.rsplit(".", 1)[-1] in ("get", "values", "items"):
                     continue
                 verdict = _classify(src, call, family, ctx, findings)
@@ -357,6 +388,11 @@ def _assemble_ledger(inputs: LedgerInputs, files: list[LedgerFile], points: list
         blockers.append(f"[분류 불가 변경 파일] {path} — 점검하지 못했다")
     analyzed = [f for f in files if f.classification in ("analyzed", "policy_excluded")]
     limitations = list(LIMITATIONS)
+    declared = [p for p in points if p.evidence_kind == "declared_sanitizer"]
+    if declared:
+        limitations.append(
+            f"근거 충족 {len(declared)}건은 사용자가 선언한 정제 함수에 기대고 있다. 선언이 사실을 대신하지는 않으므로 그 함수를 확인해야 합니다."
+        )
     if contract.scope == "changed" and changed_files is None:
         limitations.append("계약 범위가 changed인데 --changed-since가 없어 전체를 대상으로 판정했다.")
     if config.excludes:

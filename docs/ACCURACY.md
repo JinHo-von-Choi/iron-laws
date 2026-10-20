@@ -105,6 +105,19 @@ CI는 전체 감사의 계열·호출·상태·미확정 원인별 공백과 분
 
 사례별로는 3건이 해결로 바뀌었고, 2건은 실패 유형만 바뀌었으며(정적 지적 잔존 ↔ 결함 행동 잔존), 해결에서 실패로 바뀐 사례는 없다. 표본이 작고 응답을 한 번씩만 받았으며 모델 하나의 결과라, 이 차이를 지시문의 효과로 단정하지 않는다. 명령 실행 계열은 두 판 모두 결함 행동 제거가 절반 남짓이라 지시문만으로 풀리지 않는 영역으로 본다.
 
+### 4.4 안내물별 기여도 비교
+
+측정 도구는 `benchmarks/artifact_ab.py`, 원시 결과는 `docs/benchmark_results/artifact_ab.json`이다. 회귀시험 표본 21건(명령 실행·경로 접근·SQL 조립 각 7건)을 같은 결함 표본에 대해 네 안내물로 AI에게 고치게 했다. 안내물은 수정 지시문(기준), 검토 묶음, MCP 도구 설명과 check 응답, 수정 지시문과 검토 묶음의 합이다. 수정안은 `benchmarks/fix_loop.py`와 같은 분류로 검증했고, 결함 행동 제거는 확정한 회귀 명세를 docker 격리 실행으로 판정했다. AI는 Claude Code 2.1.304의 sonnet이며 파일·셸 도구가 없고 사례·안내물마다 한 번씩 응답을 받았다.
+
+| 안내물 | 해결 | 정적 지적 소멸 | 결함 행동 제거 | 결함 행동 제거(IL-501 / IL-502 / IL-504) | 새 지적 | 판정 불가 |
+|---|---|---|---|---|---|---|
+| 수정 지시문(기준) | 14/21 | 18/21 | 15/21 | 7/7 · 4/7 · 4/7 | 0 | 2 |
+| 검토 묶음 | 9/21 | 12/21 | 15/21 | 7/7 · 5/7 · 3/7 | 0 | 1 |
+| MCP 도구 설명 | 10/21 | 12/21 | 18/21 | 7/7 · 5/7 · 6/7 | 0 | 1 |
+| 수정 지시문+검토 묶음 | 14/21 | 17/21 | 16/21 | 7/7 · 5/7 · 4/7 | 0 | 0 |
+
+사례별로 보면 수정 지시문 기준에서 5건이 해결로 바뀌는 안내물은 없다. 검토 묶음과 MCP 도구 설명은 결함 행동 제거를 각각 15/21·18/21로 올리지만, 정적 지적이 남거나 다른 검증에서 걸리는 사례가 늘어 해결(9/21·10/21)은 기준(14/21)보다 낮다. 수정 지시문과 검토 묶음을 합친 안내물은 해결 14/21로 기준과 같고 결함 행동 제거는 16/21로 한 건 늘었다. 기준에서 해결이던 2건은 다른 결과로, 다른 결과였던 2건은 해결로 바뀌었다. 표본이 작고 응답을 한 번씩만 받았으며 모델 하나의 결과라, 안내물 사이의 차이를 그 안내물의 효과로 단정하지 않는다.
+
 ## 5. 의존성 권고·성능·AI 공격면 규칙
 
 ### 5.1 의존성 권고(`iron-laws deps`)
@@ -207,6 +220,13 @@ uv run python benchmarks/owasp_benchmark.py BenchmarkJava all docs/benchmark_res
 git show v1.5.0:src/iron_laws/reporters/prompt.py > prompt_previous.py
 uv run python benchmarks/fix_prompt_ab.py work prompt_previous.py docs/benchmark_results/fix_prompt_ab.json \
   --ai-cmd="claude -p --tools '' --strict-mcp-config --setting-sources '' --no-session-persistence --model sonnet" --runner=docker
+```
+
+안내물 비교(§4.4)도 AI 명령을 사용자가 정한다. 응답은 작업 폴더에 남아 같은 지시문이면 다시 부르지 않는다. 도구가 없는 AI를 쓰려면 도구 목록이 빈 보조자를 지정한다.
+
+```bash
+uv run python benchmarks/artifact_ab.py work docs/benchmark_results/artifact_ab.json \
+  --ai-cmd="claude -p --agents '{\"fixer\":{\"description\":\"코드 수정 보조자\",\"prompt\":\"파일과 셸을 쓰지 않는다. 고친 파일 전체를 하나의 python 코드 블록으로만 출력한다.\",\"tools\":[]}}' --agent fixer --no-session-persistence --model sonnet" --runner=docker
 ```
 
 처리 시간과 최대 메모리는 같은 장비·같은 저장소에서 수정 전후를 비교해 기록한다. 처리 시간은 작업 프로세스 수를 고정하고 3회 반복한 중앙값이다(`benchmarks/bench_common.py`의 `timed_scan`). 이번 변경(흐름 분석 교체, 파일 간 해석)의 측정: flask(소스 약 5천 파일 규모) 4.9초 → 5.4초, WebGoat 8.9초 → 9.3초, 최대 메모리 약 80~120MB로 큰 차이가 없었다. 속도 향상을 약속하지 않는다.

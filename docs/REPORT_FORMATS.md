@@ -1,5 +1,7 @@
 # 보고서 형식과 호환 정책
 
+오철칙이 내는 보고서와 기록 파일의 형식이다. 이 파일들을 읽는 도구를 만들 때 참고한다.
+
 ## JSON (`audit --format json`)
 
 최상위 키: `schema_version`, `document_id`, `title`, `auditor`, `audit_date`, `target_path`, `summary`, `violations`, `diagnostics`, `coverage_ledger`, `execution`, `approval_checks`, `metadata`.
@@ -28,9 +30,9 @@
 | `grade` | A+~F. `incomplete`면 `불완전`, `empty`면 `점검 없음`이며 어느 쪽도 통과로 판정하지 않는다 |
 | `is_passed` | `--fail-on` 기준 통과 여부. 기준선을 쓰면 신규·재검토 지적만 센다 |
 | `new_count`, `existing_count`, `resolved_count`, `unobserved_count` | 기준선을 쓸 때만 채워진다. 기준선 대응은 전체 지적 집합에서 확정한 뒤 표시 범위(`--changed-since`)를 줄인다. 파일이 없거나 읽지 못한 항목은 해소가 아니라 `unobserved_count`다 |
-| `contract_status`, `contract_mode` | 근거 계약 충족 여부(`met` / `unmet` / `policy_change_review` / `not_applicable`)와 모드. `scan_status`와 별개다 |
+| `contract_status`, `contract_mode` | 계약(근거 요구) 충족 여부(`met` / `unmet` / `policy_change_review` / `not_applicable`)와 모드. `scan_status`와 별개다 |
 | `approvals_valid`, `approvals_review`, `approvals_unobserved` | 승인 기록(`--approvals`)을 쓸 때만 채워진다 |
-| `analysis_unknown_rate`(1.4) | 계약 범위 안 보안 관심 지점 중 해석 미확정·미지원·예산 초과의 비율. 분모는 범위 안 관심 지점 수이며 지점이 없으면 `null`이다 |
+| `analysis_unknown_rate`(1.4) | 근거 장부의 범위 안 위험 호출 가운데 `unresolved`·`unsupported`·`budget_exceeded` 상태의 비율. 분모는 범위 안 위험 호출 수이며, 없으면 `null`이다 |
 | `evaluated_rule_language_pairs`, `unverified_rule_language_pairs`, `unverified_rule_language_rate`(1.4) | 이번 점검에서 실제로 적용된 (규칙, 언어) 조합 수, 그중 양성·음성 시험이 모두 있지 않은 조합 수와 비율. 분모는 위 조합 수이며 `analysis_unknown_rate`와 분모가 다르다. 미검증 조합에서 지적이 없다는 것은 통과 근거가 아니다 |
 | `gates`, `gate_exceeded`(1.4) | 적용한 상한 정책(`--max-analysis-unknown-rate`, `--max-unverified-rule-language-rate`)과 넘은 지표. `gate_exceeded`가 비어 있지 않으면 `is_passed`는 거짓이며 통과가 아니라 재검토다 |
 
@@ -41,13 +43,13 @@
 - `scope_name`: 지적이 속한 함수 이름(구문 분석 언어)
 - `verification_grade`(1.4): 이 지적의 (규칙, 언어) 조합 검증 등급. `verified`(양성·음성 시험이 모두 있음) / `unverified`. 구문 분석 언어가 아닌 파일의 지적은 빈 값이다.
 - `rule_version`: 규칙 판정 의미의 버전. 올라가면 기준선의 기존 지적이 `review`로 바뀐다.
-- `evidence[]`: 입력 유입 → 전파 → 싱크의 `role`·`file_path`·`line`·`note`. **코드 원문과 값은 담지 않는다.** 외부 입력 흐름을 추적하는 규칙에서만 채워진다.
+- `evidence[]`: 외부 입력이 들어온 곳 → 전달 → 위험 호출(싱크)의 `role`·`file_path`·`line`·`note`. **코드 원문과 값은 담지 않는다.** 외부 입력 흐름을 추적하는 규칙에서만 채워진다.
 - `baseline_status`: `new` / `existing` / `review` (기준선을 쓸 때만)
 - `approval_status`: `approved` / `needs_review` / `expired` / `revoked` / `invalid`(승인 기록의 무결성·형식 검증에 실패) / `none` (승인 기록을 쓸 때만), `approval_id`, `approval_reasons`(승인을 유지할 수 없는 이유)
 - `snippet`: 비밀값이 있을 수 있는 규칙(IL-101, IL-108, IL-111, AI-101~104)은 값을 `****`로 가린 줄이다.
 
 ### `coverage_ledger`
-`contract_*`(버전·모드·범위·해시·출처), `digests`(code·tool·config·contract·spec. `spec`는 적용된 사용자 명세의 지문이며 명세가 없으면 빈 문자열이다), `run_id`(지문 묶음에서 만든 실행 식별자 `R-…`), `requirements`(계열별 필수 여부·차단 상태. 독립 검증기가 차단 사유를 다시 계산하는 입력), `families[]`(계열별 지점 수와 상태별 수), `points[]`(계열·경로·줄·열·호출·상태·이유·범위 안 여부·지적 여부), `files[]`(분류: analyzed / unsupported_language / out_of_scope / policy_excluded / unclassified), `unclassified_changed_files`, `status`, `blockers`, `limitations`. 자세한 의미는 [PATCH_VERIFICATION.md](PATCH_VERIFICATION.md).
+`contract_*`(버전·모드·범위·해시·출처), `digests`(code·tool·config·contract·spec. `spec`는 적용된 사용자 명세의 지문이며 명세가 없으면 빈 문자열이다), `run_id`(지문 묶음에서 만든 실행 식별자 `R-…`), `requirements`(계열별 필수 여부·차단 상태. 독립 검증기가 차단 사유를 다시 계산하는 입력), `families[]`(계열별 지점 수와 상태별 수), `points[]`(위험 호출마다 종류·경로·줄·열·호출·상태·이유·범위 안 여부·지적 여부), `files[]`(분류: analyzed / unsupported_language / out_of_scope / policy_excluded / unclassified), `unclassified_changed_files`, `status`, `blockers`, `limitations`. 상태의 뜻은 [PATCH_VERIFICATION.md](PATCH_VERIFICATION.md) §1에 있다.
 
 `points[]`의 근거 필드(1.3): `finding_ids`(그 지점·계열의 규칙이 실제로 낸 확정 지적의 `finding_id`), `evidence_kind`(`finding` 지적이 났다 / `closed_value` 모든 입력이 닫혀 있다 / `guard` 규칙이 인정한 안전 조건(허용 목록·범위 검증·셸을 거치지 않는 호출) / `declared_sanitizer` 사용자가 명세로 선언한 정제 함수가 막는다고 선언된 흐름 / `none`), `suppressed_rules`(이 지점에서 억제된 규칙. 억제는 그 계열 규칙에만 적용한다). `finding`은 `finding_ids`가 비어 있지 않을 때만 참이며, 장부는 흐름을 따로 평가해 지적이 있다고 추정하지 않는다. 지점과 다른 열의 지적은 그 열이 `linked_columns`(1.5)에 있을 때만 연결할 수 있다.
 상태 계산 순서: 차단 사유가 하나라도 있으면 `unmet`(비적용·충족보다 먼저), 정책 변경이 있으면 `policy_change_review`, 차단 사유가 없고 분석한 파일이 없을 때만 `not_applicable`, 그 밖에는 `met`.
@@ -67,8 +69,8 @@
 
 ## SARIF (`audit --format sarif`)
 - 버전 2.1.0. 결과 위치는 **저장소 루트(`.git`이 있는 가장 가까운 상위 폴더) 기준 상대 경로**이고 `uriBaseId`는 `%SRCROOT%`, 경로 구간은 URI 인코딩된다.
-- `partialFingerprints["ironLaws/v1"]`에 지문, `baselineState`에 기준선 대비 상태(`new`/`unchanged`), `codeFlows`에 입력 유입 → 전파 → 싱크 흐름을 담는다.
-- GitHub Code Scanning 업로드 전체 흐름은 시험에서 실행하지 않았다. 생성물의 구조와 경로 규격만 시험한다.
+- `partialFingerprints["ironLaws/v1"]`에 지문, `baselineState`에 기준선 대비 상태(`new`/`unchanged`), `codeFlows`에 외부 입력이 들어온 곳 → 전달 → 위험 호출 흐름을 담는다.
+- GitHub Code Scanning에 실제로 올리는 과정은 시험하지 않았다. 파일 구조와 경로 규칙만 시험한다.
 
 ## GitLab Code Quality (`audit --format gitlab-codequality`)
 - GitLab Code Quality JSON 배열. 지적마다 `description`(규칙 ID·이름·메시지, 확인 필요 지적은 표시), `check_name`(규칙 ID), `fingerprint`(기준선과 같은 지문), `severity`, `location`(`path`, `lines.begin`)을 담는다.
@@ -106,8 +108,8 @@
 ## 파일럿 기록 (`.iron-laws-pilot.jsonl`)
 `assign`(팀·PR 이름표·난도층·조건·블록), `review`(분 단위 시간·추가 시간·위험 수용 여부·결과 메모), `risk`(`risk`: misaccept / dangerous_inheritance / legitimate_exception, `status`: confirmed / investigating, 조사 종료 기록의 `closes`), `dropout`. 식별자와 수치만 담는다.
 
-## 정규화 투영 (같은 코드의 보고서 비교)
-같은 코드를 다른 작업 경로·환경에서 점검한 두 JSON 보고서는 원시 바이트가 같지 않다. 비교에는 `iron_laws.core.canonical.canonical_projection`이 만드는 정규화 투영을 쓴다. 키 순서를 고정하고 아래 JSON Pointer의 값을 지운 문자열이며, 이 밖의 값이 다르면 점검 결과가 실행 환경에 따라 달라진 것이다.
+## 같은 코드의 보고서 비교
+같은 코드를 다른 경로·환경에서 점검한 두 JSON 보고서는 바이트 단위로 같지 않다. 비교할 때는 `iron_laws.core.canonical.canonical_projection`으로 바꾼 문자열을 쓴다. 키 순서를 고정하고 아래 값을 지운 것이며, 그 밖의 값이 다르면 점검 결과가 실행 환경에 따라 달라진 것이다.
 
 | JSON Pointer | 제외 사유 |
 |---|---|
@@ -117,4 +119,4 @@
 | `/metadata/repo_relative_prefix` | 저장소 안에서 점검 대상까지의 상대 경로 |
 | `/metadata/config_source` | 설정 파일의 경로 표시 |
 
-작업 경로·시간대·언어 설정·해시 씨앗·병렬 처리 여부(파일 300개 이상)를 바꿔도 정규화 투영은 같다(`tests/test_determinism.py`).
+작업 경로·시간대·언어 설정·해시 씨앗·병렬 처리 여부(파일 300개 이상)를 바꿔도 이 문자열은 같다(`tests/test_determinism.py`).

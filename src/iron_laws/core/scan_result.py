@@ -31,6 +31,9 @@ from iron_laws.core.scan_constants import (
 from iron_laws.engine.source import SourceFile
 from iron_laws.standards.pack_registry import all_packs
 
+MIN_COST_BASELINE_SECONDS = 1.0  # 기준선에 비교할 만큼 점검에 시간이 든 경우만 성능 회귀를 본다
+COST_REGRESSION_RATIO = 2.0  # 이 배수 이상 늘었을 때만 회귀로 말한다
+
 
 @dataclass
 class ScanResultInputs:
@@ -57,6 +60,7 @@ class ScanResultBuilder:
                 set(self._all_paths),
             )
             self._diagnostics.extend(outcome.diagnostics)
+            self._note_cost_regression(self.baseline)
 
         if self.approvals is not None:
             self._apply_approvals(violations, sources)
@@ -77,6 +81,61 @@ class ScanResultBuilder:
         violations.sort(key=lambda v: (str(v.file_path), v.line_number, v.rule_id))
         files_scanned = len(sources)
 
+        summary = self._build_summary(violations, sources, suppressed, ledger, outcome)
+        for d in self._diagnostics:
+            d.message = limit(redact_text(d.message, self._secrets), MAX_MESSAGE_LENGTH)
+
+        now_utc = datetime.now(UTC)
+        doc_id = f"AUDIT-{now_utc.strftime('%Y%m%d-%H%M%S')}"
+        metadata = self._build_metadata(files_by_language, ledger, scope_note)
+        execution = self._build_execution(ledger, metadata, summary, files_scanned)
+        approval_checks = self._approval_checks(violations) if self.approvals is not None else []
+        report = AuditReport(
+            document_id=doc_id,
+            audit_date=now_utc.strftime("%Y-%m-%d"),
+            target_path=str(self.root_path),
+            summary=summary,
+            violations=violations,
+            diagnostics=self._diagnostics,
+            coverage_ledger=ledger,
+            execution=execution,
+            approval_checks=approval_checks,
+            metadata=metadata,
+        )
+        self._consistency_gate(report)
+        return report
+
+    def _note_cost_regression(self, baseline) -> None:
+        """기준선이 찍힌 시점보다 점검 비용이 크게 늘었으면 알린다. 절대 시간이 아니라 비율로 본다."""
+        base = getattr(baseline, "cost", None)
+        current = self._cost
+        if base is None or current is None:
+            return
+        if base.wall_seconds < MIN_COST_BASELINE_SECONDS:
+            return
+        if current.wall_seconds < base.wall_seconds * COST_REGRESSION_RATIO:
+            return
+        self._diagnostics.append(
+            Diagnostic(
+                kind="cost",
+                severity="warning",
+                message=(
+                    f"점검 시간이 기준선 시점보다 {current.wall_seconds / base.wall_seconds:.1f}배 늘었습니다 "
+                    f"({base.wall_seconds:.1f}초 → {current.wall_seconds:.1f}초). 같은 장비·같은 작업 프로세스 수에서 비교하십시오."
+                ),
+            )
+        )
+
+    def _build_summary(
+        self,
+        violations: list[Violation],
+        sources: list[SourceFile],
+        suppressed: int,
+        ledger: CoverageLedger,
+        outcome: object | None,
+    ) -> AuditSummary:
+        """지적 수·등급·승인·계약 충족·상한 정책을 합쳐 요약을 만든다."""
+        files_scanned = len(sources)
         summary = AuditSummary(total_files_scanned=files_scanned, suppressed_count=suppressed)
         summary.total_violations = len(violations)
         summary.critical_count = sum(1 for v in violations if v.severity == Severity.CRITICAL)
@@ -86,7 +145,7 @@ class ScanResultBuilder:
         summary.grade = self._grade(summary.critical_count, summary.high_count, summary.medium_count, summary.low_count)
         if outcome is not None:
             summary.new_count = sum(1 for v in violations if v.baseline_status in (BaselineStatus.NEW, BaselineStatus.REVIEW))
-            summary.existing_count = sum(1 for v in violations if v.baseline_status is BaselineStatus.EXISTING)
+            summary.existing_count = sum(1 for v in violations if v.baseline_status == BaselineStatus.EXISTING)
             summary.resolved_count = len(outcome.resolved)
             summary.unobserved_count = len(outcome.unobserved)
 
@@ -131,12 +190,15 @@ class ScanResultBuilder:
             summary.scan_status = "incomplete"
             summary.grade = INCOMPLETE_GRADE  # 일부를 점검하지 못했으면 등급과 통과를 확정하지 않는다
             summary.is_passed = False
+        return summary
 
-        for d in self._diagnostics:
-            d.message = limit(redact_text(d.message, self._secrets), MAX_MESSAGE_LENGTH)
-
-        now_utc = datetime.now(UTC)
-        doc_id = f"AUDIT-{now_utc.strftime('%Y%m%d-%H%M%S')}"
+    def _build_metadata(
+        self,
+        files_by_language: Counter,
+        ledger: CoverageLedger,
+        scope_note: dict | None,
+    ) -> dict:
+        """이번 실행의 설정·규칙 집합·제외 내역·기준 팩을 담는다."""
         metadata = {
             "config": self.config.model_dump(mode="json"),
             "config_source": self.config_source,
@@ -167,8 +229,17 @@ class ScanResultBuilder:
                 "digest": ledger.digests.get("spec", ""),
                 "ledger_include_spec_points": self.config.policies.ledger_include_spec_points,
             }
+        return metadata
 
-        execution = ExecutionRecord(
+    def _build_execution(
+        self,
+        ledger: CoverageLedger,
+        metadata: dict,
+        summary: AuditSummary,
+        files_scanned: int,
+    ) -> ExecutionRecord:
+        """실행 식별자와 점검 비용을 담는다."""
+        return ExecutionRecord(
             run_id=ledger.run_id,
             tool_version=tool_version(),
             ruleset_hash=metadata["ruleset"]["hash"],
@@ -180,22 +251,8 @@ class ScanResultBuilder:
             files_skipped=len([x for x in self._skipped if not str(x.get("path", "")).startswith("(")]),
             error_diagnostics=sum(1 for d in self._diagnostics if d.severity == "error"),
             cross_file_limit_hits=self._cross_file["limit_hits"],
+            cost=self._cost,
         )
-        approval_checks = self._approval_checks(violations) if self.approvals is not None else []
-        report = AuditReport(
-            document_id=doc_id,
-            audit_date=now_utc.strftime("%Y-%m-%d"),
-            target_path=str(self.root_path),
-            summary=summary,
-            violations=violations,
-            diagnostics=self._diagnostics,
-            coverage_ledger=ledger,
-            execution=execution,
-            approval_checks=approval_checks,
-            metadata=metadata,
-        )
-        self._consistency_gate(report)
-        return report
 
 
     @staticmethod
@@ -233,7 +290,7 @@ class ScanResultBuilder:
     def _trust_table(self) -> dict[tuple[str, str], bool]:
         """(규칙, 언어) → 양성·음성 시험이 모두 있는가. 적용되지 않는 조합은 표에 없다."""
         if self._trust_cells is None:
-            from iron_laws.reporters.support import build_support_matrix
+            from iron_laws.core.support_matrix import build_support_matrix
 
             self._trust_cells = {(row.rule_id, lang): cell.verified for row in build_support_matrix(self.rules) for lang, cell in row.cells.items() if cell.status != "미지원"}
         return self._trust_cells
@@ -241,7 +298,7 @@ class ScanResultBuilder:
 
     def _apply_trust(self, sources: list[SourceFile], violations: list[Violation]) -> tuple[int, int]:
         """지적마다 (규칙, 언어) 검증 등급을 붙이고, 이번 점검에서 실제로 적용된 조합 수와 그중 미검증 조합 수를 센다."""
-        from iron_laws.reporters.support import FIXTURE_LANG_ALIASES
+        from iron_laws.core.support_matrix import FIXTURE_LANG_ALIASES
 
         table = self._trust_table()
         lang_of = {s.path.as_posix(): FIXTURE_LANG_ALIASES.get(s.lang.value, s.lang.value) for s in sources if s.lang is not None}

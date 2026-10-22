@@ -132,6 +132,30 @@ def _ledger_section(report: AuditReport) -> list[str]:
     return md
 
 
+def cost_section(report: AuditReport) -> list[str]:
+    """점검에 쓴 비용과 확인하지 못한 범위. 통과 근거와 함께 읽어야 하는 부분이다."""
+    md = ["### 점검 비용과 확인하지 못한 범위\n"]
+    cost = report.execution.cost if report.execution else None
+    if cost is not None:
+        md.append(
+            f"- 점검 시간 {cost.wall_seconds:.1f}초, 작업 프로세스 {cost.workers}개, 초당 {cost.files_per_second:.1f}파일, 최대 메모리 {cost.peak_rss_mb:.0f}MB"
+        )
+        if cost.budget_exceeded:
+            md.append(f"- 시간 상한 {cost.budget_seconds:g}초를 넘어 점검을 끝까지 마치지 못했습니다")
+    ledger = report.coverage_ledger
+    if ledger is not None:
+        gaps = sum(count for t in ledger.families for state, count in t.by_state.items() if state != "evidence_met")
+        total = sum(t.total for t in ledger.families)
+        if total:
+            md.append(f"- 보안 관심 지점 {total}개 가운데 {gaps}개를 확인하지 못했습니다")
+    s = report.summary
+    if s.unverified_rule_language_pairs:
+        md.append(f"- 적용된 (규칙, 언어) 조합 {s.evaluated_rule_language_pairs}개 중 {s.unverified_rule_language_pairs}개는 양성·음성 시험이 없어 미검증입니다")
+    md.append("- 이 수치는 이 프로그램이 스스로 확인한 범위다. 확인하지 못한 곳이 안전하다는 뜻이 아니다.")
+    md.append("")
+    return md
+
+
 def generate_markdown_report(report: AuditReport, rules: list[BaseRule] | None = None) -> str:
     s = report.summary
     if s.is_passed and s.unverified_rule_language_pairs:
@@ -188,6 +212,7 @@ def generate_markdown_report(report: AuditReport, rules: list[BaseRule] | None =
         md.append(f"> 범위 제한: {scope['ref']} 이후 바뀐 파일 {scope['changed_files']}개의 지적만 표시했습니다. {scope['note']}\n")
     if s.new_count is not None:
         md.append(f"> 기준선 대비: 신규·재검토 {s.new_count}건, 기존(승인) {s.existing_count}건, 해소 {s.resolved_count}건\n")
+    md.extend(cost_section(report))
     md.extend(_ledger_section(report))
     md.append("---\n")
 

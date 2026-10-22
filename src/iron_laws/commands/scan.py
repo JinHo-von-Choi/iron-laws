@@ -19,6 +19,7 @@ from iron_laws.commands.common import (
     LimitOpt,
     MaxUnknownOpt,
     MaxUnverifiedOpt,
+    MaxWallSecondsOpt,
     MetricsOpt,
     PackageIndexOpt,
     PathArg,
@@ -59,20 +60,21 @@ def check_command(
     search_parents: bool = SearchParentsOpt,
     baseline: Path | None = BaselineOpt,
     changed_since: str | None = ChangedSinceOpt,
-    respect_gitignore: bool = GitignoreOpt,
+    respect_gitignore: bool | None = GitignoreOpt,
     contract: Path | None = ContractOpt,
     contract_mode: str | None = ContractModeOpt,
     approvals: Path | None = ApprovalsOpt,
     metrics: Path | None = MetricsOpt,
     max_unknown: float | None = MaxUnknownOpt,
     max_unverified: float | None = MaxUnverifiedOpt,
+    max_wall_seconds: float | None = MaxWallSecondsOpt,
     package_index: Path | None = PackageIndexOpt,
     triage_model: str | None = TriageOpt,
 ):
     """
     프로젝트의 보안 약점과 품질 결함을 신속 진단합니다. (CI/CD 적합)
     """
-    scanner = _build_scanner(path, config, search_parents, baseline, changed_since, respect_gitignore, contract, contract_mode, approvals, gates=_gates(max_unknown, max_unverified), package_index=package_index)
+    scanner = _build_scanner(path, config, search_parents, baseline, changed_since, respect_gitignore, contract, contract_mode, approvals, gates=_gates(max_unknown, max_unverified), package_index=package_index, max_wall_seconds=max_wall_seconds)
     if fail_on is not None:
         scanner.config.fail_on = fail_on
         scanner.fail_on_source = "명령행 옵션"
@@ -116,20 +118,21 @@ def audit_command(
     search_parents: bool = SearchParentsOpt,
     baseline: Path | None = BaselineOpt,
     changed_since: str | None = ChangedSinceOpt,
-    respect_gitignore: bool = GitignoreOpt,
+    respect_gitignore: bool | None = GitignoreOpt,
     contract: Path | None = ContractOpt,
     contract_mode: str | None = ContractModeOpt,
     approvals: Path | None = ApprovalsOpt,
     metrics: Path | None = MetricsOpt,
     max_unknown: float | None = MaxUnknownOpt,
     max_unverified: float | None = MaxUnverifiedOpt,
+    max_wall_seconds: float | None = MaxWallSecondsOpt,
     package_index: Path | None = PackageIndexOpt,
     triage_model: str | None = TriageOpt,
 ):
     """
     점검을 수행하고 보고서를 발행합니다. markdown 보고서에는 행안부 구현단계 49개 항목별 점검 현황이 포함됩니다.
     """
-    scanner = _build_scanner(path, config, search_parents, baseline, changed_since, respect_gitignore, contract, contract_mode, approvals, gates=_gates(max_unknown, max_unverified), package_index=package_index)
+    scanner = _build_scanner(path, config, search_parents, baseline, changed_since, respect_gitignore, contract, contract_mode, approvals, gates=_gates(max_unknown, max_unverified), package_index=package_index, max_wall_seconds=max_wall_seconds)
     report = _timed_scan(scanner, metrics, "audit")
     if triage_model:
         from iron_laws.core.triage import TriageError, apply_triage
@@ -158,7 +161,7 @@ def fix_prompt_command(
     search_parents: bool = SearchParentsOpt,
     baseline: Path | None = BaselineOpt,
     changed_since: str | None = ChangedSinceOpt,
-    respect_gitignore: bool = GitignoreOpt,
+    respect_gitignore: bool | None = GitignoreOpt,
     contract: Path | None = ContractOpt,
     contract_mode: str | None = ContractModeOpt,
     approvals: Path | None = ApprovalsOpt,
@@ -197,7 +200,7 @@ def review_bundle_command(
         err.print("[bold red]--format은 markdown 또는 json이어야 합니다.[/bold red]")
         raise typer.Exit(2)
     store_path = approvals or Path(DEFAULT_APPROVALS_FILE)
-    scanner = _build_scanner(path, config, False, None, changed_since, False, contract, None, store_path, True)
+    scanner = _build_scanner(path, config, False, None, changed_since, None, contract, None, store_path, True)
     report = _timed_scan(scanner, metrics, "review-bundle")
     if report.summary.scan_status != "complete":
         err.print("[bold red]점검이 끝까지 이루어지지 않아 검토 묶음이 불완전합니다(미확인을 유지로 보지 않습니다).[/bold red]")

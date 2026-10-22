@@ -36,7 +36,7 @@ jobs:
         run: uv run python benchmarks/build_support_manifest.py --check
 
       - name: Run Tests with Coverage
-        run: uv run pytest --cov=iron_laws --cov-report=xml -v
+        run: uv run pytest --cov=iron_laws --cov-report=xml --cov-fail-under=90 -v
 
       - name: Run Self-Audit (Iron Laws Check)
         run: uv run iron-laws check . --fail-on HIGH

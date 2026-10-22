@@ -36,9 +36,9 @@ def self_shape(src: SourceFile | None, v: Violation, sensitive: set[str]) -> str
 class ScanEvidenceBuilder:
     def _spec_digest(self) -> str:
         """이번 점검이 반영한 사용자 명세의 지문. 명세가 없으면 빈 문자열이다."""
-        from iron_laws.engine import taint
+        from iron_laws.engine.taint import sanitizers
 
-        return taint.CUSTOM_KIND
+        return sanitizers.CUSTOM_KIND
 
     def _build_ledger(self, sources: list[SourceFile], violations: list[Violation]):
         family_rules = {cls.rule_id for cls in FAMILY_RULES.values()}

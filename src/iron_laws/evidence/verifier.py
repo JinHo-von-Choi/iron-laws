@@ -31,6 +31,9 @@ POINT.update(line=int, column=int, in_scope=bool, finding=bool, finding_ids=STRI
 FILE = {"path": str, "classification": str, "changed": bool}
 EXECUTION = {key: str for key in ("run_id", "code_digest", "config_hash", "contract_digest", "scan_status", "ruleset_hash")}
 EXECUTION.update(files_scanned=int, error_diagnostics=int)
+COST = {"wall_seconds": NUMBER, "cpu_seconds": NUMBER, "peak_rss_mb": NUMBER, "files_per_second": NUMBER,
+        "workers": int, "phase_seconds": MappingOf(NUMBER), "budget_seconds": NUMBER, "budget_exceeded": bool}
+EXECUTION["cost"] = COST
 SUMMARY = {key: int for key in ("total_files_scanned", "total_violations", "critical_count", "high_count", "medium_count", "low_count", "evaluated_rule_language_pairs", "unverified_rule_language_pairs")}
 SUMMARY.update(is_passed=bool, scan_status=str, contract_status=str, contract_mode=str,
                analysis_unknown_rate=NUMBER, unverified_rule_language_rate=NUMBER,
@@ -86,7 +89,7 @@ def shape_errors(value: object, spec: object, path: str = "$", *, optional: bool
     return []
 
 
-SUPPORTED_REPORT_VERSIONS = ("1.3", "1.4", "1.5", "1.6")
+SUPPORTED_REPORT_VERSIONS = ("1.3", "1.4", "1.5", "1.6", "1.7")
 SUPPORTED_RECEIPT_VERSIONS = ("1",)
 
 # 검사 계열 → 그 계열의 지적을 내는 규칙. 보고서가 다른 계열의 지적을 연결하면 모순이다.
@@ -357,7 +360,7 @@ GATE_FIELDS = {"max_analysis_unknown_rate": "analysis_unknown_rate", "max_unveri
 
 def _check_standards(c: _Collector, data: dict[str, Any], violations: list[dict[str, Any]]) -> None:
     """기준 팩 참조(1.5 이후): 지적의 기준 항목이 보고서에 적힌 팩·판본을 가리키고, 대응표 확인 여부가 팩의 값과 같은지 본다."""
-    if data.get("schema_version") not in ("1.5", "1.6"):
+    if data.get("schema_version") not in ("1.5", "1.6", "1.7"):
         return
     listed = (data.get("metadata") or {}).get("standard_packs") or []
     if not c.check(isinstance(listed, list) and all(isinstance(p, dict) for p in listed), "standards.shape", "metadata.standard_packs가 객체 목록이 아니다", "metadata.standard_packs"):
@@ -379,7 +382,7 @@ def _check_standards(c: _Collector, data: dict[str, Any], violations: list[dict[
 
 def _check_trust(c: _Collector, data: dict[str, Any], summary: dict[str, Any], ledger: dict[str, Any], violations: list[dict[str, Any]]) -> None:
     """신뢰 지표(1.4 이후): 분석 unknown 비율을 장부에서 다시 계산해 대조하고, 상한 초과가 통과로 표시되지 않았는지 본다."""
-    if data.get("schema_version") not in ("1.4", "1.5", "1.6"):
+    if data.get("schema_version") not in ("1.4", "1.5", "1.6", "1.7"):
         return
     for index, v in enumerate(violations):
         c.check(v.get("verification_grade", "") in ("", "verified", "unverified"), "trust.grade_unknown", f"알 수 없는 검증 등급: {v.get('verification_grade')!r}", f"violations[{index}]")

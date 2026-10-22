@@ -300,11 +300,3 @@ def iter_functions_exist(src: SourceFile) -> bool:
     return any(True for _ in iter_functions(src))
 
 
-TYPING_RULES: list[type[BaseRule]] = [
-    TypeScriptSafetyRule,
-    PythonTypingRule,
-    JavaTypingRule,
-    CSharpTypingRule,
-    SystemsTypingRule,
-]
-

@@ -267,6 +267,16 @@ def test_baseline_and_contract_regeneration_is_flagged(tmp_path: Path):
     assert result_of(receipt, "policy_integrity") == "fail"
 
 
+def test_hiding_a_file_in_gitignore_is_flagged_as_policy_change(tmp_path: Path):
+    project = make_project(tmp_path / "proj", {".gitignore": "build/\n"})
+    patch = write_patch(tmp_path, project, {".gitignore": "build/\napp.py\n"})
+    receipt = verify(project, patch)
+    assert "policy_changed" in {b["kind"] for b in receipt.bypass_changes}
+    assert result_of(receipt, "policy_integrity") == "fail"
+    assert ".gitignore" in receipt.inputs["restored_trusted_files"]
+    assert result_of(receipt, "target_resolved") == "fail"  # 제외 규칙은 원본대로 되돌려 지적이 그대로 남는다
+
+
 @pytest.mark.parametrize(
     ("name", "after", "expected_kind"),
     [

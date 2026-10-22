@@ -5,6 +5,36 @@
 
 ## [Unreleased]
 
+## [1.9.0] - 2026-10-22
+
+### Added
+- 점검 비용 장부: 보고서 `execution.cost`에 경과 시간·CPU 시간·최대 메모리·초당 파일 수·작업 프로세스 수·단계별 시간을 남긴다. 같은 코드의 두 보고서를 비교할 때 제외된다.
+- 시간 상한 `limits.max_wall_seconds`와 `--max-wall-seconds`: 상한을 넘으면 `scan_status`가 `incomplete`가 되고 종료코드는 2다.
+- 작업 프로세스 수 설정 `limits.max_workers`와 `limits.parallel_min_files`.
+- 기준선에 점검 비용을 함께 남기고, 기준선 시점보다 2배 넘게 느려지면 비율로 알린다(`cost` 진단).
+- `iron-laws architecture`에 두 지표를 더한다: 최근 커밋에서 자주 바뀌면서 큰 파일(변경 집중), 두 모듈 이상에 같은 모양으로 정의된 정규식(중복 정규식).
+- 보고서(마크다운·감리 대응 보고서·docx)에 '점검 비용과 확인하지 못한 범위' 절을 둔다. 확인하지 못한 범위와 분모를 함께 적는다.
+
+### Changed
+- 보고서 형식 버전을 1.7로 올린다. `execution.cost`를 추가했다.
+- 파일별 규칙을 나눠 처리하는 작업 프로세스 수를 8개에서 32개로 올리고, 나눠 처리 대상 파일 수를 300개에서 50개로 낮춘다. 72코어 장비에서 자기 감사 56.2초 → 9.3초가 되었다.
+- `.samcheonpo`·`.serena` 폴더는 기본 제외 목록에 넣었다. 분석 도구가 저장한 코드 사본이라 같은 지적이 여러 번 나오는 원인이 됐다.
+- `.gitignore`에 걸리는 파일은 기본으로 점검한다. `.env`처럼 비밀값이 들어갈 수 있는 파일을 놓치지 않기 위한 기본값이다.
+- `verify-patch`가 `.gitignore`를 바꾸는 patch를 정책 변경으로 보고 원본으로 되돌린다. 제외 규칙을 바꿔 지적을 숨기는 길을 막는다.
+- 계층 추정이 폴더 이름으로도 판단한다(`core`·`domain`은 서비스 계층, `reporters`·`cli`는 표현 계층). ARC-207의 판정 의미가 달라져 판 번호를 2로 올렸다.
+- 규칙 등록 목록을 없앤다. `iron_laws.rules` 패키지의 규칙 클래스를 찾아 자동으로 등록하므로 규칙을 빠뜨릴 수 없다.
+
+### Fixed
+- 근거 장부가 지점마다 모든 지적을 훑어 찾던 것을 (규칙, 경로, 줄) 색인으로 바꾼다.
+- 모듈 최상위 재대입 이름과 import 이름을 호출마다 다시 찾던 것을 파일마다 한 번만 계산한다.
+- `AiRule`이 두 모듈에 따로 정의되어 있던 것을 한곳으로 모은다.
+- 라우트·인증 정규식이 엔진과 규칙 모듈에 따로 정의되어 있던 것을 한곳으로 모은다.
+- `core`가 `reporters`를 불러오던 의존을 없앤다(지원 행렬 계산을 `core/support_matrix.py`로 옮김).
+
+### Changed (구조)
+- `engine/taint.py`를 `engine/taint/` 패키지로 나눈다: `paths`·`sources`·`sanitizers`·`resolve`·`nodes`·`definitions`·`interpreter`·`state`. 되풀이 상태는 `state.py` 한곳에 모았다. 흐름 해석기·분석 캐시·식의 오염 판정은 서로를 부르는 한 덩어리라 `interpreter.py`에 함께 둔다.
+- `verify/engine.py::_verify`(180줄)를 다섯 단계 함수로, `core/scan_result.py::_assemble_report`(154줄)를 요약·메타데이터·실행기록 함수로 나눈다.
+
 ## [1.8.0] - 2026-10-21
 
 ### Added

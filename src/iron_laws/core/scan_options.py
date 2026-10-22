@@ -23,7 +23,7 @@ class ScanOptions:
     changed_since: str | None = None
     renames: list[tuple[str, str]] | None = None
     gates: dict[str, float] | None = None
-    respect_gitignore: bool = False
+    respect_gitignore: bool | None = None
     contract: Contract | None = None
     contract_source: str = '기본값'
     contract_path: Path | None = None

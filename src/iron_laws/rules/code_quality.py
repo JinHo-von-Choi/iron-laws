@@ -639,19 +639,3 @@ class UninitializedVariableRule(BaseRule):
         return None
 
 
-CODE_QUALITY_RULES: list[type[BaseRule]] = [
-    DeserializationRule,
-    ToctouRule,
-    InfiniteLoopRule,
-    ResourceLeakRule,
-    NullDereferenceRule,
-    DebugCodeRule,
-    ServletSharedFieldRule,
-    PrivateArrayExposureRule,
-    DnsDecisionRule,
-    WeakApiRule,
-    MemorySafetyRule,
-    UseAfterFreeRule,
-    UninitializedVariableRule,
-]
-

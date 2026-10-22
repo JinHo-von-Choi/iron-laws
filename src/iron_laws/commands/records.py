@@ -108,6 +108,9 @@ def baseline_diff_command(
     for d in report.diagnostics:
         if d.kind == "baseline":
             err.print(f"[yellow]{escape(d.message)}[/yellow]")
+    for d in report.diagnostics:
+        if d.kind == "cost":
+            err.print(f"[yellow]{escape(d.message)}[/yellow]")
 
 
 @feedback_app.command("add")

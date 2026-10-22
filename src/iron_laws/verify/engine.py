@@ -156,9 +156,8 @@ def verify_patch(original: Path, patch_path: Path, options: VerifyOptions, runne
             warnings.warn("; ".join(notes), RuntimeWarning, stacklevel=2)
 
 
-def _verify(original: Path, patch_path: Path, options: VerifyOptions, runner: Runner | None, work: Path, checks: list[CheckResult]) -> Receipt:
-    # ---- 1. 입력 고정 ----
-    started = time.monotonic()
+def _pin_inputs(original: Path, work: Path, checks: list[CheckResult]) -> tuple[Snapshot, Path, Path, Path]:
+    """원본을 고정하고 읽기 전용·실행용·후보용 사본을 만든다."""
     original_snapshot: Snapshot = scan_tree(original)
     orig_ro = materialize(original_snapshot, work / "original-ro", read_only=True)
     orig_run = materialize(original_snapshot, work / "original-run")
@@ -175,55 +174,71 @@ def _verify(original: Path, patch_path: Path, options: VerifyOptions, runner: Ru
             risks=original_snapshot.risks[:10],
         )
     )
+    return original_snapshot, orig_ro, orig_run, cand_run
 
-    # ---- 2. patch 검사와 적용 ----
+
+def _apply_patch_checked(patch_path: Path, cand_run: Path, checks: list[CheckResult]) -> tuple[object, bool, str]:
+    """patch를 검사하고 적용한다. (patch 정보, 적용 여부, 실패 사유)"""
     info = inspect_patch(patch_path)
-    applied_ok, apply_error = (False, "")
     if info.problems:
         checks.append(_check("patch_safety", "patch 안전성(경로·종류·적용 가능성)", "fail", "; ".join(info.problems[:3]), problems=info.problems, files=info.files))
-    else:
-        applied_ok, apply_error = apply_patch(patch_path, cand_run)
-        checks.append(
-            _check(
-                "patch_safety",
-                "patch 안전성(경로·종류·적용 가능성)",
-                "pass" if applied_ok else "fail",
-                "" if applied_ok else f"patch를 적용하지 못했다: {apply_error}",
-                files=info.files,
-                patch_digest=info.digest,
-            )
+        return info, False, "; ".join(info.problems[:3])
+    applied_ok, apply_error = apply_patch(patch_path, cand_run)
+    checks.append(
+        _check(
+            "patch_safety",
+            "patch 안전성(경로·종류·적용 가능성)",
+            "pass" if applied_ok else "fail",
+            "" if applied_ok else f"patch를 적용하지 못했다: {apply_error}",
+            files=info.files,
+            patch_digest=info.digest,
         )
+    )
+    return info, applied_ok, apply_error
 
-    receipt_inputs: dict[str, Any] = {"original_tree": original_snapshot.digest, "patch": info.digest, "patch_files": info.files, "patch_bytes": info.size}
-    if not applied_ok:
-        return _finish(options, checks, receipt_inputs, {}, None, {}, {}, [], runner, started)
 
-    # ---- 3. 정책 동결과 우회 변경 ----
+@dataclass
+class _FrozenPolicies:
+    """동결된 신뢰 정책과 우회 변경 목록."""
+
+    config: IronLawsConfig
+    config_source: str
+    contract: Contract
+    contract_file_digest: str
+    runner_policy: RunnerPolicy
+    spec_source: Path | None
+    bypasses: list[BypassChange]
+    restored: list[str]
+
+
+def _freeze_policies(
+    orig_ro: Path,
+    cand_run: Path,
+    original: Path,
+    options: VerifyOptions,
+    info_files: list[str],
+    checks: list[CheckResult],
+) -> _FrozenPolicies:
+    """신뢰된 정책·시험 파일을 동결하고 후보가 바꾸려 한 것을 되돌린다."""
     config, config_source = load_config(orig_ro, options.config_path)
     if options.contract_path is not None:
         contract, contract_file_digest = load_contract(options.contract_path)
     else:
         contract, contract_file_digest = default_contract(), "기본값"
-    if options.runner_policy is not None:
-        runner_policy = options.runner_policy
-    else:
-        runner_policy, _runner_policy_source = load_runner_policy(orig_ro)
+    runner_policy = options.runner_policy if options.runner_policy is not None else load_runner_policy(orig_ro)[0]
     policy_names = set(POLICY_FILES)
-    spec_rel: str | None = None
     spec_source: Path | None = options.regression_spec
     if spec_source is not None:
         try:
             spec_rel = spec_source.resolve().relative_to(original).as_posix()
+        except ValueError:
+            spec_rel = None  # 명세가 원본 저장소 밖에 있으면 원본 경로를 그대로 쓴다
+        if spec_rel is not None:
             spec_source = orig_ro / spec_rel  # 명세가 원본 저장소 안에 있으면 후보가 바꾼 것이 아니라 원본 스냅샷의 것을 쓴다
             policy_names.add(spec_rel)
-        except ValueError:
-            spec_rel = None
-    deleted = [f for f in info.files if (orig_ro / f).is_file() and not (cand_run / f).exists()]
-    bypasses: list[BypassChange] = detect_bypasses(orig_ro, cand_run, info.files, deleted, tuple(policy_names - set(POLICY_FILES)))
-    restored = _restore_trusted_files(orig_ro, cand_run, info.files, policy_names)
-    candidate_snapshot = scan_tree(cand_run)
-    receipt_inputs["candidate_tree"] = candidate_snapshot.digest
-    receipt_inputs["restored_trusted_files"] = restored
+    deleted = [f for f in info_files if (orig_ro / f).is_file() and not (cand_run / f).exists()]
+    bypasses: list[BypassChange] = detect_bypasses(orig_ro, cand_run, info_files, deleted, tuple(policy_names - set(POLICY_FILES)))
+    restored = _restore_trusted_files(orig_ro, cand_run, info_files, policy_names)
     checks.append(
         _check(
             "policy_integrity",
@@ -242,8 +257,22 @@ def _verify(original: Path, patch_path: Path, options: VerifyOptions, runner: Ru
             kinds=sorted({b.kind for b in bypasses}),
         )
     )
+    return _FrozenPolicies(
+        config=config,
+        config_source=config_source,
+        contract=contract,
+        contract_file_digest=contract_file_digest,
+        runner_policy=runner_policy,
+        spec_source=spec_source,
+        bypasses=bypasses,
+        restored=restored,
+    )
 
-    # ---- 4. 같은 조건의 정적 검사 ----
+
+def _scan_same_condition(
+    orig_run: Path, cand_run: Path, config: IronLawsConfig, contract: Contract, checks: list[CheckResult]
+) -> tuple[AuditReport, AuditReport, bool]:
+    """원본과 후보를 같은 조건으로 점검한다. 원본에 없던 억제 주석은 후보에서 인정하지 않는다."""
     t0 = time.monotonic()
     original_report, original_scanner = _scan(orig_run, config, contract)
     trusted_directives = original_scanner.directives_seen
@@ -278,16 +307,19 @@ def _verify(original: Path, patch_path: Path, options: VerifyOptions, runner: Ru
             )
         )
     checks[-1].duration_s = scan_seconds
+    return original_report, candidate_report, not incomplete and same_condition
 
-    comparison = compare_reports(ComparisonContext(original_report, candidate_report, config, contract, candidate_snapshot,
-                                                   info.files, bypasses, options.finding, options.max_files,
-                                                   options.allow_paths, not incomplete and same_condition), checks)
-    findings_summary, coverage_summary = comparison.findings, comparison.coverage
-    target_info, debt_delta = comparison.target, comparison.debt_delta
 
-    # ---- 8. 기존 시험(격리 실행) ----
-    runner_obj = runner or select_runner(options.runner, options.image or runner_policy.image)
-    limits = options.limits
+def _run_existing_tests(
+    runner_obj: Runner,
+    orig_run: Path,
+    cand_run: Path,
+    options: VerifyOptions,
+    runner_policy: RunnerPolicy,
+    limits: RunLimits,
+    checks: list[CheckResult],
+) -> dict[str, RunResult]:
+    """원본과 후보의 기존 시험을 격리 실행기로 돌린다."""
     for key, value in runner_policy.limits.items():
         if hasattr(limits, key) and limits.__dict__.get(key) == RunLimits().__dict__.get(key):
             setattr(limits, key, type(getattr(limits, key))(value))  # 신뢰된 정책의 상한을 기본값 위에 적용
@@ -299,6 +331,42 @@ def _verify(original: Path, patch_path: Path, options: VerifyOptions, runner: Ru
         runs["candidate"] = runner_obj.run(cand_run, test_cmd, limits, runner_policy.allowed_commands)
         tests_check = _tests_check(runs, options.require_tests)
     checks.append(tests_check)
+    return runs
+
+
+def _verify(original: Path, patch_path: Path, options: VerifyOptions, runner: Runner | None, work: Path, checks: list[CheckResult]) -> Receipt:
+    # ---- 1. 입력 고정 ----
+    started = time.monotonic()
+    original_snapshot, orig_ro, orig_run, cand_run = _pin_inputs(original, work, checks)
+
+    # ---- 2. patch 검사와 적용 ----
+    info, applied_ok, apply_error = _apply_patch_checked(patch_path, cand_run, checks)
+
+    receipt_inputs: dict[str, Any] = {"original_tree": original_snapshot.digest, "patch": info.digest, "patch_files": info.files, "patch_bytes": info.size}
+    if not applied_ok:
+        return _finish(options, checks, receipt_inputs, {}, None, {}, {}, [], runner, started)
+
+    # ---- 3. 정책 동결과 우회 변경 ----
+    frozen = _freeze_policies(orig_ro, cand_run, original, options, info.files, checks)
+    config, contract = frozen.config, frozen.contract
+    runner_policy, spec_source, bypasses = frozen.runner_policy, frozen.spec_source, frozen.bypasses
+    candidate_snapshot = scan_tree(cand_run)
+    receipt_inputs["candidate_tree"] = candidate_snapshot.digest
+    receipt_inputs["restored_trusted_files"] = frozen.restored
+
+    # ---- 4. 같은 조건의 정적 검사 ----
+    original_report, candidate_report, comparable = _scan_same_condition(orig_run, cand_run, config, contract, checks)
+
+    comparison = compare_reports(ComparisonContext(original_report, candidate_report, config, contract, candidate_snapshot,
+                                                   info.files, bypasses, options.finding, options.max_files,
+                                                   options.allow_paths, comparable), checks)
+    findings_summary, coverage_summary = comparison.findings, comparison.coverage
+    target_info, debt_delta = comparison.target, comparison.debt_delta
+
+    # ---- 8. 기존 시험(격리 실행) ----
+    runner_obj = runner or select_runner(options.runner, options.image or runner_policy.image)
+    limits = options.limits
+    runs = _run_existing_tests(runner_obj, orig_run, cand_run, options, runner_policy, limits, checks)
 
     # ---- 9. 회귀시험(4단계) ----
     if spec_source is not None:
@@ -312,14 +380,14 @@ def _verify(original: Path, patch_path: Path, options: VerifyOptions, runner: Ru
         "scanner": f"{tool_version()}+{original_report.metadata['ruleset']['hash']}",
         "config": original_report.metadata["config_hash"],
         "contract": contract_digest(contract),
-        "contract_file": contract_file_digest,
+        "contract_file": frozen.contract_file_digest,
         "runner_policy": _digest_policy(runner_policy),
     }
     environment = {
         "scanner_version": tool_version(),
         "python": sys.version.split()[0],
         "platform": platform.platform(),
-        "config_source": config_source,
+        "config_source": frozen.config_source,
         "runner_backend": runner_obj.name,
         "runner_image": runs["original"].image if runs else (options.image or runner_policy.image),
         "runner_image_id": runs["original"].image_id if runs else "",

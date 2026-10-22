@@ -10,11 +10,17 @@ import multiprocessing
 import os
 import re
 import sys
+import time
 from collections import Counter
 from collections.abc import Callable, Generator
 from concurrent.futures import ProcessPoolExecutor
 from concurrent.futures.process import BrokenProcessPool
 from pathlib import Path, PurePosixPath
+
+try:  # Windows에는 resource가 없다
+    import resource
+except ImportError:  # pragma: no cover - Windows 경로
+    resource = None  # type: ignore[assignment]
 
 from iron_laws.core.approvals import (
     ApprovalStatusRow,
@@ -33,6 +39,7 @@ from iron_laws.core.masking import mask_secrets
 from iron_laws.core.models import (
     AuditReport,
     Diagnostic,
+    ScanCost,
     Violation,
 )
 from iron_laws.core.paths import is_test_path, looks_vendored_js
@@ -57,8 +64,8 @@ from iron_laws.engine.source import SourceFile
 from iron_laws.rules.base import BaseRule
 from iron_laws.rules.catalog import ALL_RULES, get_active_rules
 
-PARALLEL_MIN_FILES = 300
-MAX_WORKERS = 8
+PARALLEL_MIN_FILES = 50
+MAX_WORKERS = 32
 BINARY_PROBE_BYTES = 8000
 SUPPRESS_MARKER = "iron-laws:"
 
@@ -195,7 +202,7 @@ class AuditScanner(ScanEvidenceBuilder, ScanResultBuilder):
         changed_since: str | None = None,
         renames: list[tuple[str, str]] | None = None,
         gates: dict[str, float] | None = None,
-        respect_gitignore: bool = False,
+        respect_gitignore: bool | None = None,
         contract: Contract | None = None,
         contract_source: str = "기본값",
         contract_path: Path | None = None,
@@ -212,8 +219,8 @@ class AuditScanner(ScanEvidenceBuilder, ScanResultBuilder):
             self.config, self.config_source = config, "코드에서 전달"
         else:
             self.config, self.config_source = load_config(self.root_path, config_path, search_parents)
-        if respect_gitignore:
-            self.config.respect_gitignore = True
+        if respect_gitignore is not None:
+            self.config.respect_gitignore = respect_gitignore
         self.fail_on_source = "설정 파일" if self.config_source not in ("기본값", "코드에서 전달") else "기본값"
         self.contract = contract or default_contract()
         self.contract_source = contract_source if contract is not None else "기본값"
@@ -236,6 +243,8 @@ class AuditScanner(ScanEvidenceBuilder, ScanResultBuilder):
         self._excluded_dirs: Counter[str] = Counter()
         self._unscanned_ext: Counter[str] = Counter()
         self._cross_file: dict = {"resolved_calls": 0, "limit_hits": 0, "by_language": {}}
+        self._phases: dict[str, float] = {}
+        self._cost: ScanCost | None = None
         self._routes: list[dict] = []
         self._suppression_rows: list[dict] = []
         self._secrets: set[str] = set()
@@ -440,15 +449,22 @@ class AuditScanner(ScanEvidenceBuilder, ScanResultBuilder):
         return violations
 
     def _run_file_rules(self, sources: list[SourceFile]) -> list[Violation]:
-        workers = min(os.cpu_count() or 1, MAX_WORKERS)
-        parallel_ok = sys.platform.startswith("linux") and len(sources) >= PARALLEL_MIN_FILES
+        limits = self.config.limits
+        worker_cap = limits.max_workers if limits.max_workers is not None else MAX_WORKERS
+        min_files = limits.parallel_min_files if limits.parallel_min_files is not None else PARALLEL_MIN_FILES
+        workers = min(os.cpu_count() or 1, worker_cap)
+        parallel_ok = sys.platform.startswith("linux") and len(sources) >= min_files
         if not parallel_ok or workers < 2:
-            return self._run_file_rules_serial(sources)
+            started = time.monotonic()
+            result = self._run_file_rules_serial(sources)
+            self._phases["file_rules"] = time.monotonic() - started
+            return result
 
         items = [(s.path.as_posix(), s.text, s.is_test) for s in sources]
         size = -(-len(items) // (workers * 4))
         chunks = [items[i : i + size] for i in range(0, len(items), size)]
         config_data = self.config.model_dump(mode="json")
+        started = time.monotonic()
         try:
             with ProcessPoolExecutor(
                 max_workers=workers, mp_context=multiprocessing.get_context("fork")
@@ -459,7 +475,10 @@ class AuditScanner(ScanEvidenceBuilder, ScanResultBuilder):
             self._diagnostics.append(
                 Diagnostic(kind="worker", severity="warning", message="병렬 처리 중 작업 프로세스가 중단되어 순차 처리로 처음부터 다시 점검했습니다. 결과는 완전합니다.")
             )
-            return self._run_file_rules_serial(sources)
+            result = self._run_file_rules_serial(sources)
+            self._phases["file_rules"] = time.monotonic() - started
+            return result
+        self._phases["file_rules"] = time.monotonic() - started
         violations: list[Violation] = []
         index = xfile.get_index()
         for found, diags, limit_hits, resolved_keys, limit_keys, gap_keys in results:
@@ -476,6 +495,7 @@ class AuditScanner(ScanEvidenceBuilder, ScanResultBuilder):
         # 파일 간 색인은 장부 작성까지 유지한다. scan()이 끝나기 전에 지우지 않는다
         xfile.set_index(xfile.ProjectIndex.build(sources, self.config.limits.max_cross_file_lookups, self.root_path))
         violations = self._run_file_rules(sources)
+        project_started = time.monotonic()
         project = ProjectContext(
             root=self.root_path,
             files=sources,
@@ -487,6 +507,7 @@ class AuditScanner(ScanEvidenceBuilder, ScanResultBuilder):
             project_findings, diagnostics = _check_project_rule(rule, project)
             violations.extend(project_findings)
             self._diagnostics.extend(diagnostics)
+        self._phases["project_rules"] = time.monotonic() - project_started
         self._routes = next((list(getattr(r, "last_routes", [])) for r in self.rules if r.rule_id == "IL-525"), [])
         for src in sources:
             src.release()
@@ -582,6 +603,10 @@ class AuditScanner(ScanEvidenceBuilder, ScanResultBuilder):
         self._excluded_files = Counter()
         self._excluded_dirs = Counter()
         self._unscanned_ext = Counter()
+        started = time.monotonic()
+        cpu_baseline = self._cpu_baseline()
+        phases: dict[str, float] = {}
+        self._phases = phases
         sources = self._read_sources()
         files_by_language = Counter((s.lang.value if s.lang else s.kind) for s in sources)
         try:
@@ -590,7 +615,9 @@ class AuditScanner(ScanEvidenceBuilder, ScanResultBuilder):
             violations, suppressed = self._apply_suppressions(violations, sources)
             self._redact(violations, sources)
             self._fingerprint(violations, sources)
+            ledger_started = time.monotonic()
             ledger = self._build_ledger(sources, violations)
+            self._phases["ledger"] = time.monotonic() - ledger_started
             if self.collect_dependencies:
                 self._attach_dependencies(sources, violations)
         finally:
@@ -619,4 +646,62 @@ class AuditScanner(ScanEvidenceBuilder, ScanResultBuilder):
                 )
             )
 
+        self._cost = self._measure_cost(started, cpu_baseline, len(sources), phases)
         return self._assemble_report(ScanResultInputs(sources, violations, suppressed, ledger, files_by_language))
+
+    def _measure_cost(
+        self, started: float, cpu_baseline: tuple[float, ...], files: int, phases: dict[str, float]
+    ) -> ScanCost:
+        """이번 점검에 쓴 시간과 메모리를 잰다. 같은 입력에서 반복하면 값이 비슷하게 나와야 한다."""
+        wall = max(0.0, time.monotonic() - started)
+        cpu = self._cpu_seconds(cpu_baseline)
+        peak_kb = 0
+        if resource is not None:
+            for who in (resource.RUSAGE_SELF, resource.RUSAGE_CHILDREN):
+                peak_kb = max(peak_kb, resource.getrusage(who).ru_maxrss)
+        budget = self.config.limits.max_wall_seconds
+        cost = ScanCost(
+            wall_seconds=round(wall, 3),
+            cpu_seconds=round(cpu, 3),
+            peak_rss_mb=round(peak_kb / 1024, 1),
+            files_per_second=round(files / wall, 2) if wall > 0 else 0.0,
+            workers=self._worker_count(),
+            phase_seconds={k: round(v, 3) for k, v in phases.items()},
+            budget_seconds=budget,
+            budget_exceeded=bool(budget is not None and wall > budget),
+        )
+        if cost.budget_exceeded:
+            self._diagnostics.append(
+                Diagnostic(
+                    kind="budget",
+                    severity="error",
+                    message=(
+                        f"점검 시간 상한 {budget:g}초를 넘어 {cost.wall_seconds:g}초 걸렸습니다. "
+                        "상한 안에 끝나지 못했으므로 점검 결과를 통과로 보지 않습니다 (limits.max_wall_seconds)"
+                    ),
+                )
+            )
+        return cost
+
+    def _worker_count(self) -> int:
+        limits = self.config.limits
+        cap = limits.max_workers if limits.max_workers is not None else MAX_WORKERS
+        return max(1, min(os.cpu_count() or 1, cap))
+
+    @staticmethod
+    def _cpu_baseline() -> tuple[float, ...]:
+        try:
+            times = os.times()
+        except OSError:  # pragma: no cover - os.times는 POSIX에서만 있다
+            return (0.0, 0.0, 0.0, 0.0)
+        return (times.user, times.system, times.children_user, times.children_system)
+
+    @staticmethod
+    def _cpu_seconds(cpu_baseline: tuple[float, ...]) -> float:
+        """이 프로세스와 작업 프로세스가 함께 쓴 CPU 시간(초). 작업 프로세스 몫까지 더한다."""
+        try:
+            times = os.times()
+        except OSError:  # pragma: no cover - os.times는 POSIX에서만 있다
+            return 0.0
+        now = (times.user, times.system, times.children_user, times.children_system)
+        return max(0.0, sum(now[i] - cpu_baseline[i] for i in range(4)))

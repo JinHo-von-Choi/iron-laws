@@ -32,6 +32,15 @@ class BaselineEntry(BaseModel):
     severity: str
 
 
+class BaselineCost(BaseModel):
+    """기준선이 찍힌 시점의 점검 비용. 같은 장비에서 비율로 비교할 때 쓴다."""
+
+    wall_seconds: float = 0.0
+    files_per_second: float = 0.0
+    files_scanned: int = 0
+    workers: int = 1
+
+
 class Baseline(BaseModel):
     """기존 지적 관리 데이터(승인된 부채의 목록). 사람의 검토 승인이 아니다. 승인은 ApprovalRecord로 따로 기록한다."""
 
@@ -41,6 +50,7 @@ class Baseline(BaseModel):
     tool_version: str = ""
     created: str = ""
     entries: list[BaselineEntry] = Field(default_factory=list)
+    cost: BaselineCost | None = None
 
 
 def _digest(*parts: object) -> str:
@@ -75,7 +85,21 @@ def build_baseline(report: AuditReport, tool_version: str) -> Baseline:
         for v in report.violations
     ]
     entries.sort(key=lambda e: (e.path, e.line, e.rule_id))
-    return Baseline(tool_version=tool_version, created=datetime.now(UTC).strftime("%Y-%m-%d"), entries=entries)
+    cost = None
+    if report.execution is not None and report.execution.cost is not None:
+        c = report.execution.cost
+        cost = BaselineCost(
+            wall_seconds=c.wall_seconds,
+            files_per_second=c.files_per_second,
+            files_scanned=report.summary.total_files_scanned,
+            workers=c.workers,
+        )
+    return Baseline(
+        tool_version=tool_version,
+        created=datetime.now(UTC).strftime("%Y-%m-%d"),
+        entries=entries,
+        cost=cost,
+    )
 
 
 def save_baseline(baseline: Baseline, path: Path) -> None:

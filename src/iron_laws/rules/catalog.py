@@ -4,33 +4,66 @@
 작성일: 2026-10-04
 """
 
-from iron_laws.core.config import ConfigError, IronLawsConfig
-from iron_laws.rules.ai_agent_surface import AGENT_SURFACE_RULES
-from iron_laws.rules.ai_attack import AIA_RULES
-from iron_laws.rules.ai_code import AI_RULES
-from iron_laws.rules.architecture import ARCH_RULES
-from iron_laws.rules.base import BaseRule
-from iron_laws.rules.code_quality import CODE_QUALITY_RULES
-from iron_laws.rules.errors import ERROR_RULES
-from iron_laws.rules.injection import INJECTION_RULES
-from iron_laws.rules.performance import PERF_RULES
-from iron_laws.rules.review_rules import REVIEW_RULES
-from iron_laws.rules.secrets_crypto import SECRETS_CRYPTO_RULES
-from iron_laws.rules.typing_rules import TYPING_RULES
+import importlib
+import pkgutil
 
-ALL_RULES: list[type[BaseRule]] = [
-    *SECRETS_CRYPTO_RULES,
-    *ERROR_RULES,
-    *INJECTION_RULES,
-    *CODE_QUALITY_RULES,
-    *AI_RULES,
-    *AIA_RULES,
-    *AGENT_SURFACE_RULES,
-    *ARCH_RULES,
-    *PERF_RULES,
-    *TYPING_RULES,
-    *REVIEW_RULES,
-]
+from iron_laws.core.config import ConfigError, IronLawsConfig
+from iron_laws.rules.base import BaseRule
+
+# 규칙이 속한 계열의 순서. 계열 안의 순서는 분류와 무관하지만, `iron-laws rules` 목록이 계열별로 모여 보이도록 잡는다.
+FAMILY_ORDER: tuple[str, ...] = (
+    "secrets_crypto",
+    "errors",
+    "injection",
+    "code_quality",
+    "ai_code",
+    "ai_attack",
+    "ai_agent_surface",
+    "architecture",
+    "performance",
+    "typing_rules",
+    "review_rules",
+)
+
+
+def _family_of(module_name: str) -> str:
+    """규칙이 정의된 모듈 이름에서 계열 이름을 찾는다."""
+    best = ""
+    for family in FAMILY_ORDER:
+        if module_name.startswith(family) and len(family) > len(best):
+            best = family
+    return best or module_name
+
+
+def _discover_rule_classes() -> list[type[BaseRule]]:
+    """rules 패키지의 모든 규칙 클래스를 찾는다. 등록 목록을 따로 쓰지 않으므로 빠뜨릴 수 없다."""
+    package = importlib.import_module("iron_laws.rules")
+    found: dict[str, type[BaseRule]] = {}
+    ordered: list[tuple[tuple[int, str, str], type[BaseRule]]] = []
+    for info in pkgutil.walk_packages(package.__path__, prefix="iron_laws.rules."):
+        try:
+            module = importlib.import_module(info.name)
+        except ImportError:  # pragma: no cover - 선택 의존성이 모듈을 못 읽는 경우
+            continue
+        short = info.name.rsplit(".", 1)[-1]
+        for obj in vars(module).values():
+            if not isinstance(obj, type) or not issubclass(obj, BaseRule):
+                continue
+            if "rule_id" not in obj.__dict__:
+                continue  # 중간 기반 클래스는 등록 대상이 아니다
+            if obj.__module__ != info.name:
+                continue  # 다른 모듈에서 가져온 클래스는 정의된 곳에서 한 번만 센다
+            if obj.rule_id in found:
+                continue
+            found[obj.rule_id] = obj
+            family = _family_of(short)
+            rank = FAMILY_ORDER.index(family) if family in FAMILY_ORDER else len(FAMILY_ORDER)
+            ordered.append(((rank, family, short), obj))
+    ordered.sort(key=lambda item: item[0])
+    return [obj for _key, obj in ordered]
+
+
+ALL_RULES: list[type[BaseRule]] = _discover_rule_classes()
 
 
 def get_active_rules(

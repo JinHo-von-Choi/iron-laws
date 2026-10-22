@@ -46,7 +46,7 @@ def _report(tmp_path: Path) -> dict:
 
 def test_report_carries_pack_refs_and_verifier_accepts_them(tmp_path: Path):
     data = _report(tmp_path)
-    assert data["schema_version"] == "1.6"
+    assert data["schema_version"] == "1.7"
     finding = next(v for v in data["violations"] if v["rule_id"] == "IL-504")
     refs = {(r["pack_id"], r["item_id"]): r["mapping_verified"] for r in finding["standards"]}
     assert refs[("mois-2021-impl", "1-5")] is True

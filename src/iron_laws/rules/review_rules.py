@@ -7,10 +7,11 @@
 import re
 from dataclasses import dataclass
 
-from iron_laws.core.models import Confidence, IronLaw, RuleLayer, Severity, Violation
+from iron_laws.core.models import Confidence, IronLaw, Severity, Violation
 from iron_laws.engine.languages import JS_FAMILY, Lang
 from iron_laws.engine.project import ProjectContext
 from iron_laws.engine.source import SourceFile
+from iron_laws.rules.ai_code_common import AiRule
 from iron_laws.rules.base import BaseRule
 from iron_laws.standards import mois_ref
 
@@ -124,11 +125,6 @@ class LoginRateLimitRule(BaseRule):
                         )
                     ]
         return []
-
-
-class AiRule(BaseRule):
-    layer = RuleLayer.AI_CODE
-    gov_standard = None
 
 
 class CustomTokenRule(AiRule):
@@ -548,12 +544,3 @@ class VersionRule(AiRule):
         return found
 
 
-REVIEW_RULES: list[type[BaseRule]] = [
-    UploadVerificationRule,
-    LoginRateLimitRule,
-    CustomTokenRule,
-    FrameworkGuardRule,
-    GlobalExceptionHandlerRule,
-    SingleAdminRoleRule,
-    VersionRule,
-]

@@ -74,7 +74,9 @@ BaselineOpt = typer.Option(
     None, "--baseline", help="기준선 파일. 지정하면 기준선에 없던 새 지적과 재검토 대상만 통과·실패에 반영합니다"
 )
 GitignoreOpt = typer.Option(
-    False, "--respect-gitignore", help=".gitignore에 걸리는 파일과 폴더를 점검하지 않습니다 (기본은 점검). 설정의 respect_gitignore와 같습니다"
+    None,
+    "--respect-gitignore/--ignore-gitignore",
+    help=".gitignore에 걸리는 파일과 폴더를 점검하지 않습니다 (기본은 점검). --ignore-gitignore로 설정의 값을 되돌립니다. 설정의 respect_gitignore와 같습니다",
 )
 ContractOpt = typer.Option(
     None, "--contract", help="근거 계약 파일(신뢰 정책). 보안 관심 지점에 요구하는 분석 근거를 선언하며, 충족 여부가 보고서에 남습니다"
@@ -112,6 +114,11 @@ MaxUnverifiedOpt = typer.Option(
     min=0.0,
     max=1.0,
     help="이번 점검에 적용된 (규칙, 언어) 조합 중 양성·음성 시험이 모두 있지 않은 조합 비율의 상한(0~1). 넘으면 통과가 아니라 재검토로 판정합니다",
+)
+MaxWallSecondsOpt = typer.Option(
+    None,
+    "--max-wall-seconds",
+    help="점검 시간 상한(초). 넘으면 점검이 끝까지 되지 않은 것으로 보고 통과로 보지 않습니다. 설정의 limits.max_wall_seconds와 같습니다",
 )
 
 
@@ -218,13 +225,14 @@ def _build_scanner(
     search_parents: bool = False,
     baseline: Path | None = None,
     changed_since: str | None = None,
-    respect_gitignore: bool = False,
+    respect_gitignore: bool | None = None,
     contract: Path | None = None,
     contract_mode: str | None = None,
     approvals: Path | None = None,
     collect_dependencies: bool = False,
     gates: dict[str, float] | None = None,
     package_index: Path | None = None,
+    max_wall_seconds: float | None = None,
 ) -> AuditScanner:
     try:
         loaded_contract = None
@@ -257,6 +265,8 @@ def _build_scanner(
             collect_dependencies=collect_dependencies,
         )
         scanner = AuditScanner.from_options(options)
+        if max_wall_seconds is not None:
+            scanner.config.limits.max_wall_seconds = max_wall_seconds  # 명령행 옵션이 설정 파일보다 우선한다
         if package_index is not None:
             if not (package_index / "manifest.json").is_file():
                 raise ConfigError(f"패키지 색인 폴더에 manifest.json이 없습니다: {package_index}")

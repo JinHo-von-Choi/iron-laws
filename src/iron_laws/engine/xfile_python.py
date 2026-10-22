@@ -117,7 +117,7 @@ def _relative_module(src: SourceFile, text: str) -> str:
 
 def imported_names(src: SourceFile) -> set[str]:
     """import로 이 파일에 묶인 지역 이름"""
-    return set(imports(src))
+    return src.memo("py_imported_names", lambda: set(imports(src)))
 
 
 def imports(src: SourceFile) -> dict[str, tuple[str, str | None]]:

@@ -109,24 +109,8 @@ from iron_laws.rules.injection_web import (
     XssRule as XssRule,
 )
 
-INJECTION_RULES: list[type[BaseRule]] = [
-    SqlInjectionRule,
-    PathTraversalRule,
-    CodeInjectionRule,
-    CommandInjectionRule,
-    XssRule,
-    SsrfRule,
-    OpenRedirectRule,
-    LdapInjectionRule,
-    XxeRule,
-    CsrfDisabledRule,
-    HeaderInjectionRule,
-    SecurityDecisionInputRule,
-    UploadFilenameRule,
-    XPathInjectionRule,
-    TrustBoundaryRule,
-    NoSqlInjectionRule,
-]
-
-
-__all__ = ["INJECTION_RULES"] + [r.__name__ for r in INJECTION_RULES]
+__all__ = sorted(
+    name
+    for name, obj in vars().copy().items()
+    if isinstance(obj, type) and issubclass(obj, BaseRule) and "rule_id" in obj.__dict__
+)

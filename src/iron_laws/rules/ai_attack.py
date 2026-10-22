@@ -304,8 +304,3 @@ class ModelLoadingRule(AiAttackRule):
         return found
 
 
-AIA_RULES: list[type[BaseRule]] = [
-    AgentRuleFileRule,
-    McpConfigRule,
-    ModelLoadingRule,
-]

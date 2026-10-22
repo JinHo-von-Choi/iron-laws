@@ -611,7 +611,7 @@ def test_multiline_secret_assignment_keeps_surrounding_code(tmp_path: Path):
 def test_report_json_has_schema_version(tmp_path: Path):
     (tmp_path / "a.py").write_text("x = 1\n")
     data = json.loads(runner.invoke(app, ["audit", str(tmp_path), "--format", "json"]).output)
-    assert data["schema_version"] == "1.6"
+    assert data["schema_version"] == "1.7"
     assert "diagnostics" in data
 
 
@@ -754,6 +754,19 @@ def test_gitignore_is_applied_only_when_asked(tmp_path: Path):
     assert respected.metadata["excluded_summary"]["directories"].get("(.gitignore)") == 1
 
 
+def test_tool_working_directories_are_excluded_by_default(tmp_path: Path):
+    (tmp_path / ".samcheonpo" / "snapshots" / "s1").mkdir(parents=True)
+    (tmp_path / ".samcheonpo" / "snapshots" / "s1" / "copy.py").write_text(SECRET)
+    (tmp_path / ".serena").mkdir()
+    (tmp_path / ".serena" / "cache.py").write_text(SECRET)
+    (tmp_path / "app.py").write_text(SECRET)
+    report = AuditScanner(tmp_path).scan()
+    assert {v.file_path.as_posix() for v in report.violations if v.rule_id == "IL-101"} == {"app.py"}
+    excluded = report.metadata["excluded_summary"]["directories"]
+    assert excluded.get(".samcheonpo") == 1
+    assert excluded.get(".serena") == 1
+
+
 def test_gitignore_option_from_cli_and_config(tmp_path: Path):
     (tmp_path / ".gitignore").write_text("c.py\n")
     (tmp_path / "c.py").write_text(SECRET)
@@ -762,6 +775,7 @@ def test_gitignore_option_from_cli_and_config(tmp_path: Path):
     assert runner.invoke(app, ["check", str(tmp_path), "--respect-gitignore"]).exit_code == 0
     (tmp_path / ".iron-laws.yml").write_text("respect_gitignore: true\n")
     assert runner.invoke(app, ["check", str(tmp_path)]).exit_code == 0
+    assert runner.invoke(app, ["check", str(tmp_path), "--ignore-gitignore"]).exit_code == 1
 
 
 def test_sarif_for_single_file_inside_subfolder(tmp_path: Path):

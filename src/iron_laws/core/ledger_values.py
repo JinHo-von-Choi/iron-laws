@@ -60,6 +60,7 @@ class _Context:
     modeled: dict[str, list] = field(default_factory=dict)
     rules: dict[str, SinkRule] = field(default_factory=dict)
     spec_sinks: dict[str, list] = field(default_factory=dict)  # 계열별로 사용자가 명세로 더한 싱크
+    findings_by_line: dict[tuple[str, str, int], list[tuple[int, list[str]]]] = field(default_factory=dict)
 
     def is_spec_sink(self, family: str, callee: str) -> bool:
         """사용자가 명세로 선언한 싱크인지 확인한다. 프로젝트 함수를 지점으로 건너뛸 때 예외로 쓴다."""

@@ -16,6 +16,9 @@ DEFAULT_EXCLUDES = [
     ".git",
     ".svn",
     ".hg",
+    # 분석 도구가 저장한 코드 사본. 원본 코드의 복제본이라 점검하면 같은 findings가 여러 번 나온다
+    ".serena",
+    ".samcheonpo",
     ".venv",
     "venv",
     "env",
@@ -114,6 +117,21 @@ class Limits(BaseModel):
     duplicate_similarity: float = Field(default=0.9, gt=0, le=1)
     max_file_bytes: int = Field(default=1_000_000, gt=0)
     max_cross_file_lookups: int = Field(default=20000, ge=0)
+    max_workers: int | None = Field(
+        default=None,
+        ge=1,
+        description="파일별 규칙을 나눠 처리하는 작업 프로세스 수. 비우면 CPU 수를 넘지 않는 기본값을 쓴다",
+    )
+    parallel_min_files: int | None = Field(
+        default=None,
+        ge=1,
+        description="이 파일 수 이상이면 작업 프로세스로 나눠 처리한다. 비우면 기본값을 쓴다",
+    )
+    max_wall_seconds: float | None = Field(
+        default=None,
+        gt=0,
+        description="점검 시간 상한(초). 넘으면 점검이 끝까지 되지 않은 것으로 보고 통과로 보지 않는다",
+    )
 
 
 class Policies(BaseModel):
@@ -161,7 +179,10 @@ class IronLawsConfig(BaseModel):
     include_extensions: list[str] = Field(default_factory=lambda: list(DEFAULT_EXTENSIONS))
     limits: Limits = Field(default_factory=Limits)
     policies: Policies = Field(default_factory=Policies)
-    respect_gitignore: bool = Field(default=False, description="true면 .gitignore에 걸리는 파일과 폴더를 점검하지 않는다 (기본은 점검)")
+    respect_gitignore: bool = Field(
+        default=False,
+        description="true면 .gitignore에 걸리는 파일과 폴더를 점검하지 않는다 (기본은 점검)",
+    )
     enabled_rules: list[str] | None = None
     disabled_rules: list[str] = Field(default_factory=list)
 

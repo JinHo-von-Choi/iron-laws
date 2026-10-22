@@ -1,0 +1,25 @@
+version: 2
+updates:
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      # 트리시터 문법은 노드 타입 이름에 의존한다. 하나만 올리면 규칙이 조용히 무력화되므로 한 번에 올린다
+      tree-sitter:
+        patterns:
+          - "tree-sitter*"
+      dev-tools:
+        patterns:
+          - "ruff"
+          - "pytest"
+          - "pytest-cov"
+          - "jsonschema"
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      actions:
+        patterns:
+          - "*"

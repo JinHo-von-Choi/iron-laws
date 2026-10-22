@@ -125,7 +125,7 @@ class Violation(BaseModel):
 class Diagnostic(BaseModel):
     """점검 과정에서 생긴 문제. 오류가 하나라도 있으면 점검이 끝까지 되지 않은 것이다."""
 
-    kind: str = Field(..., description="read / encoding / parse / rule_error / worker / analysis_limit / suppression / baseline / config")
+    kind: str = Field(..., description="read / encoding / parse / rule_error / worker / analysis_limit / suppression / baseline / config / budget")
     severity: str = Field(..., description="info / warning / error")
     message: str
     file_path: str = ""
@@ -200,6 +200,19 @@ class FamilyTally(BaseModel):
     by_state: dict[str, int] = Field(default_factory=dict)  # 계약 범위 안 지점의 상태별 수
 
 
+class ScanCost(BaseModel):
+    """이 보고서를 만드는 데 쓴 시간과 메모리. 같은 입력에서 반복해 재현한다."""
+
+    wall_seconds: float = Field(..., ge=0)
+    cpu_seconds: float = Field(default=0.0, ge=0)
+    peak_rss_mb: float = Field(default=0.0, ge=0)
+    files_per_second: float = Field(default=0.0, ge=0)
+    workers: int = Field(default=1, ge=1)
+    phase_seconds: dict[str, float] = Field(default_factory=dict)
+    budget_seconds: float | None = None
+    budget_exceeded: bool = False
+
+
 class ExecutionRecord(BaseModel):
     """이 보고서를 만든 점검 실행의 식별자와 범위. 지적·장부·승인이 같은 실행의 근거인지 확인하는 기준이다."""
 
@@ -214,6 +227,7 @@ class ExecutionRecord(BaseModel):
     files_skipped: int
     error_diagnostics: int
     cross_file_limit_hits: int = 0
+    cost: ScanCost | None = None
 
 
 class ApprovalCheck(BaseModel):
@@ -251,7 +265,7 @@ class CoverageLedger(BaseModel):
     limitations: list[str] = Field(default_factory=list)
 
 
-REPORT_SCHEMA_VERSION = "1.6"
+REPORT_SCHEMA_VERSION = "1.7"
 
 
 class AuditReport(BaseModel):

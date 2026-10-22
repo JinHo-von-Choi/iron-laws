@@ -29,9 +29,20 @@ LAYER_LABEL = {"presentation": "표현(컨트롤러)", "service": "서비스", "
 
 
 LAYER_DIR_TOKENS = {
-    "presentation": {"controller", "controllers", "route", "routes", "router", "routers", "api", "view", "views", "endpoint", "endpoints", "page", "pages", "web", "ui", "resources"},
-    "service": {"service", "services", "usecase", "usecases", "use_cases", "application", "business", "logic"},
-    "data": {"repository", "repositories", "repo", "repos", "dao", "daos", "persistence", "db", "database", "store", "stores", "infrastructure", "orm", "mapper", "mappers"},
+    "presentation": {
+        "controller", "controllers", "route", "routes", "router", "routers", "api", "view", "views",
+        "endpoint", "endpoints", "page", "pages", "web", "ui",
+        "reporter", "reporters", "presenter", "presenters", "serializer", "serializers",
+        "formatter", "formatters", "output", "outputs", "cli", "cmd", "command", "commands",
+    },
+    "service": {
+        "service", "services", "usecase", "usecases", "use_cases", "application", "business", "logic",
+        "core", "domain", "domainlogic",
+    },
+    "data": {
+        "repository", "repositories", "repo", "repos", "dao", "daos", "persistence", "db", "database",
+        "store", "stores", "infrastructure", "orm", "mapper", "mappers", "entity", "entities",
+    },
 }
 
 

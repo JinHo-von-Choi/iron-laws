@@ -99,22 +99,4 @@ from iron_laws.rules.ai_code_configuration import (
 from iron_laws.rules.ai_code_configuration import (
     SupplyChainRule as SupplyChainRule,
 )
-from iron_laws.rules.base import BaseRule
 
-AI_RULES: list[type[BaseRule]] = [
-    HardcodedConfigRule,
-    SecretDefaultFallbackRule,
-    FrontendSecretRule,
-    CommittedSecretFilesRule,
-    CorsRule,
-    InsecureSettingsRule,
-    UnauthenticatedEndpointRule,
-    DatabaseAccessPolicyRule,
-    ClientSideAuthRule,
-    DevOpsConfigRule,
-    SupplyChainRule,
-    LoggingSafetyRule,
-    IdorRule,
-    SecurityHardeningAdviceRule,
-    CookieFlagsRule,
-]

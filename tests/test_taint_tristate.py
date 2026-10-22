@@ -99,3 +99,14 @@ def test_results_do_not_depend_on_worker_count(tmp_path: Path, monkeypatch):
     assert serial[0] and serial[2]
     assert _outcome(tmp_path, 2, monkeypatch) == serial
     assert _outcome(tmp_path, 4, monkeypatch) == serial
+
+
+@pytest.mark.skipif(not hasattr(os, "fork"), reason="병렬 점검은 fork를 쓴다")
+def test_configured_worker_count_and_parallel_threshold_are_used(tmp_path: Path, monkeypatch):
+    _project(tmp_path)
+    monkeypatch.setattr(os, "cpu_count", lambda: 8)
+    config = IronLawsConfig(limits=Limits(max_cross_file_lookups=3, max_workers=2, parallel_min_files=2))
+    report = AuditScanner(tmp_path, config).scan()
+    serial = _outcome(tmp_path, 1, monkeypatch)
+    findings = sorted((v.rule_id, v.file_path.as_posix(), v.line_number) for v in report.violations)
+    assert findings == serial[0]  # 설정한 작업 프로세스 수로 나눠도 결과는 같다

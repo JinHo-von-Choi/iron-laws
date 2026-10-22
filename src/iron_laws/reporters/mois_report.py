@@ -15,6 +15,7 @@ from pathlib import Path
 
 from iron_laws.core.models import AuditReport
 from iron_laws.reporters.coverage import rule_item_ids
+from iron_laws.reporters.markdown import cost_section
 from iron_laws.standards import impl_items
 
 FAMILY_ITEM = {"sql": "1-1", "path": "1-3", "command": "1-5"}
@@ -98,6 +99,9 @@ def generate_mois_report(report: AuditReport, rules) -> str:
     md = ["# 소프트웨어 개발보안 감리 대응 보고서", ""]
     md += [f"- **{k}**: {v}" for k, v in _header(report)]
     md += ["", "'지적 없음'은 탑재된 규칙 범위에서 발견되지 않았다는 뜻이며, 취약점이 없다는 증명이 아닙니다. 미점검 사유가 있는 항목은 사람이 확인해야 합니다.", ""]
+    md += ["## 점검 비용과 확인하지 못한 범위", ""]
+    md += [line for line in cost_section(report) if line.startswith("- ")]
+    md.append("")
     md += ["## 항목별 현황", "", "| 항목 | 명칭 | 점검 규칙 | 지적 | 잔존(사유 기록) | 상태 | 미점검 사유 |", "|---|---|---|---|---|---|---|"]
     for r in rows:
         md.append(f"| {r.item_id} | {r.name} | {', '.join(r.rules) or '-'} | {len(r.findings)} | {len(r.remaining)} | {r.status} | {'; '.join(r.unchecked) or '-'} |")
@@ -134,6 +138,10 @@ def write_mois_docx(report: AuditReport, rules, path: Path) -> None:
     for key, value in _header(report):
         doc.add_paragraph(f"{key}: {value}")
     doc.add_paragraph("'지적 없음'은 탑재된 규칙 범위에서 발견되지 않았다는 뜻이며, 취약점이 없다는 증명이 아닙니다.")
+    doc.add_heading("점검 비용과 확인하지 못한 범위", 1)
+    for line in cost_section(report):
+        if line.startswith("- "):
+            doc.add_paragraph(line[2:])
     doc.add_heading("항목별 현황", 1)
     table = doc.add_table(rows=1, cols=6)
     for cell, title in zip(table.rows[0].cells, ("항목", "명칭", "점검 규칙", "지적", "상태", "미점검 사유"), strict=True):
@@ -166,6 +174,10 @@ def write_mois_hwpx(report: AuditReport, rules, path: Path) -> None:
     for key, value in _header(report):
         doc.add_paragraph(f"{key}: {value}")
     doc.add_paragraph("'지적 없음'은 탑재된 규칙 범위에서 발견되지 않았다는 뜻이며, 취약점이 없다는 증명이 아닙니다.")
+    doc.add_heading("점검 비용과 확인하지 못한 범위", 1)
+    for line in cost_section(report):
+        if line.startswith("- "):
+            doc.add_paragraph(line[2:])
     doc.add_heading("항목별 현황", 2)
     titles = ("항목", "명칭", "점검 규칙", "지적", "상태", "미점검 사유")
     table = doc.add_table(len(rows) + 1, len(titles))

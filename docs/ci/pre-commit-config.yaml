@@ -1,6 +1,6 @@
 # 점검할 저장소의 .pre-commit-config.yaml
 repos:
   - repo: https://github.com/JinHo-von-Choi/iron-laws
-    rev: v1.8.0
+    rev: v1.9.0
     hooks:
       - id: iron-laws

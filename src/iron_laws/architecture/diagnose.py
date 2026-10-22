@@ -21,6 +21,8 @@ THRESHOLDS = {
     "layering": {"warn_ratio": 0.0, "bad_ratio": 0.10},  # 파일 수 대비 위반 파일 수
     "duplicates": {"warn_ratio": 0.03, "bad_ratio": 0.10},  # 함수 수 대비 중복 지적 수
     "tests": {"ok_ratio": 0.5, "warn_ratio": 0.2},  # 시험이 있는 모듈 비율(이 이상이면 양호)
+    "hotspots": {"warn_changes": 5, "bad_changes": 15},  # 최근 100커밋에서 가장 자주 바뀐 파일의 변경 횟수
+    "duplicate_patterns": {"warn": 1, "bad": 5},  # 두 모듈 이상에 같은 모양으로 정의된 정규식 수
 }
 LABEL = {"ok": "양호", "warn": "주의", "bad": "붕괴"}
 INDICATOR_NAME = {
@@ -31,6 +33,8 @@ INDICATOR_NAME = {
     "duplicates": "중복 함수",
     "large_functions": "큰 함수",
     "large_files": "큰 파일",
+    "hotspots": "변경 집중",
+    "duplicate_patterns": "중복 정규식",
 }
 DONT = (
     "한 번에 전부 다시 쓰지 마세요. 동작이 바뀌어도 알아챌 수 없습니다.",
@@ -77,7 +81,7 @@ def evaluate(m: Metrics) -> dict[str, Any]:
 
     lv = len(m.layering_files) / n
     state = "ok" if m.layering_violations == 0 else "bad" if lv > t["layering"]["bad_ratio"] else "warn"
-    put("layering", state, f"계층 경계를 넘는 파일 {len(m.layering_files)}개(위반 {m.layering_violations}건)", "화면·요청 처리 코드가 DB를 직접 건드리는 식으로 역할이 섞였습니다.", m.layering_files)
+    put("layering", state, f"계층 경계를 넘는 파일 {len(m.layering_files)}개(위반 {m.layering_violations}건)", "역할이 섞였습니다. 요청 처리 코드가 데이터 접근을 직접 하거나, 아래 계층이 위 계층에 의존합니다.", m.layering_files)
 
     dr = m.duplicate_findings / max(m.functions, 1)
     state = "ok" if dr <= t["duplicates"]["warn_ratio"] else "bad" if dr > t["duplicates"]["bad_ratio"] else "warn"
@@ -86,6 +90,26 @@ def evaluate(m: Metrics) -> dict[str, Any]:
     tr = m.modules_with_tests / n
     state = "ok" if tr >= t["tests"]["ok_ratio"] else "warn" if tr >= t["tests"]["warn_ratio"] else "bad"
     put("tests", state, f"시험이 있는 모듈 {m.modules_with_tests}개(전체의 {tr:.0%})", "시험이 없으면 구조를 고치다 동작이 바뀌어도 알 수 없습니다.", [])
+
+    top_changes = max((h.changes for h in m.hotspots), default=0)
+    state = "ok" if top_changes < t["hotspots"]["warn_changes"] else "bad" if top_changes >= t["hotspots"]["bad_changes"] else "warn"
+    put(
+        "hotspots",
+        state,
+        f"가장 자주 바뀐 파일 {top_changes}회(최근 100커밋)",
+        "자주 바뀌는 파일은 반복해서 망가지므로 그곳을 나눠 두면 고칠 곳이 넓어집니다.",
+        [h.path for h in m.hotspots],
+    )
+
+    dup = len(m.duplicate_patterns)
+    state = "ok" if dup == 0 else "bad" if dup >= t["duplicate_patterns"]["bad"] else "warn"
+    put(
+        "duplicate_patterns",
+        state,
+        f"두 모듈 이상에 겹친 정규식 {dup}건",
+        "같은 정규식이 여러 모듈에 있으면 한 곳을 고쳐도 다른 곳이 남아 판정이 어긋납니다.",
+        [],
+    )
 
     bad = [k for k, v in indicators.items() if v["state"] == "bad"]
     warn = [k for k, v in indicators.items() if v["state"] == "warn"]
@@ -132,10 +156,12 @@ def _step(key: str, m: Metrics, ind: dict[str, dict[str, Any]]) -> dict[str, Any
         "cycles_first": ("순환 안의 연결 하나를 끊으세요", first_cycle, "순환 묶음에서 가장 적게 불리는 모듈이 다른 모듈을 부르는 곳 하나를 골라, 부르는 쪽이 인터페이스(약속)만 알도록 바꾸세요. 한 곳만 바꾸고 멈추세요."),
         "cycles": ("순환 의존을 끊으세요", first_cycle, "순환 묶음에서 두 모듈이 함께 쓰는 부분을 제3의 모듈로 빼내세요. 한 묶음씩, 한 번에 연결 하나만 바꾸세요."),
         "god_module": ("중심 모듈의 역할을 하나씩 떼어 내세요", ind["god_module"]["files"], "중심 모듈이 하는 일 중 서로 관계없는 하나를 골라 새 모듈로 옮기세요. 부르는 쪽의 import만 바꾸고 한 번에 한 역할만 옮기세요."),
-        "layering": ("계층 경계를 세우세요", m.layering_files, "요청 처리 코드에 든 DB 호출을 서비스·저장소 함수로 옮기세요. 파일 하나씩 옮기고 시험을 돌려 확인하세요."),
+        "layering": ("계층 경계를 세우세요", m.layering_files, "요청 처리 코드에 든 데이터 접근은 저장소 함수로 옮기고, 아래 계층이 위 계층을 부르는 곳은 의존이 아래로만 흐르게 고치세요. 파일 하나씩 옮기고 시험을 돌려 확인하세요."),
         "duplicates": ("중복 함수를 하나로 모으세요", m.duplicate_files, "같은 일을 하는 함수 둘 중 하나를 골라 공용 모듈로 옮기고, 다른 쪽의 호출을 그쪽으로 바꾸세요. 한 쌍씩 하세요."),
         "large_functions": ("가장 긴 함수를 나누세요", m.large_functions, "가장 긴 함수 하나를 골라 이름 붙일 수 있는 덩어리로 나누세요. 나누기 전에 그 함수를 부르는 시험을 하나 쓰세요."),
         "large_files": ("가장 큰 파일을 역할별로 나누세요", m.large_files, "가장 큰 파일 하나를 골라 역할별 파일 둘로 나누세요. import 경로만 바꾸고 동작은 바꾸지 마세요."),
+        "hotspots": ("자주 바뀌는 파일을 먼저 나누세요", [h.path for h in m.hotspots], "가장 자주 바뀐 파일에서 역할이 다른 부분을 찾아 별도 파일로 옮기세요. 옮긴 뒤 시험을 돌려 확인하세요."),
+        "duplicate_patterns": ("겹친 정규식을 한곳으로 모으세요", [], "두 모듈에 같은 정규식이 있으면 기준이 될 한곳을 정하고 다른 곳은 그곳을 쓰게 바꾸세요. 한 쌍씩 하세요."),
     }
     title, files, how = table[key]
     state_key = "cycles" if key == "cycles_first" else key

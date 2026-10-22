@@ -575,10 +575,3 @@ class ManyQueriesRule(PerfRule):
         return found[:MAX_PER_FILE]
 
 
-PERF_RULES: list[type[BaseRule]] = [
-    ManyQueriesRule,
-    NestedLoopRule,
-    ExpensiveInLoopRule,
-    UnboundedQueryRule,
-    BlockingInAsyncRule,
-]

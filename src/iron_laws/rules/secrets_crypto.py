@@ -687,19 +687,3 @@ class PermissionRule(LineRegexRule):
     ]
 
 
-SECRETS_CRYPTO_RULES: list[type[BaseRule]] = [
-    HardcodedSecretRule,
-    InsecureCryptoRule,
-    KeyLengthRule,
-    WeakRandomRule,
-    JwtVerificationRule,
-    TlsVerificationRule,
-    UnsaltedPasswordHashRule,
-    HardcodedCredentialCompareRule,
-    PlaintextTransportRule,
-    WeakPasswordPolicyRule,
-    CommentSensitiveInfoRule,
-    SensitiveCookieRule,
-    DownloadAndExecuteRule,
-    PermissionRule,
-]

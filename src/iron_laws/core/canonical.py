@@ -18,6 +18,7 @@ IGNORED_POINTERS: tuple[tuple[str, str], ...] = (
     ("/metadata/repo_relative_prefix", "저장소 안에서 점검 대상까지의 상대 경로(작업 경로에 따라 달라짐)"),
     ("/metadata/config_source", "설정 파일의 경로 표시"),
     ("/coverage_ledger/contract_source", "계약 파일의 경로 표시"),
+    ("/execution/cost", "점검에 걸린 시간과 메모리(실행마다 달라짐)"),
 )
 
 

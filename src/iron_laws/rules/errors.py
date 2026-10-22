@@ -777,13 +777,3 @@ class ValidationMessageMismatchRule(BaseRule):
         return found
 
 
-ERROR_RULES: list[type[BaseRule]] = [
-    SwallowedExceptionRule,
-    DisabledTestRule,
-    AuthBypassRule,
-    BroadExceptionRule,
-    ErrorExposureRule,
-    TestWithoutAssertionRule,
-    FailureAsDefaultRule,
-    ValidationMessageMismatchRule,
-]

@@ -83,18 +83,19 @@ def _build_callers(sources: list[SourceFile]) -> dict[tuple[str, int], list[tupl
     return callers
 
 
-def _findings_of(src: SourceFile, call: Call, rule_id: str, findings: dict[tuple[str, str, int, int], list[str]]) -> tuple[list[str], list[int]]:
+def _findings_of(src: SourceFile, call: Call, rule_id: str, ctx: _Context) -> tuple[list[str], list[int]]:
     """이 호출의 지적. 열까지 같은 호출의 지적이 기본이다. 같은 줄의 다른 호출이 낸 지적은 근거로 쓰지 않되,
     그 호출과 이 호출이 서로 안에 들어 있는(`open(os.path.join(...))`) 같은 흐름이면 한 지적으로 함께 본다. 나란히 있는 호출(`a(); b()`)은 따로 본다."""
     path = src.path.as_posix()
     column = call.node.start_point[1] + 1
-    exact = findings.get((rule_id, path, call.line, column))
+    entries = ctx.findings_by_line.get((rule_id, path, call.line), ())
+    exact = next((ids for col, ids in entries if col == column), None)
     if exact:
         return list(exact), []
     linked: list[str] = []
     columns: list[int] = []
-    for (r, p, line, col), ids in findings.items():
-        if r != rule_id or p != path or line != call.line or col == column:
+    for col, ids in entries:
+        if col == column:
             continue
         for other in _calls_on_line(src, call.line):
             if other.node.start_point[1] + 1 == col and _nested(call.node, other.node):
@@ -146,7 +147,7 @@ def _classify(
     index = xfile.get_index()
     before = index.limit_hits if index else 0
     args = rule.select_args(src, call, sink)
-    finding_ids, linked_columns = _findings_of(src, call, rule.rule_id, findings)
+    finding_ids, linked_columns = _findings_of(src, call, rule.rule_id, ctx)
     unresolved: str | None = None
     guarded = False
     declared: list[str] = []
@@ -275,7 +276,16 @@ def _prepare_context(inputs: LedgerInputs) -> _Context:
             index._resolve_cache = saved_cache  # 지점별 해석은 설정한 상한 안에서 따로 해석한다
             index.budget = lookup_budget
 
+    ctx.findings_by_line = _index_findings_by_line(inputs.findings)
     return ctx
+
+
+def _index_findings_by_line(findings: dict[tuple[str, str, int, int], list[str]]) -> dict[tuple[str, str, int], list[tuple[int, list[str]]]]:
+    """지적을 (규칙, 경로, 줄)별로 모은다. 지점마다 모든 지적을 훑지 않도록 하기 위한 색인이다."""
+    index: dict[tuple[str, str, int], list[tuple[int, list[str]]]] = {}
+    for (rule_id, path, line, column), ids in findings.items():
+        index.setdefault((rule_id, path, line), []).append((column, ids))
+    return index
 
 
 def _collect_points(inputs: LedgerInputs, ctx: _Context) -> tuple[list[LedgerFile], list[InterestPoint]]:

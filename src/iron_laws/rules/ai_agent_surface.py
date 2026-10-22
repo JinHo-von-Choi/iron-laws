@@ -300,4 +300,3 @@ def _js_param_names(src: SourceFile, param: Node) -> list[str]:
     return names
 
 
-AGENT_SURFACE_RULES = [LlmOutputExecutionRule, SystemPromptInjectionRule, McpServerToolRule, BrowserModelKeyRule, UncappedLlmCallRule, PiiToLlmRule]

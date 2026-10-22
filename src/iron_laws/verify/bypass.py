@@ -21,6 +21,7 @@ POLICY_FILES = (
     ".iron-laws-baseline.json",
     ".iron-laws-approvals.jsonl",
     ".iron-laws-runner.yml",
+    ".gitignore",
 )
 TEST_INFRA_NAMES = frozenset({"conftest.py", "pytest.ini", "tox.ini", "setup.cfg", "sitecustomize.py", "usercustomize.py", "noxfile.py", "jest.config.js", "jest.config.ts", "vitest.config.ts", "vitest.config.js"})
 SKIP_RE = re.compile(
@@ -89,7 +90,12 @@ def detect_bypasses(original: Path, candidate: Path, touched: list[str], deleted
         before, after = _read(original, rel), _read(candidate, rel)
         if rel in policy_names or name in policy_names:
             kind = "baseline_changed" if "baseline" in name else "policy_changed"
-            changes.append(BypassChange(kind, rel, "검증 정책·기준선 파일을 patch가 바꾸려 했다"))
+            detail = (
+                "점검 대상에서 빠질 파일 규칙(.gitignore)을 patch가 바꾸려 했다"
+                if name == ".gitignore"
+                else "검증 정책·기준선 파일을 patch가 바꾸려 했다"
+            )
+            changes.append(BypassChange(kind, rel, detail))
             if name in (".iron-laws.yml", ".iron-laws.yaml") and in_original and in_candidate:
                 for detail in _config_weakened(before, after):
                     changes.append(BypassChange("config_weakened", rel, detail))

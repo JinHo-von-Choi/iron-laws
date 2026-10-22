@@ -136,19 +136,4 @@ from iron_laws.rules.architecture_structure import (
 from iron_laws.rules.architecture_structure import (
     SizeAndComplexityRule as SizeAndComplexityRule,
 )
-from iron_laws.rules.base import BaseRule
 
-ARCH_RULES: list[type[BaseRule]] = [
-    SizeAndComplexityRule,
-    LayeringRule,
-    CircularDependencyRule,
-    DuplicateHelperRule,
-    RepeatedLiteralRule,
-    NoTestsRule,
-    LayerDirectionRule,
-    DtoMapMixRule,
-    ErrorMessageScatterRule,
-    AttributeKeyRule,
-    ReusableObjectRule,
-    DbInLoopRule,
-]

@@ -56,6 +56,8 @@ spec_app = typer.Typer(help="사용자 명세: 프로젝트 고유의 소스·�
 app.add_typer(spec_app, name="spec")
 experience_app = typer.Typer(help="교훈 저장소: 채택한 명세와 규칙에 대한 교훈을 남기고 다음 명세·검토에 씁니다")
 app.add_typer(experience_app, name="experience")
+guidelines_app = typer.Typer(help="지침 강제 대응표: 규칙을 코딩 에이전트 지침으로 내보내고, 지침 문장마다 무엇이 그것을 강제하는지 보여 줍니다")
+app.add_typer(guidelines_app, name="guidelines")
 console = Console()  # 사람이 읽는 본문(표·보고서)은 stdout
 err = Console(stderr=True)  # 상태·오류 메시지는 stderr. JSON·SARIF 같은 기계용 stdout을 오염시키지 않는다
 
@@ -89,6 +91,18 @@ MetricsOpt = typer.Option(
 )
 ApprovalsOpt = typer.Option(
     None, "--approvals", help="승인 기록 파일. 지정하면 전제가 유지되는 유효한 승인만 받아들이고, 전제가 바뀐 승인은 다시 검토 대상으로 셉니다"
+)
+AllowedSignersOpt = typer.Option(
+    None, "--allowed-signers", help="승인 서명을 확인할 OpenSSH 허용 서명자 목록. 주면 서명이 틀린 승인은 쓰지 않습니다"
+)
+BuildManifestOpt = typer.Option(
+    None, "--build-manifest", help="분석한 파일과 대조할 외부 파일 목록: auto(git 저장소면 git), git, tsc, go, file:<목록 파일>. 사유 없이 빠진 파일을 알립니다"
+)
+FullCoverageOpt = typer.Option(
+    False, "--require-full-coverage", help="파일 목록 대조에서 사유 없이 빠진 파일이 있거나 대조하지 못하면 점검을 끝내지 못한 것으로 봅니다(종료코드 2)"
+)
+RequireSignedOpt = typer.Option(
+    False, "--require-signed-approvals", help="서명이 없는 승인도 쓰지 않습니다(--allowed-signers 필요)"
 )
 TriageOpt = typer.Option(
     None, "--triage-model", help="'확인 필요' 지적에 LLM 검토 의견을 붙일 명령(표준 입력으로 지시문을 받아 JSON을 출력). 예: \"claude -p\". 비밀값을 가린 코드 조각을 그 명령에 보냅니다. 판정은 바꾸지 않습니다"
@@ -233,6 +247,10 @@ def _build_scanner(
     gates: dict[str, float] | None = None,
     package_index: Path | None = None,
     max_wall_seconds: float | None = None,
+    allowed_signers: Path | None = None,
+    require_signed_approvals: bool = False,
+    build_manifest: str | None = None,
+    require_full_coverage: bool = False,
 ) -> AuditScanner:
     try:
         loaded_contract = None
@@ -261,8 +279,10 @@ def _build_scanner(
             contract=loaded_contract,
             contract_source=(str(contract) if contract else "기본값") + (f" (모드 {contract_mode}는 명령행)" if contract_mode else ""),
             contract_path=contract,
-            approvals=ApprovalStore(approvals) if approvals else None,
+            approvals=ApprovalStore(approvals, allowed_signers, require_signed_approvals) if approvals else None,
             collect_dependencies=collect_dependencies,
+            build_manifest=build_manifest,
+            require_full_coverage=require_full_coverage,
         )
         scanner = AuditScanner.from_options(options)
         if max_wall_seconds is not None:

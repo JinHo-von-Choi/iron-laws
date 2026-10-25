@@ -28,6 +28,7 @@ from iron_laws.standards import mois_ref
 
 
 class SecurityDecisionInputRule(BaseRule):
+    version = 2
     rule_id = "IL-512"
     name = "보안기능 결정에 사용되는 부적절한 입력값 탐지"
     iron_law = IronLaw.LAW_5
@@ -60,6 +61,7 @@ class SecurityDecisionInputRule(BaseRule):
 
 
 class TrustBoundaryRule(SinkRule):
+    version = 2
     rule_id = "IL-526"
     name = "신뢰 경계 위반 (검증 없는 입력을 세션에 저장) 탐지"
     severity = Severity.MEDIUM
@@ -96,6 +98,7 @@ class TrustBoundaryRule(SinkRule):
 
 
 class NoSqlInjectionRule(BaseRule):
+    version = 2
     rule_id = "IL-533"
     name = "NoSQL 삽입($where·연산자 주입) 탐지"
     iron_law = IronLaw.LAW_5

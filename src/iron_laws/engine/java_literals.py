@@ -11,6 +11,7 @@ from iron_laws.engine.ast_tools import (
 )
 from iron_laws.engine.languages import Lang
 from iron_laws.engine.taint import definitions, param_name, reaching_definitions
+from iron_laws.engine.taint.constants import in_dead_branch, list_get_is_literal
 
 
 def is_closed_java(src, node, depth=0, seen=frozenset()):
@@ -33,7 +34,7 @@ def is_closed_java(src, node, depth=0, seen=frozenset()):
         params = scope.child_by_field_name('parameters')
         if params and any(param_name(src, p) == name for p in params.named_children):
             return False
-        defs = [d for d in reaching_definitions(src, scope, name, node.start_byte) if d.end_byte <= node.start_byte]
+        defs = [d for d in reaching_definitions(src, scope, name, node.start_byte) if d.end_byte <= node.start_byte and not in_dead_branch(src, d)]
         # 수신자를 조작하거나 외부 호출에 전달한 컬렉션의 상태는 보류한다.
         for call in call_index(src).all:
             if call.node.start_byte >= node.start_byte or enclosing_function(call.node, src.lang) != scope:
@@ -55,6 +56,8 @@ def is_closed_java(src, node, depth=0, seen=frozenset()):
         if re.search(r'class\s+List\b', src.code_text) or definitions(src, scope, 'List') or any(param_name(src, p) == 'List' for p in (scope.child_by_field_name('parameters').named_children if scope.child_by_field_name('parameters') else [])):
             return False
         return all(is_closed_java(src, arg, depth + 1, seen) for arg in call.args)
+    if list_get_is_literal(src, node):
+        return True
     if call.callee.endswith('.get'):
         receiver = node.child_by_field_name('object')
         return receiver is not None and is_closed_java(src, receiver, depth + 1, seen) and all(is_literal(a) for a in call.args)

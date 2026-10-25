@@ -401,6 +401,7 @@ class KeyLengthRule(BaseRule):
 
 
 class WeakRandomRule(BaseRule):
+    version = 2
     rule_id = "IL-104"
     name = "보안 용도의 예측 가능한 난수 사용 탐지"
     iron_law = IronLaw.LAW_1
@@ -488,6 +489,7 @@ class TlsVerificationRule(LineRegexRule):
 
 
 class UnsaltedPasswordHashRule(BaseRule):
+    version = 2
     rule_id = "IL-107"
     name = "솔트 없이 일방향 해시로 비밀번호 저장"
     iron_law = IronLaw.LAW_1
@@ -630,6 +632,7 @@ class CommentSensitiveInfoRule(BaseRule):
 
 
 class SensitiveCookieRule(BaseRule):
+    version = 2
     rule_id = "IL-112"
     name = "쿠키에 중요정보 저장 탐지"
     iron_law = IronLaw.LAW_1

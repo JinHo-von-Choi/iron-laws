@@ -107,42 +107,42 @@ def _single_entry_spec(entry: SpecEntry, kind: str) -> CustomSpec:
 def example_results(path: Path) -> list[tuple[str, str, bool, str]]:
     """(항목, positive|negative, 맞았는지, 설명). 항목 하나만 명세에 넣어 예제마다 해당 계열 규칙의 확정 지적 여부를 본다.
     양성·음성 예제를 같은 폴더에 두고 한 번에 점검하되, 항목 하나가 다른 항목의 예제에 영향을 주지 않게 한다."""
+    loaded = read_spec(path)
+    return [result for kind in ("sources", "sinks", "sanitizers") for entry in getattr(loaded.spec, kind) for result in entry_results(kind, entry)]
+
+
+def entry_results(kind: str, entry: SpecEntry) -> list[tuple[str, str, bool, str]]:
+    """항목 하나의 양성·음성 예제 판정. 다른 항목 없이 이 항목만 명세에 넣고 점검한다."""
     global _VALIDATING
     from iron_laws.core.config import IronLawsConfig, Policies
     from iron_laws.core.scanner import AuditScanner
 
-    loaded = read_spec(path)
-    results = []
+    _check_entry(kind, entry)
+    rule_id = FAMILY_RULE[entry.family]
+    extension = LANG_EXT[entry.languages[0]]
     _VALIDATING = True
     try:
-        for kind in ("sources", "sinks", "sanitizers"):
-            for entry in getattr(loaded.spec, kind):
-                rule_id = FAMILY_RULE[entry.family]
-                extension = LANG_EXT[entry.languages[0]]
-                with tempfile.TemporaryDirectory() as tmp:
-                    base = Path(tmp)
-                    code_dir = base / "code"
-                    code_dir.mkdir()
-                    spec_file = base / "spec.yml"
-                    spec_file.write_text(
-                        yaml.safe_dump(_single_entry_spec(entry, kind).model_dump(mode="json"), allow_unicode=True, sort_keys=False),
-                        encoding="utf-8",
-                    )
-                    for form in ("positive", "negative"):
-                        (code_dir / f"{form}{extension}").write_text(getattr(entry, form), encoding="utf-8")
-                    config = IronLawsConfig(policies=Policies(custom_spec=str(spec_file)), enabled_rules=[rule_id])
-                    report = AuditScanner(code_dir, config).scan()
-                    flagged = {
-                        v.file_path.as_posix()
-                        for v in report.violations
-                        if v.rule_id == rule_id and v.confidence.value == "CONFIRMED"
-                    }
-                for form in ("positive", "negative"):
-                    hit = f"{form}{extension}" in flagged
-                    ok = hit if form == "positive" else not hit
-                    results.append((f"{kind}.{entry.id}", form, ok, f"{rule_id} 확정 지적 {'있음' if hit else '없음'}"))
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            code_dir = base / "code"
+            code_dir.mkdir()
+            spec_file = base / "spec.yml"
+            spec_file.write_text(
+                yaml.safe_dump(_single_entry_spec(entry, kind).model_dump(mode="json"), allow_unicode=True, sort_keys=False),
+                encoding="utf-8",
+            )
+            for form in ("positive", "negative"):
+                (code_dir / f"{form}{extension}").write_text(getattr(entry, form), encoding="utf-8")
+            config = IronLawsConfig(policies=Policies(custom_spec=str(spec_file)), enabled_rules=[rule_id])
+            report = AuditScanner(code_dir, config).scan()
+            flagged = {v.file_path.as_posix() for v in report.violations if v.rule_id == rule_id and v.confidence.value == "CONFIRMED"}
     finally:
         _VALIDATING = False
+    results = []
+    for form in ("positive", "negative"):
+        hit = f"{form}{extension}" in flagged
+        ok = hit if form == "positive" else not hit
+        results.append((f"{kind}.{entry.id}", form, ok, f"{rule_id} 확정 지적 {'있음' if hit else '없음'}"))
     return results
 
 

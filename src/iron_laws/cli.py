@@ -9,6 +9,9 @@ from iron_laws.commands.approvals import (
     approvals_add_command as approvals_add_command,
 )
 from iron_laws.commands.approvals import (
+    approvals_checkpoint_command as approvals_checkpoint_command,
+)
+from iron_laws.commands.approvals import (
     approvals_forget_command as approvals_forget_command,
 )
 from iron_laws.commands.approvals import (
@@ -170,6 +173,12 @@ from iron_laws.commands.experience import (
 from iron_laws.commands.experience import (
     experience_verify_command as experience_verify_command,
 )
+from iron_laws.commands.guidelines import (
+    guidelines_check_command as guidelines_check_command,
+)
+from iron_laws.commands.guidelines import (
+    guidelines_export_command as guidelines_export_command,
+)
 from iron_laws.commands.inspect import (
     architecture_command as architecture_command,
 )
@@ -244,7 +253,7 @@ from iron_laws.commands.verification import (
 )
 
 # 분리 전 도움말의 명령 등록 순서를 보존한다.
-_COMMAND_ORDER = {'check_command': 0, 'audit_command': 1, 'fix_prompt_command': 2, 'baseline_create_command': 3, 'baseline_migrate_command': 4, 'baseline_diff_command': 5, 'feedback_add_command': 6, 'feedback_summary_command': 7, 'regression_propose_command': 8, 'regression_check_command': 9, 'verify_patch_command': 10, 'approvals_add_command': 11, 'approvals_list_command': 12, 'approvals_status_command': 13, 'approvals_revoke_command': 14, 'approvals_verify_command': 15, 'approvals_forget_command': 16, 'approvals_prune_command': 17, 'approvals_queue_command': 18, 'approvals_stats_command': 19, 'pilot_assign_command': 20, 'pilot_record_command': 21, 'pilot_flag_command': 22, 'pilot_close_command': 23, 'pilot_dropout_command': 24, 'pilot_summary_command': 25, 'architecture_command': 26, 'deps_command': 27, 'review_bundle_command': 28, 'evidence_verify_command': 29, 'evidence_upgrade_command': 30, 'rules_command': 31, 'support_command': 32, 'coverage_command': 33, 'explain_command': 34, 'init_command': 35}
+_COMMAND_ORDER = {'check_command': 0, 'audit_command': 1, 'fix_prompt_command': 2, 'baseline_create_command': 3, 'baseline_migrate_command': 4, 'baseline_diff_command': 5, 'feedback_add_command': 6, 'feedback_summary_command': 7, 'regression_propose_command': 8, 'regression_check_command': 9, 'verify_patch_command': 10, 'approvals_add_command': 11, 'approvals_list_command': 12, 'approvals_status_command': 13, 'approvals_revoke_command': 14, 'approvals_verify_command': 15, 'approvals_checkpoint_command': 15.5, 'approvals_forget_command': 16, 'approvals_prune_command': 17, 'approvals_queue_command': 18, 'approvals_stats_command': 19, 'pilot_assign_command': 20, 'pilot_record_command': 21, 'pilot_flag_command': 22, 'pilot_close_command': 23, 'pilot_dropout_command': 24, 'pilot_summary_command': 25, 'architecture_command': 26, 'deps_command': 27, 'review_bundle_command': 28, 'evidence_verify_command': 29, 'evidence_upgrade_command': 30, 'rules_command': 31, 'support_command': 32, 'coverage_command': 33, 'explain_command': 34, 'init_command': 35}
 for _group in (app, baseline_app, feedback_app, regression_app, approvals_app, pilot_app, evidence_app):
     _group.registered_commands.sort(key=lambda c: _COMMAND_ORDER.get(c.callback.__name__, len(_COMMAND_ORDER)))
 

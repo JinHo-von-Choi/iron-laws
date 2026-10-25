@@ -27,8 +27,10 @@ from iron_laws.core.approvals import (
     ApprovalStore,
 )
 from iron_laws.core.baseline import Baseline
+from iron_laws.core.build_manifest import classify, listed_files
 from iron_laws.core.config import (
     SPECIAL_FILE_PATTERNS,
+    ConfigError,
     InputPathError,
     IronLawsConfig,
     load_config,
@@ -210,6 +212,8 @@ class AuditScanner(ScanEvidenceBuilder, ScanResultBuilder):
         approvals: ApprovalStore | None = None,
         collect_dependencies: bool = False,
         confine_root: Path | None = None,
+        build_manifest: str | None = None,
+        require_full_coverage: bool = False,
     ):
         if not root_path.exists():
             raise InputPathError(f"점검 대상 경로가 없습니다: {root_path}")
@@ -227,6 +231,9 @@ class AuditScanner(ScanEvidenceBuilder, ScanResultBuilder):
         self.contract_path = contract_path
         self.directive_filter = directive_filter  # 지정하면 이 함수가 True를 돌려준 억제 주석만 인정한다(패치 검증에서 후보가 새로 단 억제를 무시)
         self.approvals = approvals
+        self.build_manifest = build_manifest  # 분석한 파일과 대조할 외부 파일 목록(auto·git·tsc·go·file:<목록>)
+        self.require_full_coverage = require_full_coverage  # 사유 없이 빠진 파일이 있으면 점검을 끝내지 못한 것으로 본다
+        self._file_coverage: dict | None = None
         self.collect_dependencies = collect_dependencies or approvals is not None
         self.approval_rows: list[ApprovalStatusRow] = []
         self.baseline = baseline
@@ -405,6 +412,35 @@ class AuditScanner(ScanEvidenceBuilder, ScanResultBuilder):
                         Diagnostic(kind="suppression", severity="info", file_path=path, line=d.line, message=f"사용되지 않은 억제입니다. 더 이상 필요 없으면 지우십시오: {', '.join(unused)}")
                     )
         return kept, suppressed
+
+    def _check_file_coverage(self, sources: list[SourceFile]) -> dict | None:
+        """외부 파일 목록과 분석한 파일을 대조한다. 목록이 없거나 대조하지 못하면 진단으로 밝힌다."""
+        if self.build_manifest is None:
+            return None
+        severity = "error" if self.require_full_coverage else "warning"
+        if not self.root_path.is_dir():
+            self._diagnostics.append(Diagnostic(kind="coverage", severity=severity, message="파일 하나를 점검할 때는 파일 목록 대조를 하지 않습니다"))
+            return None
+        try:
+            source, paths = listed_files(self.root_path, self.build_manifest)
+        except ConfigError as e:
+            self._diagnostics.append(Diagnostic(kind="coverage", severity=severity, message=f"파일 목록 대조를 하지 못했습니다: {e}"))
+            return None
+        coverage = classify(
+            self.root_path,
+            source,
+            paths,
+            {s.path.as_posix() for s in sources},
+            {x["path"]: x["reason"] for x in self._skipped},
+            self._matching_exclude,
+            self._is_included,
+        )
+        if coverage.unexplained:
+            shown = ", ".join(coverage.unexplained[:5])
+            self._diagnostics.append(
+                Diagnostic(kind="coverage", severity=severity, message=f"{source} 목록의 파일 {len(coverage.unexplained)}개가 사유 없이 분석되지 않았습니다: {shown}")
+            )
+        return coverage.as_dict()
 
     # -- 읽기 --
     def _read_sources(self) -> list[SourceFile]:
@@ -609,6 +645,7 @@ class AuditScanner(ScanEvidenceBuilder, ScanResultBuilder):
         phases: dict[str, float] = {}
         self._phases = phases
         sources = self._read_sources()
+        self._file_coverage = self._check_file_coverage(sources)
         files_by_language = Counter((s.lang.value if s.lang else s.kind) for s in sources)
         try:
             violations = self._run_rules(sources)

@@ -221,6 +221,8 @@ class ScanResultBuilder:
         }
         if scope_note:
             metadata["scope"] = scope_note
+        if self._file_coverage is not None:
+            metadata["file_coverage"] = self._file_coverage
         if self.baseline is not None:
             metadata["baseline"] = {"entries": len(self.baseline.entries), "tool_version": self.baseline.tool_version}
         if self.config.policies.custom_spec:

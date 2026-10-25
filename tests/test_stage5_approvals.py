@@ -301,7 +301,7 @@ def test_risky_change_is_never_silently_inherited(tmp_path: Path, monkeypatch, n
     if expected == "__rule_version__":
         from iron_laws.rules.injection import CommandInjectionRule
 
-        monkeypatch.setattr(CommandInjectionRule, "version", 2)
+        monkeypatch.setattr(CommandInjectionRule, "version", CommandInjectionRule.version + 1)
     elif expected == "__contract__":
         scanner_kwargs = {"contract": Contract(mode="block")}
     elif expected == "__expired__":

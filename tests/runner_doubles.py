@@ -7,6 +7,7 @@
 작성일: 2026-10-04
 """
 
+import dataclasses
 import sys
 
 from iron_laws.verify.runner import Runner, RunResult
@@ -38,7 +39,12 @@ class ScriptedRunner(Runner):
 
     def run(self, workdir, argv, limits, allowed=None):
         self.calls.append(workdir)
-        return self.results.pop(0)
+        result = self.results.pop(0)
+        seal = workdir / "_iron_laws_harness" / "base" / "seal"
+        if seal.is_file() and "IRON_LAWS_RESULT " in result.excerpt:
+            # 신뢰된 harness처럼 결과 줄에 이번 실행의 봉인값을 붙인다
+            return dataclasses.replace(result, excerpt=result.excerpt.replace("IRON_LAWS_RESULT ", f"IRON_LAWS_RESULT {seal.read_text(encoding='utf-8')} "))
+        return result
 
 
 def passed(**counts) -> RunResult:

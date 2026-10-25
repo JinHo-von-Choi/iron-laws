@@ -491,6 +491,7 @@ class UnboundedQueryRule(PerfRule):
 
 
 class BlockingInAsyncRule(PerfRule):
+    version = 2
     rule_id = "PERF-105"
     name = "비동기 함수 안의 막는 호출 탐지"
     severity = Severity.MEDIUM

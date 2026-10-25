@@ -26,17 +26,20 @@ from iron_laws.engine.ast_tools import (
     is_literal,
     iter_calls,
 )
+from iron_laws.engine.java_literals import is_closed_java
 from iron_laws.engine.languages import Lang
 from iron_laws.engine.source import SourceFile
 from iron_laws.engine.taint import (
     resolve_any,
 )
+from iron_laws.engine.taint.constants import is_closed_value
 from iron_laws.rules.injection import (
     CommandInjectionRule,
     PathTraversalRule,
     SinkRule,
     SqlInjectionRule,
 )
+from iron_laws.rules.injection_common import DB_RECEIVER_RE
 from iron_laws.rules.sinks import Flow, assess
 
 FAMILY_RULES: dict[str, type[SinkRule]] = {
@@ -52,24 +55,43 @@ BROAD_PATTERNS: dict[str, re.Pattern[str]] = {
         r"startfile|posix_spawn\w*)$"
         r"|^asyncio\.create_subprocess_(?:exec|shell)$"
         r"|^(?:Popen|check_output|check_call|getoutput|getstatusoutput|startfile)$"
+        r"|(?:^|\.)(?:fork|execa|execaSync|execaCommand|execaCommandSync)$"  # JavaScript 자식 프로세스
+        r"|^(?:new)?ProcessBuilder$"  # Java
     ),
     "path": re.compile(
         r"^(?:os\.(?:rename|replace|chmod|chown|symlink|link|stat|lstat|walk|scandir|listdir|makedirs|mkdir|remove|unlink|rmdir|"
         r"truncate|utime|access|readlink|open)|shutil\.\w+|glob\.\w+|io\.open|codecs\.open|zipfile\.\w+|tarfile\.\w+|"
         r"tempfile\.\w+|fileinput\.\w+|gzip\.open|bz2\.open|lzma\.open)$|\.(?:open|rglob|glob|iterdir|unlink|rmdir|mkdir|"
         r"rename|touch|chmod|symlink_to|hardlink_to|extractall|extract)$"
+        r"|^new(?:ZipFile|JarFile|PrintWriter|Scanner|FileReader|FileWriter)$|(?:^|\.)(?:getResource|transferTo|newBufferedReader|newBufferedWriter)$"  # Java
+        r"|^fs\.\w+$|^fsPromises\.\w+$|(?:^|\.)(?:sendFile|download)$"  # JavaScript
     ),
     "sql": re.compile(
         r"(?:^|\.)(?:execute\w*|exec_driver_sql|read_sql\w*|raw|extra|text|mogrify|copy_expert|copy_from|copy_to|fetch(?:row|val|many|_all)?)$"
+        r"|(?:^|\.)(?:queryFor\w+|batchUpdate|createNativeQuery|createQuery|prepareStatement|prepareCall|\$queryRaw\w*|\$executeRaw\w*)$"
     ),
 }
 # 값의 출처를 따질 필요 없이 결과가 닫혀 있는 호출. 인자가 닫혀 있을 때만 결과도 닫힌다.
 LIMITATIONS = [
-    "관심 지점은 호출 이름으로 찾는다. import 별칭, getattr 같은 동적 호출, 프레임워크가 감춘 호출은 지점으로 발견되지 않을 수 있다.",
+    "관심 지점은 호출 이름으로 찾는다(Python 위험 모듈의 별칭·가져온 이름·상수 이름 getattr은 풀어 찾는다). 속성 이름이 변수인 getattr 같은 동적 호출, 프레임워크가 감춘 호출은 지점으로 발견되지 않을 수 있다.",
     "'근거 충족'은 그 지점에서 계약이 요구한 분석 근거를 확보했다는 뜻이며 프로그램 전체가 안전하다는 뜻이 아니다.",
     "전체 코드의 몇 %가 안전하다는 점수는 만들지 않는다. 아래 분모(발견한 지점 수, 분류하지 못한 파일)와 함께 읽는다.",
 ]
 
+
+
+RAW_SQL_ONLY = re.compile(
+    r"(?:^|\.)(?:\$?queryRawUnsafe|\$?executeRawUnsafe|executeQuery|executeUpdate|executeLargeUpdate|prepareStatement|prepareCall|"
+    r"createNativeQuery|queryFor\w+|batchUpdate)$"
+)
+
+
+def _sql_point(callee: str) -> bool:
+    """Python 밖의 언어에서 SQL 지점으로 볼 호출: SQL 실행에만 쓰는 이름이거나, DB 객체(연결·커서·템플릿·ORM)에서 부른 호출"""
+    if RAW_SQL_ONLY.search(callee):
+        return True
+    receiver = callee.rsplit(".", 1)[0] if "." in callee else ""
+    return bool(receiver) and bool(DB_RECEIVER_RE.search(receiver))
 
 
 def _build_callers(sources: list[SourceFile]) -> dict[tuple[str, int], list[tuple[SourceFile, Call]]]:
@@ -171,6 +193,13 @@ def _classify(
         if family != "sql" and rule.skip_hit(src, call, arg, flow):
             guarded = True
             continue  # 규칙이 안전한 호출 형태로 판정 (예: 셸을 거치지 않는 인자 배열, 정규화·범위 검사를 거친 경로). SQL의 skip은 소음 억제라 안전 근거가 아니다
+        if src.lang is not Lang.PYTHON:
+            # Python 밖의 언어는 상수 계산(리터럴·상수 조건·지역 컬렉션·같은 파일 도우미의 반환값)으로만 닫힘을 인정한다
+            if is_closed_value(src, arg) or (src.lang is Lang.JAVA and is_closed_java(src, arg)):
+                continue
+            if unresolved is None:
+                unresolved = "값의 출처를 상수로 확정하지 못했다(이 언어는 리터럴·상수 조건·지역 컬렉션·같은 파일 도우미의 반환값만 계산한다)"
+            continue
         closed = _Closed(src, ctx, rule.taint_ctx)
         ok, reason = closed.check(arg)
         if not ok:
@@ -319,6 +348,8 @@ def _collect_points(inputs: LedgerInputs, ctx: _Context) -> tuple[list[LedgerFil
                     continue  # 프로젝트가 정의한 함수의 호출은 라이브러리 관심 지점이 아니다. 그 함수 안의 호출이 지점으로 잡힌다. 사용자가 명세로 선언한 싱크는 예외다
                 if family == "path" and not modeled and call.callee.rsplit(".", 1)[-1] in ("get", "values", "items"):
                     continue
+                if family == "sql" and src.lang is not Lang.PYTHON and not _sql_point(call.callee):
+                    continue  # get·all·run·query 같은 이름은 라우터·HTTP·설정 객체에도 있다. DB 객체에서 부른 호출만 SQL 지점이다
                 verdict = _classify(src, call, family, ctx, findings)
                 state, reason = verdict.state, verdict.reason
                 if family == "path" and ctx.rules["path"].BUILDER_RE.search(call.callee) and not verdict.finding_ids and state == PointState.EVIDENCE_MET.value:

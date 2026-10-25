@@ -95,6 +95,60 @@ def test_draft_finds_candidates_and_merges_llm_output(tmp_path: Path):
     assert result.exit_code == 0, result.output
     draft = yaml.safe_load(result.stdout)
     ids = {e["id"] for kind in ("sources", "sinks", "sanitizers") for e in draft[kind]}
-    assert {"wrapper-legacy_run", "sanitizer-sanitize_arg", "lambda-event", "from-llm"} <= ids
-    llm = next(e for e in draft["sinks"] if e["id"] == "from-llm")
-    assert llm["origin"] == "llm" and llm["positive"] == ""  # LLM이 준 예제는 쓰지 않고 사람이 채운다
+    assert {"wrapper-legacy_run", "sanitizer-sanitize_arg", "lambda-event"} <= ids and "from-llm" not in ids
+    rejected = next(e for e in draft["rejected"] if e["id"] == "from-llm")  # 음성 예제가 없어 확인할 수 없는 제안은 뺀다
+    assert rejected["origin"] == "llm" and rejected["kind"] == "sinks" and rejected["positive"] == ""
+
+
+LLM_ENTRIES = """sinks:
+  - id: run-query
+    family: sql
+    languages: [python]
+    callee: "run_query$"
+    arg: 0
+    positive: |
+      from flask import request
+      def view():
+          run_query("select * from t where id=" + request.args["id"])
+    negative: |
+      def view():
+          run_query("select 1")
+  - id: wrong-example
+    family: sql
+    languages: [python]
+    callee: "other_query$"
+    positive: |
+      def view():
+          other_query("select 1")
+    negative: |
+      def view():
+          other_query("select 2")
+sanitizers:
+  - id: clean-id
+    family: sql
+    languages: [python]
+    name: "clean_id$"
+    context: sql
+    positive: |
+      from flask import request
+      def view(cursor):
+          cursor.execute("select * from t where id=" + request.args["id"])
+    negative: |
+      from flask import request
+      def view(cursor):
+          cursor.execute("select * from t where id=" + clean_id(request.args["id"]))
+"""
+
+
+def test_llm_proposals_are_judged_by_their_own_examples(tmp_path: Path):
+    from iron_laws.core.spec_draft import check_llm_entries, merge_llm
+
+    draft = {"version": 1, "sources": [], "sinks": [], "sanitizers": []}
+    assert merge_llm(draft, LLM_ENTRIES) == 3
+    counts = check_llm_entries(draft)
+    assert counts == {"passed": 1, "rejected": 1, "needs_review": 1}
+    sink = next(e for e in draft["sinks"] if e["id"] == "run-query")
+    assert sink["positive"] and sink["negative"]  # 소스·싱크는 지적을 늘리기만 하므로 맞은 예제를 채운다
+    sanitizer = next(e for e in draft["sanitizers"] if e["id"] == "clean-id")
+    assert sanitizer["positive"] == "" and sanitizer["proposed_negative"]  # 정제 함수는 사람이 옮겨야 불러온다
+    assert [e["id"] for e in draft["rejected"]] == ["wrong-example"] and "positive" in draft["rejected"][0]["why"]

@@ -12,6 +12,7 @@
 
 import json
 import re
+import secrets
 import shutil
 import subprocess
 from dataclasses import dataclass, field
@@ -45,9 +46,14 @@ PAYLOADS = {
 }
 # 수정이 시험의 입력 하나만 막는지 보려고 같은 결함을 건드리는 다른 입력을 함께 시험한다(명세에 적혀 사람이 확인한다).
 VARIANT_PAYLOADS = {
-    "command": ("x && touch IRON_LAWS_PWNED", "x | touch IRON_LAWS_PWNED", "$(touch IRON_LAWS_PWNED)", "`touch IRON_LAWS_PWNED`"),
-    "path": ("/etc/passwd", "sub/../../../../../etc/passwd", "../../../../../../../../etc/passwd"),  # 허용 폴더가 어디든 밖으로 나가는 입력만 쓴다
-    "sql": ("1 OR 1=1", "\" OR \"1\"=\"1", "'; DROP TABLE t--", "' UNION SELECT NULL--"),
+    # 구분자·공백 없는 형태·줄바꿈은 특정 문자만 지우는 수정을 가려낸다
+    "command": ("x && touch IRON_LAWS_PWNED", "x | touch IRON_LAWS_PWNED", "$(touch IRON_LAWS_PWNED)", "`touch IRON_LAWS_PWNED`",
+                "x;touch IRON_LAWS_PWNED", "x\ntouch IRON_LAWS_PWNED"),
+    # 허용 폴더가 어디든 밖으로 나가는 입력만 쓴다. ....//는 '../'를 한 번만 지우는 수정, %2e는 검사 뒤에 디코딩하는 코드를 가려낸다
+    "path": ("/etc/passwd", "sub/../../../../../etc/passwd", "../../../../../../../../etc/passwd",
+             "....//....//....//....//....//....//etc/passwd", "%2e%2e%2f%2e%2e%2f%2e%2e%2f%2e%2e%2f%2e%2e%2f%2e%2e%2fetc%2fpasswd"),
+    # 대소문자·주석 공백은 키워드 차단 목록으로 막은 수정을 가려낸다
+    "sql": ("1 OR 1=1", "\" OR \"1\"=\"1", "'; DROP TABLE t--", "' UNION SELECT NULL--", "1 oR 1=1", "1/**/OR/**/1=1"),
 }
 CURSOR_NAMES = {"cur", "cursor", "c"}
 CONNECTION_NAMES = {"conn", "connection", "db", "database", "con"}
@@ -83,6 +89,9 @@ class ExpectSpec(BaseModel):
 
     base: str = Field(default="", description="path 계열: 접근해도 되는 폴더. 비우면 임시 기준 폴더")
     summary: str = Field(default="", description="사람이 읽는 기대 결과")
+    benign_behavior: Literal["report", "require"] = Field(
+        default="report", description="정상 입력에서 원본과 수정본의 위험 호출 기록(명령·경로·SQL)이 다르면 report는 표시만, require는 실패로 본다"
+    )
 
 
 class RegressionSpec(BaseModel):
@@ -268,6 +277,7 @@ class HarnessRun:
     run_status: str = ""
     limit_reached: bool = False
     notes: list[str] = field(default_factory=list)
+    calls: list[dict[str, Any]] = field(default_factory=list)  # harness가 기록한 위험 호출(최대 20개)
 
 
 def install_harness(directory: Path, spec: RegressionSpec) -> None:
@@ -282,11 +292,13 @@ def install_harness(directory: Path, spec: RegressionSpec) -> None:
     base.chmod(0o777)
 
 
-def parse_result(excerpt_source: str) -> dict[str, Any] | None:
+def parse_result(excerpt_source: str, seal: str | None = None) -> dict[str, Any] | None:
+    """마지막 결과 줄을 읽는다. seal을 주면 그 봉인값이 붙은 줄만 harness가 쓴 결과로 받아들인다."""
+    prefix = RESULT_PREFIX + (f"{seal} " if seal is not None else "")
     for line in reversed(excerpt_source.splitlines()):
-        if line.startswith(RESULT_PREFIX):
+        if line.startswith(prefix):
             try:
-                parsed = json.loads(line[len(RESULT_PREFIX) :])
+                parsed = json.loads(line[len(prefix) :])
             except json.JSONDecodeError:  # iron-laws: ignore[IL-301] 해석하지 못한 결과 줄은 None으로 알리고 호출부가 '결과를 내지 못했다' 오류로 기록한다
                 return None
             if not isinstance(parsed, dict):  # iron-laws: ignore[IL-307] 결과 줄 형식이 아니면 None으로 알리고 호출부가 결과를 내지 못했다는 오류로 기록한다
@@ -304,15 +316,29 @@ def parse_result(excerpt_source: str) -> dict[str, Any] | None:
 
 def run_harness(runner: Runner, directory: Path, mode: str, limits: RunLimits) -> HarnessRun:
     command = ["python", "-B", f"{HARNESS_DIR}/run.py", f"{HARNESS_DIR}/spec.json", mode]
-    result = runner.run(directory, command, limits, [["python", "-B", f"{HARNESS_DIR}/run.py"]])
+    base = directory / HARNESS_DIR / "base"
+    seal, probe = secrets.token_hex(16), secrets.token_hex(8)
+    if base.is_dir():
+        (base / "seal").write_text(seal, encoding="utf-8")
+        (base / "probe").write_text(probe, encoding="utf-8")
+    canary = base / f"canary_{probe}"
+    try:
+        result = runner.run(directory, command, limits, [["python", "-B", f"{HARNESS_DIR}/run.py"]])
+    finally:
+        bypassed = canary.exists()
+        for leftover in (base / "seal", base / "probe", canary):
+            leftover.unlink(missing_ok=True)
     if result.status in ("isolation_unavailable", "not_allowed", "infrastructure_error"):
         return HarnessRun("not_run", result.notes[0] if result.notes else result.status, run_status=result.status, notes=result.notes)
+    if bypassed and mode.startswith("attack"):
+        return HarnessRun("defect_reproduced", "기록 장치를 거치지 않은 실제 셸이 공격 입력을 실행했다(카나리아 파일이 생겼다)", run_status=result.status)
     if result.limit_reached:
         return HarnessRun("not_run", "시간·출력·자원 상한에 도달했다", run_status=result.status, limit_reached=True, notes=result.notes)
-    parsed = parse_result(result.excerpt)
+    parsed = parse_result(result.excerpt, seal)
     if parsed is None:
-        return HarnessRun("error", "harness가 유효한 결과를 내지 못했다(문법 오류·형식 오류·충돌 가능성)", run_status=result.status)
-    return HarnessRun(parsed["outcome"], limit(redact_text(parsed.get("reason", "")), 500), parsed.get("sink_calls", 0), run_status=result.status)
+        return HarnessRun("error", "harness가 봉인된 결과를 내지 못했다(문법 오류·형식 오류·충돌, 또는 후보 코드가 결과를 흉내 냈거나 출력을 막았다)", run_status=result.status)
+    calls = [c for c in parsed.get("calls", []) if isinstance(c, dict)] if isinstance(parsed.get("calls"), list) else []
+    return HarnessRun(parsed["outcome"], limit(redact_text(parsed.get("reason", "")), 500), parsed.get("sink_calls", 0), run_status=result.status, calls=calls)
 
 
 # ---------------------------------------------------------------------------
@@ -439,7 +465,8 @@ def _variant_phase(
     memo_key: str,
 ) -> _VariantOutcome | None:
     """명세의 변형 입력마다 원본에서 결함이 재현되는지 보고, 재현되는 입력이 후보에서도 재현되면 실패로 본다.
-    원본에서 재현되지 않는 입력은 이 결함에 적용되지 않는 입력이므로 건너뛰고 그 사실을 남긴다."""
+    원본에서 재현되지 않는 입력도 후보에서는 돌린다. '../'를 한 번만 지우는 수정처럼 수정이 원본에 없던 우회 입력을 만들 수 있다.
+    그런 입력이 후보에서 재현되면 실패이고, 재현되지 않으면 이 결함에 적용되지 않는 입력으로 남긴다."""
     if not spec.input.variants:
         return None
     original_runs: dict[int, HarnessRun] = cached.variants if cached else {}
@@ -453,10 +480,15 @@ def _variant_phase(
     if original_memo is not None and cached is not None:
         original_memo[memo_key] = OriginalRuns(cached.attacks, cached.control, original_runs)
     for index, run in original_runs.items():
+        candidate_run = run_harness(runner, candidate, f"attack:{index}", limits)
         if run.outcome != "defect_reproduced":
+            if candidate_run.outcome == "defect_reproduced":
+                return _VariantOutcome(
+                    {"checked": checked, "inapplicable": inapplicable, "failed": index},
+                    ("fail", f"후보가 원본에서는 결함이 나지 않던 입력({spec.input.variants[index - 1]!r})에서 결함을 만든다(입력 일부만 지우는 필터가 우회 입력을 만든다)"),
+                )
             inapplicable.append(index)
             continue
-        candidate_run = run_harness(runner, candidate, f"attack:{index}", limits)
         if candidate_run.outcome == "not_run":
             return _VariantOutcome({"checked": checked, "inapplicable": inapplicable}, ("unknown", f"후보에서 변형 입력을 실행하지 못했다: {candidate_run.reason}"))
         if candidate_run.outcome == "defect_reproduced":
@@ -472,6 +504,25 @@ def _variant_phase(
 
 def _check(result: CheckState, reason: str = "", executed: bool = True, **evidence: Any) -> CheckResult:  # iron-laws: ignore[TYP-302] 검사마다 다른 근거 값을 그대로 담는 키워드 인자다
     return CheckResult(id="regression_test", title="결함을 구별하는 회귀시험(원본 실패·후보 통과·mutant 재실패)", result=result, reason=reason, required=True, executed=executed, evidence=evidence)
+
+
+BEHAVIOR_KEYS = ("api", "command", "interpreted", "path", "mode", "sql", "params")
+
+
+def benign_behavior(original: list[dict[str, Any]], candidate: list[dict[str, Any]]) -> dict[str, Any]:
+    """정상 입력에서 원본과 수정본이 위험 호출에 넘긴 내용(호출 순서·명령·경로·SQL)을 비교한다.
+    인자 배열로 바꾸는 수정처럼 안전해지면서 모양이 달라지는 경우도 다름으로 나오므로 기본은 표시만 한다."""
+    def shape(calls):
+        return [tuple((k, str(c.get(k))) for k in BEHAVIOR_KEYS if k in c) for c in calls]
+
+    before, after = shape(original), shape(candidate)
+    differences = []
+    for index in range(max(len(before), len(after))):
+        left = dict(before[index]) if index < len(before) else None
+        right = dict(after[index]) if index < len(after) else None
+        if left != right:
+            differences.append(f"{index + 1}번째 호출: 원본 {left} / 수정본 {right}")
+    return {"same": not differences, "differences": [limit(redact_text(d), 300) for d in differences[:10]], "original_calls": len(before), "candidate_calls": len(after)}
 
 
 def run_regression_check(
@@ -536,6 +587,10 @@ def run_regression_check(
         return _check("unknown", f"후보에서 시험이 실행되지 않았다(문법 오류·충돌·허용되지 않은 예외): {candidate_attack[0].reason}", **evidence)
     if candidate_control[0].outcome != "passed":
         return _check("fail", f"수정이 정상 입력까지 막는다(위험한 기능을 전부 막는 것은 정답이 아니다): {candidate_control[0].reason}", **evidence)
+    behavior = benign_behavior(original_control.calls, candidate_control[0].calls)
+    evidence["benign_behavior"] = behavior
+    if not behavior["same"] and spec.expect.benign_behavior == "require":
+        return _check("fail", "정상 입력에서 위험 호출의 내용이 원본과 달라졌다(명세가 동작 보존을 요구한다): " + "; ".join(behavior["differences"][:3]), **evidence)
 
     # 시험 입력은 막지만 다른 입력에는 뚫리는 수정을 가려낸다(기본 입력이 통과한 뒤에만 실행한다)
     variants = _variant_phase(spec, runner, original, candidate, limits, cached, original_memo, memo_key)

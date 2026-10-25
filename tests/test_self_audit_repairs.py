@@ -28,6 +28,7 @@ def test_malformed_harness_output_is_error(tmp_path, payload):
 @pytest.mark.parametrize("outcome", ["passed", "defect_reproduced", "control_failed", "error"])
 def test_valid_harness_output_retains_outcome(tmp_path, outcome):
     payload = {"outcome": outcome, "reason": "bounded observation", "sink_calls": 2}
+    (tmp_path / "_iron_laws_harness" / "base").mkdir(parents=True)  # 설치된 harness의 기준 폴더(봉인값을 건네는 곳)
     runner = ScriptedRunner([RunResult(status="passed", excerpt=RESULT_PREFIX + json.dumps(payload))])
     result = run_harness(runner, tmp_path, "attack", RunLimits())
     assert (result.outcome, result.reason, result.sink_calls) == (outcome, "bounded observation", 2)

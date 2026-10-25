@@ -7,13 +7,14 @@
 최상위 키: `schema_version`, `document_id`, `title`, `auditor`, `audit_date`, `target_path`, `summary`, `violations`, `diagnostics`, `coverage_ledger`, `execution`, `approval_checks`, `metadata`.
 
 ### 버전 정책
-- `schema_version`은 `주.부` 형식이다. 현재 `1.7`이다.
+- `schema_version`은 `주.부` 형식이다. 현재 `1.8`이다.
 - 키를 **추가**하면 부 버전을 올린다. 소비하는 쪽은 모르는 키를 무시해야 한다.
 - 키를 **삭제하거나 의미를 바꾸면** 주 버전을 올리고 CHANGELOG에 알린다. 주 버전이 같으면 기존 키는 유지된다.
 - 판마다 무엇을 추가했는지:
 
   | 판 | 추가한 것 |
   |---|---|
+  | 1.8 | `metadata.file_coverage`(외부 파일 목록과 분석한 파일의 대조), `review_opinion`의 `basis`(오탐 의견의 근거)·`check`(근거 대조 결과) |
   | 1.7 | `execution.cost`(점검에 쓴 시간과 메모리) |
   | 1.6 | 장부 `digests.spec`(적용된 사용자 명세의 지문), 장부 지점의 근거 종류 `declared_sanitizer`, `metadata.custom_spec` |
   | 1.5 | 지적의 `review_opinion`·`standards`, `metadata.standard_packs`, 장부 지점의 `linked_columns` |
@@ -21,7 +22,7 @@
   | 1.3 | 지적의 `finding_id`, `execution`·`approval_checks`, 장부 근거 필드 |
 
   `gov_standard`는 그대로 둔다.
-- 독립 검증기는 1.3·1.4·1.5·1.6·1.7을 확인하며, 그 밖의 버전은 통과가 아니라 `판정 불가`로 끝낸다([EVIDENCE_VERIFICATION.md](EVIDENCE_VERIFICATION.md)).
+- 독립 검증기는 1.3·1.4·1.5·1.6·1.7·1.8을 확인하며, 그 밖의 버전은 통과가 아니라 `판정 불가`로 끝낸다([EVIDENCE_VERIFICATION.md](EVIDENCE_VERIFICATION.md)).
 - 기준선 파일(`.iron-laws-baseline.json`)은 별도의 `schema_version`(정수)을 가진다. 형식이 바뀌면 이전 기준선은 읽지 않고 다시 만들도록 안내한다.
 
 ### `summary`
@@ -59,6 +60,8 @@
 `run_id`, `tool_version`, `ruleset_hash`, `config_hash`, `contract_digest`, `code_digest`, `scan_status`, `files_scanned`, `files_skipped`, `error_diagnostics`, `cross_file_limit_hits`. 이 보고서를 만든 점검 실행의 식별과 범위이며, 지적·장부·승인이 같은 실행의 근거인지 확인하는 기준이다. `code_digest`는 `(경로, 본문의 sha256)`을 경로순으로 sha256한 앞 16자다.
 
 `cost`(1.7)는 이 점검에 쓴 비용이다. `wall_seconds`(벽시계 초), `cpu_seconds`(이 프로세스와 작업 프로세스가 함께 쓴 CPU 초), `peak_rss_mb`(최대 메모리), `files_per_second`(초당 점검 파일 수), `workers`(작업 프로세스 수), `phase_seconds`(단계별 초: `file_rules`·`project_rules`·`ledger`), `budget_seconds`(설정한 시간 상한), `budget_exceeded`(상한 초과 여부)다. 실행마다 달라지므로 같은 코드의 두 보고서를 비교할 때 제외된다. `budget_exceeded`가 참이면 `scan_status`는 `incomplete`이고 종료코드는 2다.
+
+`metadata.file_coverage`(1.8)는 `--build-manifest`를 줬을 때만 있다. `source`(쓴 목록: `git`·`tsc`·`go`·`file:<이름>`), `listed`(목록의 파일 수), `counts`(상태별 수: `analyzed`·`skipped`·`excluded`·`unsupported`·`outside_root`·`missing`·`unexplained`), `unexplained`(사유 없이 빠진 파일, 최대 200개), `examples`(상태·사유별 예 5개)다. `unexplained`가 있으면 `coverage` 진단이 함께 나오며, `--require-full-coverage`면 그 진단이 오류라서 `scan_status`가 `incomplete`다.
 
 ### `approval_checks[]`(1.3, `--approvals`를 쓸 때만)
 `approval_id`, `status`(`valid` / `needs_review` / `invalid` / `revoked` / `resolved` / `unobserved`), `reasons`, `rule_id`, `path`, `approved_fingerprint`, `finding_id`(이번 실행에서 맺어진 지적), `expires`, `policy`(승인 당시 계약·설정·규칙·도구 지문). `valid`는 승인한 지적과 같은 코드 모양의 지적이 지금도 있다는 뜻이다. 승인 기록 파일의 해시 연결이나 기록 형식이 틀리면 그 승인은 `invalid`이며 유효한 승인으로 쓰지 않는다.

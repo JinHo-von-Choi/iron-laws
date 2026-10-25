@@ -45,12 +45,14 @@ def approvals_add_command(
     receipt: Path | None = typer.Option(None, "--receipt", help="이 승인의 근거가 된 패치 검증 기록(Receipt) 파일"),
     minutes: int = typer.Option(0, "--minutes", min=0, help="검토에 든 시간(분). 검토 계측용"),
     store: Path | None = typer.Option(None, "--store", help=f"승인 기록 파일(기본 {DEFAULT_APPROVALS_FILE}). 후보 변경이 쓸 수 없는 위치를 권장합니다"),
+    sign_key: Path | None = typer.Option(None, "--sign-key", help="승인 기록에 서명할 OpenSSH 개인키. 서명은 허용 서명자 목록으로 확인합니다"),
     config: Path | None = ConfigOpt,
     contract: Path | None = ContractOpt,
 ):
     """
     지적 하나를 사람의 검토 결과로 승인하고, 승인 당시의 전제(흐름·호출자·정제 함수·접근 범위·정책)를 함께 기록합니다.
-    기록은 추가 전용이며 해시로 이어집니다. 해시는 변조 탐지용이고 승인자의 진위를 증명하지 않습니다.
+    기록은 추가 전용이며 해시로 이어집니다. 해시는 변조 탐지용입니다. 승인자를 확인하려면 --sign-key로 서명하고
+    check·review-bundle에 --allowed-signers를 주십시오.
     """
     from datetime import date as _date
 
@@ -76,7 +78,7 @@ def approvals_add_command(
         if existing:
             raise ConfigError(f"이미 같은 지적에 대한 승인이 있습니다: {existing[0].id}")
         record = approve_record(violation, reason, reviewer, scanner._approval_policy(), expiry, receipt_digest, minutes)
-        approvals_store.append(record)
+        approvals_store.append(record, sign_key)
     except (ConfigError, ValueError) as e:
         err.print(f"[bold red]입력 오류: {escape(str(e))}[/bold red]")
         raise typer.Exit(2) from e
@@ -160,16 +162,51 @@ def approvals_revoke_command(
 
 
 @approvals_app.command("verify")
-def approvals_verify_command(store: Path | None = typer.Option(None, "--store", help="승인 기록 파일")):
+def approvals_verify_command(
+    store: Path | None = typer.Option(None, "--store", help="승인 기록 파일"),
+    allowed_signers: Path | None = typer.Option(None, "--allowed-signers", help="승인 서명을 확인할 OpenSSH 허용 서명자 목록"),
+    require_signed: bool = typer.Option(False, "--require-signed", help="서명이 없는 승인도 문제로 봅니다(--allowed-signers 필요)"),
+    checkpoint: Path | None = typer.Option(None, "--checkpoint", help="approvals checkpoint로 만든 서명된 체크포인트. 기록 삭제·되돌리기를 확인합니다(--allowed-signers 필요)"),
+):
     """
-    기록의 해시 연결(삭제·재배열·내용 변경 의심)을 확인합니다. 변조 탐지용이며 진위 인증이 아닙니다.
+    기록의 해시 연결(삭제·재배열·내용 변경 의심)을 확인합니다. --allowed-signers를 주면 승인 서명을, --checkpoint를 주면
+    체크포인트 이후 기록이 줄거나 바뀌지 않았는지도 확인합니다. 종료코드: 0 이상 없음, 1 문제 있음, 2 입력 오류.
     """
-    problems = _store(store).integrity().lines()
+    if checkpoint is not None and allowed_signers is None:
+        err.print("[bold red]입력 오류: --checkpoint는 --allowed-signers와 함께 주십시오[/bold red]")
+        raise typer.Exit(2)
+    try:
+        approvals_store = ApprovalStore(store or Path(DEFAULT_APPROVALS_FILE), allowed_signers, require_signed)
+    except ConfigError as e:
+        err.print(f"[bold red]입력 오류: {escape(str(e))}[/bold red]")
+        raise typer.Exit(2) from e
+    problems = approvals_store.integrity().lines()
+    if checkpoint is not None and allowed_signers is not None:
+        problems += approvals_store.checkpoint_problems(checkpoint, allowed_signers)
     for p in problems:
         err.print(f"[bold red]{escape(p)}[/bold red]")
     if problems:
         raise typer.Exit(1)
-    err.print("[green]기록 해시 연결과 기록 형식에 이상 없음 (변조 탐지 근거일 뿐 진위·안전성의 증명이 아닙니다)[/green]")
+    signed = f", 서명 확인 {len(approvals_store.signers)}건" if allowed_signers else ""
+    err.print(f"[green]기록 해시 연결과 기록 형식에 이상 없음{signed} (변조 탐지 근거일 뿐 승인 내용이 옳다는 증명이 아닙니다)[/green]")
+
+
+@approvals_app.command("checkpoint")
+def approvals_checkpoint_command(
+    output: Path = typer.Option(..., "--output", "-o", help="체크포인트 파일. 승인 기록을 고칠 수 있는 사람과 후보 변경이 바꿀 수 없는 곳에 두십시오"),
+    sign_key: Path = typer.Option(..., "--sign-key", help="체크포인트에 서명할 OpenSSH 개인키"),
+    store: Path | None = typer.Option(None, "--store", help="승인 기록 파일"),
+):
+    """
+    지금까지의 기록 수와 마지막 해시를 서명해 남깁니다. 나중에 approvals verify --checkpoint로 기록 삭제·되돌리기·재작성을 확인합니다.
+    """
+    approvals_store = _store(store)
+    try:
+        signature = approvals_store.write_checkpoint(output, sign_key)
+    except ConfigError as e:
+        err.print(f"[bold red]입력 오류: {escape(str(e))}[/bold red]")
+        raise typer.Exit(2) from e
+    err.print(f"[green]체크포인트: 기록 {len(approvals_store.records)}건 → {escape(str(output))} (서명 {escape(signature.name)})[/green]")
 
 
 @approvals_app.command("forget")

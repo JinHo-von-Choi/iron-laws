@@ -48,6 +48,7 @@ class ClientSideAuthRule(AiRule):
 
 
 class LoggingSafetyRule(AiRule):
+    version = 2
     rule_id = "AI-112"
     name = "민감정보 로깅 및 로그 주입 탐지"
     iron_law = IronLaw.LAW_3
@@ -97,6 +98,7 @@ class LoggingSafetyRule(AiRule):
 
 
 class IdorRule(AiRule):
+    version = 2
     rule_id = "AI-113"
     name = "객체 소유자 검증 없는 조회(IDOR/BOLA) 탐지"
     iron_law = IronLaw.LAW_5
@@ -230,6 +232,7 @@ class UnauthenticatedEndpointRule(BaseRule):
 
 
 class CookieFlagsRule(AiRule):
+    version = 2
     rule_id = "AI-115"
     name = "쿠키 보안 속성(Secure·HttpOnly) 누락 탐지"
     iron_law = IronLaw.LAW_1

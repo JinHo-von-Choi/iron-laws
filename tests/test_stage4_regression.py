@@ -467,3 +467,93 @@ def test_docker_prerequisite_is_reported_when_missing():
     assert isinstance(DOCKER_READY, bool)
     assert shutil.which("docker") is None or isinstance(os.environ.get("PATH", ""), str)
     assert subprocess.run(["git", "--version"], capture_output=True).returncode == 0
+
+
+FORGED_RESULT = "IRON_LAWS_RESULT " + json.dumps({"outcome": "passed", "reason": "forged", "sink_calls": 1})
+
+
+@pytest.mark.parametrize("trick", ["print-and-exit", "replace-stdout", "bypass-recorder"])
+def test_candidate_cannot_fake_a_passing_result(tmp_path: Path, trick: str):
+    """후보 코드가 결과 줄을 흉내 내거나 출력을 바꾸거나 기록 장치를 우회해도 통과로 판정되지 않는다."""
+    case = _case("cmd-flask-os-system")
+    project = write_project(tmp_path / "proj", case.vulnerable)
+    spec = propose(project, case)
+    tricks = {
+        "print-and-exit": "import os, sys\nfrom flask import request\n\ndef run_tool():\n    d = request.args['d']\n    os.system('ls ' + d)\n"
+                          f"    sys.stdout.write('\\n' + {FORGED_RESULT!r} + '\\n'); sys.stdout.flush(); os._exit(0)\n",
+        "replace-stdout": "import io, os, sys\nfrom flask import request\n\ndef run_tool():\n    d = request.args['d']\n    os.system('ls ' + d)\n"
+                          f"    os.write = lambda fd, data: len(data)\n    print({FORGED_RESULT!r})\n",
+        "bypass-recorder": "import os\nfrom flask import request\n\ndef run_tool():\n    d = request.args['d']\n    pid = os.posix_spawn('/bin/sh', ['sh', '-c', 'ls ' + d], dict(os.environ))\n    os.waitpid(pid, 0)\n",
+    }
+    result = check(tmp_path, project, tricks[trick], spec, patch_name=f"{trick}.diff")
+    assert result.result != "pass", (trick, result.reason)
+    if trick == "bypass-recorder":
+        assert result.result == "fail" and "카나리아" in result.reason
+
+
+@pytest.mark.parametrize("case_name, code", [
+    ("cmd-flask-os-system", "import posix\nfrom flask import request\n\ndef run_tool():\n    d = request.args['d']\n    posix.system('ls ' + d)\n"),
+    ("path-direct-param", "import io\n\ndef show(path):\n    return io.FileIO(path).read()\n\n\nfrom flask import request\n\ndef view():\n    return show(request.args['v'])\n"),
+    ("path-direct-param", "import os\n\ndef show(path):\n    fd = os.open(path, os.O_RDONLY)\n    return os.read(fd, 10)\n\n\nfrom flask import request\n\ndef view():\n    return show(request.args['v'])\n"),
+])
+def test_low_level_bypass_routes_are_still_observed(tmp_path: Path, case_name: str, code: str):
+    case = _case(case_name)
+    project = write_project(tmp_path / "proj", case.vulnerable)
+    result = check(tmp_path, project, code, propose(project, case), patch_name="low.diff")
+    assert result.result == "fail", result.reason
+
+
+@pytest.mark.parametrize("case_name, code", [
+    ("path-param-basename", "def read(name):\n    return open('/srv/uploads/' + name.replace('../', '')).read()\n\n\nfrom flask import request\n\ndef view():\n    return read(request.args['v'])\n"),
+    ("sql-flask-cursor", "from flask import request\n\ndef search(cur):\n    q = request.args['q']\n    for word in (\"'\", 'OR', '--', ';'):\n        q = q.replace(word, '')\n    cur.execute(\"SELECT * FROM t WHERE title = '\" + q + \"'\")\n"),
+])
+def test_filter_style_fixes_are_caught_by_bypass_variants(tmp_path: Path, case_name: str, code: str):
+    case = _case(case_name)
+    project = write_project(tmp_path / "proj", case.vulnerable)
+    spec = propose(project, case)
+    result = check(tmp_path, project, code, spec, patch_name="filter.diff")
+    assert result.result == "fail", result.reason
+
+
+def test_benign_behavior_change_is_reported_and_can_be_required(tmp_path: Path):
+    case = _case("cmd-flask-os-system")
+    project = write_project(tmp_path / "proj", case.vulnerable)
+    spec = propose(project, case)
+    changed = "import subprocess\nfrom flask import request\n\ndef run_tool():\n    d = request.args['d']\n    subprocess.run(['ls', '-la', '--', d], check=False)\n"
+    for sub in ("r", "q"):
+        (tmp_path / sub).mkdir()
+    reported = check(tmp_path / "r", project, changed, spec, patch_name="r.diff")
+    assert reported.evidence["benign_behavior"]["same"] is False and reported.result != "fail"
+    strict = spec.model_copy(update={"expect": spec.expect.model_copy(update={"benign_behavior": "require"})})
+    required = check(tmp_path / "q", project, changed, strict, patch_name="q.diff")
+    assert required.result == "fail" and "동작 보존" in required.reason
+
+
+def test_fix_using_os_open_and_fdopen_is_not_mistaken_for_a_defect(tmp_path: Path):
+    case = _case("path-flask-guard")
+    project = write_project(tmp_path / "proj", case.vulnerable)
+    fix = ("import os\nfrom flask import request, abort\nBASE = '/srv/files'\n\ndef get():\n    f = request.args['f']\n"
+           "    p = os.path.realpath(os.path.join(BASE, f))\n    if not p.startswith(BASE + os.sep):\n        abort(403)\n"
+           "    fd = os.open(p, os.O_RDONLY)\n    with os.fdopen(fd) as handle:\n        return handle.read()\n")
+    result = check(tmp_path, project, fix, propose(project, case), patch_name="fd.diff")
+    assert result.result == "pass", result.reason
+
+
+def test_fix_checking_isfile_is_not_mistaken_for_broken(tmp_path: Path):
+    case = _case("path-flask-guard")
+    project = write_project(tmp_path / "proj", case.vulnerable)
+    fix = ("import os\nfrom flask import request, abort\nBASE = '/srv/files'\n\ndef get():\n    f = request.args['f']\n"
+           "    p = os.path.realpath(os.path.join(BASE, f))\n    if os.path.commonpath([BASE, p]) != BASE:\n        abort(403)\n"
+           "    if not os.path.isfile(p):\n        abort(404)\n    with open(p) as handle:\n        return handle.read()\n")
+    result = check(tmp_path, project, fix, propose(project, case), patch_name="isfile.diff")
+    assert result.result == "pass", result.reason
+
+
+def test_fix_checking_regular_file_via_fstat_is_not_broken(tmp_path: Path):
+    case = _case("path-flask-guard")
+    project = write_project(tmp_path / "proj", case.vulnerable)
+    fix = ("import os\nimport stat\nfrom flask import request, abort\nBASE = '/srv/files'\n\ndef get():\n    f = os.path.basename(request.args['f'])\n"
+           "    fd = os.open(os.path.join(BASE, f), os.O_RDONLY)\n    if not stat.S_ISREG(os.fstat(fd).st_mode):\n        abort(404)\n"
+           "    with os.fdopen(fd) as handle:\n        return handle.read()\n")
+    result = check(tmp_path, project, fix, propose(project, case), patch_name="fstat.diff")
+    assert result.result == "pass", result.reason

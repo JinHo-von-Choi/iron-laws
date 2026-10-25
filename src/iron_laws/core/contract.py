@@ -18,7 +18,7 @@ from iron_laws.core.config import ConfigError
 
 CONTRACT_SCHEMA_VERSION = 1
 FAMILIES = ("command", "path", "sql")  # 첫 범위: Python 명령 실행·경로 접근·SQL 조립
-SUPPORTED_LANGUAGES = ("python",)
+SUPPORTED_LANGUAGES = ("python", "java", "javascript", "typescript", "tsx")
 
 
 class PointState(StrEnum):

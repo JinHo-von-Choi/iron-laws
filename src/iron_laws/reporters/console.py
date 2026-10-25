@@ -67,6 +67,10 @@ def _print_ledger(report: AuditReport) -> None:
     unclassified = [f for f in ledger.files if f.classification == "unclassified"]
     if unclassified:
         console.print(Text(f"  분류하지 못한 파일 {len(unclassified)}개 (변경 파일 중 {len(ledger.unclassified_changed_files)}개)", style="yellow"))
+    coverage = (report.metadata or {}).get("file_coverage")
+    if coverage:
+        missing = coverage.get("counts", {}).get("unexplained", 0)
+        console.print(Text(f"  파일 목록({coverage.get('source')}) {coverage.get('listed', 0)}개와 대조: 분석 {coverage.get('counts', {}).get('analyzed', 0)}개, 사유 없이 빠짐 {missing}개", style="yellow" if missing else "dim"))
     for blocker in ledger.blockers[:5]:
         console.print(Text(f"  - {blocker}", style="yellow"))
     if len(ledger.blockers) > 5:

@@ -80,6 +80,8 @@ iron-laws architecture .                   # 프로젝트 전체 구조 진단
 iron-laws support                          # 언어·규칙별로 구현됐는지, 시험으로 확인됐는지
 iron-laws routes .                         # 웹 주소(라우트)별 로그인·권한 검사 여부
 iron-laws init                             # 기본 설정 파일 .iron-laws.yml 생성
+iron-laws guidelines export -o 지침.md      # 코딩 에이전트 지침(CLAUDE.md용)과 줄마다 강제 수단
+iron-laws check . --build-manifest git     # git 추적 파일과 대조해 빠진 파일과 이유 보기
 ```
 
 이미 지적이 많은 프로젝트에 도입할 때는 새로 생긴 문제만 보도록 범위를 줄입니다.
@@ -125,8 +127,9 @@ iron-laws verify-patch ./proj --patch ../fix.diff --finding IL-504@app.py:8 \
   --runner docker --image iron-laws-verify:py313 \
   --test-cmd python --test-cmd -m --test-cmd pytest --test-cmd -q -o ../receipt.json
 iron-laws regression propose . --finding IL-504@app.py -o spec.yml   # 결함을 가려내는 회귀시험 초안
-iron-laws approvals add . --finding IL-504@app.py --reason "사유" --store 승인기록.jsonl
-iron-laws check . --approvals 승인기록.jsonl           # 전제가 그대로인 승인만 받아들임
+iron-laws approvals add . --finding IL-504@app.py --reason "사유" --store 승인기록.jsonl --sign-key ~/.ssh/id_ed25519
+iron-laws approvals checkpoint --store 승인기록.jsonl -o /안전한/위치/체크포인트.json --sign-key ~/.ssh/id_ed25519
+iron-laws check . --approvals 승인기록.jsonl --allowed-signers 허용서명자   # 서명과 전제가 맞는 승인만 받아들임
 iron-laws review-bundle . --approvals 승인기록.jsonl   # 코드 변경이 각 승인에 준 영향
 iron-laws audit . --format json -o ../report.json && iron-laws evidence verify ../report.json
 iron-laws check . --contract .iron-laws-contract.yml   # 팀이 정한 근거 요구를 채웠는지
@@ -141,11 +144,11 @@ iron-laws check . --max-analysis-unknown-rate 0.3 --max-unverified-rule-language
 |---|---|
 | 패치 검증 `verify-patch` | 원본과 수정본을 같은 설정으로 점검하고, 기존 시험을 인터넷·자격증명 없는 일회용 컨테이너에서 돌립니다. 시험 삭제, skip 추가, 무시 주석 추가, 설정 완화처럼 지적을 숨기는 변경은 따로 표시합니다. 컨테이너를 띄우지 못하면 시험을 건너뛰지 않고 `판정 불가`로 끝냅니다. 결과는 검증 기록(Receipt) 파일에 남습니다. |
 | 수정이 만든 부채 | 수정 전후의 지적을 하드코딩·구조 붕괴·삼킨 예외·중복 함수·타입 회피별로 해결·유지·신규·이동으로 나눠 보여 줍니다. 지적을 `except: pass`나 `# type: ignore`로 가린 수정은 "고친 함수에 새로 생긴 부채"로 드러납니다. 표시만 하고 통과·실패에는 쓰지 않습니다. |
-| 회귀시험 `regression` | 결함이 있는 원본에서는 실패하고, 수정본에서는 통과하고, 수정을 되돌리면 다시 실패하는 시험인지 확인합니다. 각 단계를 세 번씩 돌려 결과가 같은지도 봅니다. |
-| 승인 기록 `approvals` | 사람이 지적을 받아들인 사유와 그때의 전제(누가 호출하는지, 값이 어디서 오는지, 어떤 검증 함수를 거치는지 등)를 남깁니다. 전제가 바뀌면 그 승인만 다시 검토하게 합니다. 위험한 코드를 복사한 곳은 원래 승인을 물려받지 않습니다. |
+| 회귀시험 `regression` | 결함이 있는 원본에서는 실패하고, 수정본에서는 통과하고, 수정을 되돌리면 다시 실패하는 시험인지 확인합니다. 각 단계를 세 번씩 돌려 결과가 같은지도 봅니다. 우회 입력(공백 없는 구분자, `....//`, 대소문자 섞인 키워드 등)으로 입력 하나만 막은 수정을 가려내고, 결과는 실행마다 바뀌는 봉인값이 붙은 것만 받아들여 수정본이 통과를 꾸미지 못하게 합니다. |
+| 승인 기록 `approvals` | 사람이 지적을 받아들인 사유와 그때의 전제(누가 호출하는지, 값이 어디서 오는지, 어떤 검증 함수를 거치는지 등)를 남깁니다. 전제가 바뀌면 그 승인만 다시 검토하게 합니다. 위험한 코드를 복사한 곳은 원래 승인을 물려받지 않습니다. OpenSSH 키로 서명하면(`--sign-key`) 허용 서명자 목록으로 승인자를 확인하고, 서명된 체크포인트로 기록 삭제·되돌리기를 알아챕니다. |
 | 검토 묶음 `review-bundle` | 코드 변경 뒤 승인마다 유지·무효·판정 불가와 그 이유를 한 묶음으로 보여 줍니다. 호출 대상을 알 수 없는 곳이나 점검하지 못한 파일은 "영향 없음"으로 보지 않습니다. |
 | 보고서 모순 검사 `evidence verify` | 보고서와 검증 기록이 서로 맞는지 점검 엔진과 별도의 코드로 확인합니다. 없는 지적을 가리키거나, 근거 없이 "충족"이라고 하거나, 만료된 승인을 쓴 보고서를 잡습니다. `check`·`audit`도 보고서를 내기 전에 같은 검사를 거치며, 모순이 있으면 종료코드 2입니다. ([EVIDENCE_VERIFICATION.md](docs/EVIDENCE_VERIFICATION.md)) |
-| 근거 요구(계약)와 근거 장부 | 팀이 "이런 호출에는 이런 근거가 있어야 통과"라고 정한 파일이 계약입니다. 근거 장부는 Python의 명령 실행·파일 경로 접근·SQL 조립 호출마다 안전 근거를 확인했는지 적은 목록입니다. 입력이 어디서 왔는지 알아내지 못한 호출은 안전으로 치지 않고 "확인 못 함"으로 남깁니다. |
+| 근거 요구(계약)와 근거 장부 | 팀이 "이런 호출에는 이런 근거가 있어야 통과"라고 정한 파일이 계약입니다. 근거 장부는 Python·Java·JavaScript·TypeScript의 명령 실행·파일 경로 접근·SQL 조립 호출마다 안전 근거를 확인했는지 적은 목록입니다. 입력이 어디서 왔는지 알아내지 못한 호출은 안전으로 치지 않고 "확인 못 함"으로 남깁니다. |
 | 신뢰 지표와 상한 | 보고서에 두 비율을 남깁니다. `analysis_unknown_rate`는 근거 장부의 호출 가운데 분석을 끝내지 못한 비율, `unverified_rule_language_rate`는 이번 점검에 쓰인 (규칙, 언어) 조합 가운데 시험으로 확인되지 않은 비율입니다. 상한 옵션을 넘으면 통과 대신 재검토(종료코드 1)입니다. |
 | 시범 운영 기록 `pilot` | 팀이 오철칙을 썼을 때 검토 시간이 실제로 줄었는지 재는 로컬 기록입니다. 경로와 코드는 저장하지 않습니다. 잘못 승인한 사례가 확인됐거나 조사 중이면 `review-bundle --pilot-store`가 자동 판정을 멈추고 사람 검토(종료코드 1)로 돌립니다. |
 
@@ -184,6 +187,24 @@ test_presets:
 | pre-commit | [docs/ci/pre-commit-config.yaml](docs/ci/pre-commit-config.yaml) | 커밋 전에 `iron-laws check .`를 돌리고 HIGH 이상 지적이 있으면 커밋을 막습니다. pre-commit 4.3.0에서 시험했습니다. |
 | GitHub Actions | [docs/ci/github-actions.yml](docs/ci/github-actions.yml) | SARIF를 Code Scanning에 올리고 HIGH 이상이면 실패합니다. |
 | GitLab CI | [docs/ci/gitlab-ci.yml](docs/ci/gitlab-ci.yml) | merge request의 Code Quality 위젯에 지적을 표시합니다. |
+
+### 지침 파일(CLAUDE.md·AGENTS.md)과 함께 쓰기
+
+지침 파일의 문장은 모델이 읽고 따르는 글입니다. 문장만으로는 지켜졌는지 확인되지 않습니다. 오철칙은 지침을 만들어 주고, 각 줄을 무엇이 확인하는지 함께 적습니다.
+
+```bash
+iron-laws guidelines export --lang python,typescript -o 지침.md   # 규칙을 지침으로 내보내기
+iron-laws guidelines check CLAUDE.md                              # 기존 지침의 문장마다 강제 수단 보기
+```
+
+| 꼬리표 | 뜻 |
+|---|---|
+| 차단 | `iron-laws hook`·`check --fail-on`이 지적하면 작업이 멈춥니다 |
+| 실행 검증 | `verify-patch`가 수정 전후를 격리 실행해 결함 동작이 사라졌는지 확인합니다(명령 실행·경로·SQL) |
+| 보고 | 지적은 하지만 작업을 멈추지 않습니다 |
+| 강제 수단 없음 | 대응하는 규칙이 없습니다. 오철칙 사용자 명세, 에이전트 hook이나 권한 설정으로 확인할 수 있는지 보십시오 |
+
+`check`는 주제 대응표로 문장과 규칙을 잇습니다. 대응이 틀리거나 빠질 수 있으며, 측정 결과는 [docs/ACCURACY.md](docs/ACCURACY.md) §5.4에 있습니다.
 
 ## 점검 영역 (규칙 104개)
 
@@ -283,7 +304,7 @@ iron-laws architecture . --compare before.json    # 이전 진단과 지표 비�
 ## 편집기·검토 보조
 
 - **LSP 서버** `iron-laws lsp`: 편집기에 연결하면 파일을 열거나 고칠 때마다 점검해 진단으로 보여 줍니다. 저장하지 않은 내용도 점검하며, 파일 한 개 단위로 봅니다.
-- **LLM 검토 의견** `check`·`audit --triage-model "<명령>"`: '확인 필요' 지적을 지정한 LLM 명령에 보내고, 돌아온 의견(`likely_true`·`likely_false`·`unsure`)을 보고서의 `review_opinion`에만 담습니다. 판정·심각도·통과 여부는 바꾸지 않습니다. 보내는 코드는 비밀값을 가린 조각입니다.
+- **LLM 검토 의견** `check`·`audit --triage-model "<명령>"`: '확인 필요' 지적을 지정한 LLM 명령에 보내고, 돌아온 의견(`likely_true`·`likely_false`·`unsure`)을 보고서의 `review_opinion`에만 담습니다. 판정·심각도·통과 여부는 바꾸지 않습니다. 보내는 코드는 비밀값을 가린 조각입니다. `likely_false`에는 근거(상수·정제 함수·실행되지 않는 분기·외부 입력 아님, 줄, 이름)를 요구하고, 그 근거를 코드와 엔진의 입력 경로로 대조해 `check`에 `corroborated`(확인)·`unsupported`(확인 못 함)·`contradicted`(엔진 근거와 모순)를 남깁니다.
 - **AI 습관 추이** `iron-laws habits`: 점검할 때마다 다섯 습관(하드코딩·구조 붕괴·삼킨 예외·중복 함수·타입 회피)의 1천 줄당 지적 수를 `.iron-laws-habits.jsonl`에 기록하고 처음·직전·최근 값을 보여 줍니다. 코드와 경로는 기록하지 않습니다.
 
 ## 감리 대응 보고서
@@ -302,7 +323,7 @@ iron-laws architecture . --compare before.json    # 이전 진단과 지표 비�
 | 싱크 | 외부 입력이 닿으면 위험한 호출 | 셸 명령을 감싼 사내 함수 |
 | 정제 함수 | 값을 안전하게 바꾸거나 검증하는 함수 | 사내 이스케이프·허용 목록 검사 함수 |
 
-초안은 코드에서 후보를 찾아 만듭니다(`--llm-cmd`를 주면 LLM의 제안도 더합니다). 사람은 각 항목에 지적되어야 하는 코드 예(`positive`)와 지적되면 안 되는 코드 예(`negative`)를 채웁니다. 모든 예가 기대대로 판정될 때만 명세를 불러오며, 하나라도 어긋나면 점검을 시작하지 않습니다.
+초안은 코드에서 후보를 찾아 만듭니다(`--llm-cmd`를 주면 LLM의 제안도 더합니다). LLM의 제안은 LLM이 함께 낸 예로 바로 판정해, 예가 어긋나는 항목은 `rejected`로 빼고, 정제 함수는 예가 맞아도 사람이 옮기기 전에는 불러오지 않습니다. 사람은 각 항목에 지적되어야 하는 코드 예(`positive`)와 지적되면 안 되는 코드 예(`negative`)를 채웁니다. 모든 예가 기대대로 판정될 때만 명세를 불러오며, 하나라도 어긋나면 점검을 시작하지 않습니다.
 
 ```bash
 iron-laws spec draft . -o iron-laws-spec.yml          # 후보 초안(예는 비어 있음)
@@ -321,7 +342,7 @@ iron-laws spec check iron-laws-spec.yml --against .   # 이 저장소에 적용�
 | `review` | 정제 함수 선언 때문에 사라진 지적이 있어 사람이 확인해야 합니다 | 1 |
 | `blocked` | 이유를 알 수 없이 지적이 사라졌거나 점검을 끝까지 하지 못해 채택하면 안 됩니다 | 1 |
 
-비교 결과는 보고서와 별개로 나옵니다(`--format console|markdown|json`, `--output`). 근거 장부의 비교는 장부가 다루는 Python의 명령 실행·경로 접근·SQL 조립에서만 하며, 명세에 그 밖의 항목이 있으면 결과에 밝힙니다.
+비교 결과는 보고서와 별개로 나옵니다(`--format console|markdown|json`, `--output`). 근거 장부의 비교는 장부가 다루는 명령 실행·경로 접근·SQL 조립에서만 하며, 명세에 그 밖의 항목이 있으면 결과에 밝힙니다.
 
 - `policies.ledger_include_spec_points: true`를 켜면 명세가 더한 싱크도 근거 장부에 나타납니다(기본은 꺼짐). 켜면 장부 상태가 바뀔 수 있습니다.
 - 명세가 선언한 정제 함수에 기대 안전하다고 본 호출은 장부에 근거 종류 `declared_sanitizer`로 표시됩니다. 그 함수가 정말 안전한지는 사람이 확인해야 합니다.
@@ -411,12 +432,14 @@ GitLab에서는 `audit --format gitlab-codequality`로 merge request의 Code Qua
 ## 한계
 
 - 외부 입력 추적은 함수 안에서 실행 순서를 따릅니다(if·반복·예외 갈래를 합쳐 판정). 도우미 함수는 호출 깊이 4단계까지 따라가고, 다른 파일의 함수는 Python·JavaScript/TypeScript·Java·Go·PHP에서 import·require·static 호출·주입 필드를 따라 찾습니다(찾는 횟수에 상한이 있습니다). 상속·추상 메서드·리플렉션을 거치는 호출과 상한에 걸린 경로는 놓치거나 `확인 필요`·근거 장부의 "확인 못 함"으로 남습니다.
+- Python 위험 모듈은 별칭(`import os as o`), 가져온 이름(`from os import system`), 변수에 담은 함수(`run = os.system`), 상수 이름의 `getattr(os, "system")`, `__import__("os")`까지 풀어 찾습니다. `getattr`의 속성 이름이 변수인 경우처럼 호출 대상을 실행 중에 정하는 형태는 찾지 못하고 근거 장부에도 나오지 않습니다.
+- `--build-manifest git`(또는 `tsc`·`go`·`file:<목록>`)을 주면 그 목록의 파일마다 분석했는지, 왜 빠졌는지를 보고서에 남깁니다. 사유 없이 빠진 파일은 경고로, `--require-full-coverage`면 점검 실패로 알립니다.
 - 정제 함수는 자기가 막는 문맥(HTML·SQL·셸·경로 등)에서만 인정합니다. HTML 이스케이프는 SQL 삽입을 막는 것으로 보지 않습니다.
 - 허용 목록 검사나 경로 범위 검사는 위험 호출 앞의 모든 경로에서 실행되고 검사한 값이 그대로 쓰일 때만 인정합니다. 갈래마다 다른 방식으로 검사하는 코드는 알아보지 못해 확정 지적이 남을 수 있습니다.
 - 보고서 모순 검사는 보고서의 구조적 모순만 잡습니다. 엔진이 처음부터 잘못 판정해 보고서 전체에 일관되게 반영한 오류는 잡지 못합니다.
 - 통과 결과만으로 배포를 승인하지 마십시오. 기존 테스트, 코드 검토, 다른 보안 점검과 함께 쓰는 보조 도구입니다.
 - 비밀값이 든 코드 줄은 모든 보고서와 수정 지시문에서 값을 `****`로 가립니다. 규칙이 비밀로 알아보지 못한 값은 가리지 못하므로, 지시문을 외부 AI에 붙여 넣기 전에 한 번 읽어 보십시오.
-- OWASP Benchmark(Java)의 확정 지적 점수는 XSS +53.5%, 취약 암호 +76.7%이고, SQL 삽입 +33.2%, 명령어 삽입 +17.2%입니다. 안전하게 처리된 사례에서 오탐이 남기 때문입니다. 실제 오픈소스 CVE(CWE-Bench-Java)에서 경로 조작은 35%를 잡았고, 명령 삽입·XSS·코드 삽입은 확정 지적으로 잡지 못했습니다. 측정 방법과 전체 수치는 [docs/ACCURACY.md](docs/ACCURACY.md)에 있습니다.
+- OWASP Benchmark(Java)의 확정 지적 점수는 SQL 삽입 +75.0%, 경로 조작 +88.7%, XSS +83.7%, 명령어 삽입 +50.8%입니다. 확정 지적의 오탐률은 XSS 5.7%·취약 암호 23.3%를 빼면 0%이고, 명령어 삽입은 취약 사례의 절반을 놓칩니다. 실제 오픈소스 CVE(CWE-Bench-Java)에서 경로 조작은 35%를 잡았고, 명령 삽입·XSS·코드 삽입은 확정 지적으로 잡지 못했습니다. 측정 방법과 전체 수치는 [docs/ACCURACY.md](docs/ACCURACY.md)에 있습니다.
 - 성능 규칙(PERF)은 코드의 모양만 봅니다. 데이터 크기와 실제 속도는 재지 못하므로 모두 `확인 필요`이며, 지적된 줄이 정말 큰 데이터를 도는지 직접 확인해야 합니다. 편집 거리 계산처럼 원래 이중 반복이 필요한 알고리즘도 지적될 수 있습니다.
 - 존재하지 않는 패키지 이름은 `--package-index`로 색인을 준 경우에만 판정합니다. 색인이 없으면 인기 패키지와 철자가 비슷한 이름만 지적합니다.
 - 점검에 걸린 시간과 메모리는 보고서 `execution.cost`에 남습니다. 이 값은 실행마다 달라지므로 코드가 같은 두 보고서를 비교할 때 제외됩니다. `limits.max_wall_seconds`를 넘으면 점검을 끝까지 하지 못한 것으로 보고 통과로 보지 않습니다.

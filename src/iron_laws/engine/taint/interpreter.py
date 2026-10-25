@@ -26,6 +26,7 @@ from iron_laws.engine.ast_tools import (
 )
 from iron_laws.engine.languages import Lang
 from iron_laws.engine.source import SourceFile
+from iron_laws.engine.taint.constants import condition_value, switch_case_index, switch_selector
 from iron_laws.engine.taint.nodes import (
     CASE_TYPES,
     CHAIN_TYPES,
@@ -52,6 +53,7 @@ from iron_laws.engine.taint.paths import (
     _constant_key,
     _target_and_value,
     _target_paths,
+    dead_ternary_ranges,
     path_root,
     reads_tainted,
 )
@@ -234,7 +236,7 @@ def _clean_ranges(src: SourceFile, node: Node, names: set[str], cli: bool, ctx: 
 
 
 def expr_tainted(src: SourceFile, node: Node, names: set[str], cli: bool = False, ctx: Ctx = Ctx.ANY) -> bool:
-    """이미 계산된 오염 변수 집합을 기준으로 식의 오염 여부를 판정한다."""
+    """이미 계산된 오염 변수 집합을 기준으로 식의 오염 여부를 판정한다. 조건이 상수인 조건식의 실행되지 않는 갈래는 보지 않는다."""
     parts = _call_parts(src, node)
     if parts is not None:
         clean = _call_is_clean(src, parts, names, cli, ctx)
@@ -243,6 +245,7 @@ def expr_tainted(src: SourceFile, node: Node, names: set[str], cli: bool = False
     ranges = _clean_ranges(src, node, names, cli, ctx)
     if ranges is None:
         return True
+    ranges = list(ranges) + dead_ternary_ranges(src, node)
     if ranges:
         buf = bytearray(src.data[node.start_byte : node.end_byte])
         for a, b in ranges:
@@ -419,6 +422,14 @@ class _Flow:
             return None
         if not branches:
             return header_state
+        known = condition_value(self.src, node.child_by_field_name("condition")) if node.type == "if_statement" else None
+        if known is not None:
+            # 조건이 상수로 정해지면 실행되는 갈래만 따라간다(실행되지 않는 갈래의 대입은 값에 섞이지 않는다)
+            taken = node.children_by_field_name("consequence") if known else node.children_by_field_name("alternative")
+            if not known and any(t.type in CHAIN_TYPES for t in taken):
+                taken = []  # elif 사슬은 따로 계산하지 않는다
+            elif len(taken) <= 1:
+                return self.exec(taken[0], header_state) if taken else header_state
         outs = [self.exec(b, header_state) for b in branches]
         merged = _join(*outs)
         if node.type in CHAIN_TYPES:
@@ -464,6 +475,17 @@ class _Flow:
             return None
         if not cases:
             return self._generic_children(node, header)
+        start = switch_case_index(self.src, switch_selector(node), cases)
+        if start is not None:
+            # 선택값이 상수이면 그 case부터 break까지만 따라간다(break가 없으면 다음 case로 이어진다)
+            if start < 0:
+                return header
+            current: State = header
+            for case in cases[start:]:
+                current = self._seq(case.named_children, current)
+                if current is None or case.type == "case_clause" or any(c.type == "break_statement" for c in case.named_children):
+                    return current  # Python match의 case는 다음 case로 이어지지 않는다
+            return current
         outs = [self._seq(c.named_children, header) for c in cases]
         has_default = any("default" in c.type or self.src.text_of(c).lstrip().startswith("default") or self.src.text_of(c).lstrip().startswith("_ ") for c in cases)
         return _join(*outs) if has_default else _join(*outs, header)

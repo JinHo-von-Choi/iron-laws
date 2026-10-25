@@ -4,7 +4,10 @@
 - 승인에는 사유, 대상, 유효기간, 정책 버전, 검토한 흐름의 의존성 지문, 검증 기록(Receipt) 해시를 남긴다.
 - 이후 코드가 승인 전제를 바꾸면(호출자·source·sink·정제 함수·접근 범위·규칙 의미·정책) 관련 승인만 다시 검토 대상이 된다.
 - 기록은 추가 전용 JSONL이며 각 줄이 앞 줄의 해시를 이어받는다. 이 해시는 변조 탐지용 무결성 근거일 뿐, 승인자의 진위나
-  기록 파일을 바꿀 수 있는 공격자에 대한 방어가 아니다. 그런 환경에서는 승인 인증을 주장하지 않으며, 조직 서명은 후속 범위다.
+  기록 파일을 바꿀 수 있는 공격자에 대한 방어가 아니다.
+- 승인 기록에 OpenSSH 서명을 붙일 수 있다(이름공간 iron-laws-approval). 서명 대상은 순번·앞 기록 해시를 뺀 승인 내용이라
+  보존기간 정리로 사슬을 다시 이어도 서명이 유지된다. 허용 서명자 목록을 주면 서명이 틀린 승인은, 서명 필수로 두면 서명 없는 승인도
+  쓰지 않는다(invalid). 기록 삭제·되돌리기는 저장소 밖에 둔 서명된 체크포인트(기록 수·마지막 해시)와 대조해 알아챈다.
 - 기록에는 식별자(규칙·경로·함수 이름·해시)와 사유만 담고 코드 원문·비밀값은 담지 않는다. 보존기간과 삭제 경로를 제공한다.
 작성자: 최진호
 작성일: 2026-10-04
@@ -25,6 +28,8 @@ from iron_laws.core.dependencies import Premise, explain_dependencies
 from iron_laws.core.models import BaselineStatus, Violation
 
 APPROVALS_SCHEMA = 1
+SIGNED_PAYLOAD_PREFIX = b"iron-laws-approval/1 "
+CHECKPOINT_KIND = "iron-laws-approvals-checkpoint"
 DEFAULT_APPROVALS_FILE = ".iron-laws-approvals.jsonl"
 GENESIS = "0" * 24
 
@@ -71,9 +76,22 @@ class Record(BaseModel):
     minutes: int = 0  # 검토에 든 시간(분). 계측용
     # revoke / forget
     target: str | None = None
+    signature: str = ""  # OpenSSH 서명(선택). 해시 계산에서 빠지고 content_digest를 서명한다
 
     def body(self) -> dict[str, Any]:
-        return self.model_dump(mode="json", exclude={"hash"})
+        return self.model_dump(mode="json", exclude={"hash", "signature"})
+
+    def content_digest(self) -> str:
+        """순번·앞 기록 해시를 뺀 기록 내용의 해시. 서명 대상이다."""
+        content = self.model_dump(mode="json", exclude={"hash", "signature", "seq", "prev"})
+        return hashlib.sha256(json.dumps(content, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+
+    def signed_payload(self) -> bytes:
+        return SIGNED_PAYLOAD_PREFIX + self.content_digest().encode()
+
+    def line(self) -> str:
+        exclude = set() if self.signature else {"signature"}
+        return json.dumps(self.model_dump(mode="json", exclude=exclude), ensure_ascii=False, sort_keys=True) + "\n"
 
     def compute_hash(self) -> str:
         return hashlib.sha256(json.dumps(self.body(), sort_keys=True, ensure_ascii=False).encode()).hexdigest()[:24]
@@ -149,8 +167,16 @@ class Integrity:
 
 
 class ApprovalStore:
-    def __init__(self, path: Path):
+    def __init__(self, path: Path, allowed_signers: Path | None = None, require_signed: bool = False):
+        if require_signed and allowed_signers is None:
+            raise ConfigError("서명 필수로 확인하려면 허용 서명자 목록(--allowed-signers)이 필요합니다")
+        if allowed_signers is not None and not allowed_signers.is_file():
+            raise ConfigError(f"허용 서명자 목록 파일이 없습니다: {allowed_signers}")
         self.path = path
+        self.allowed_signers = allowed_signers
+        self.require_signed = require_signed
+        self.signers: dict[str, str] = {}  # 승인 ID → 서명을 확인한 서명자
+        self._signature_checked: dict[tuple[str, str], list[str]] = {}
         self.records: list[Record] = []
         if path.is_file():
             self._load()
@@ -182,27 +208,88 @@ class ApprovalStore:
             previous = record.hash
         return problems
 
+    def signature_problems(self, record: Record) -> list[str]:
+        """승인 기록의 서명 문제. 허용 서명자 목록이 없으면 확인하지 않는다."""
+        from iron_laws.evidence.signing import APPROVAL_NAMESPACE, SigningError, verify_bytes
+
+        if self.allowed_signers is None or record.kind != "approve":
+            return []
+        if not record.signature:
+            return ["승인 기록에 서명이 없다(서명 필수)"] if self.require_signed else []
+        key = (record.id, record.content_digest())
+        if key not in self._signature_checked:
+            try:
+                self.signers[record.id] = verify_bytes(record.signed_payload(), record.signature, self.allowed_signers, APPROVAL_NAMESPACE)
+                self._signature_checked[key] = []
+            except SigningError as e:
+                self._signature_checked[key] = [f"승인 서명을 확인하지 못했다: {e}"]
+        return self._signature_checked[key]
+
     def integrity(self) -> Integrity:
-        """해시 연결과 기록별 형식을 함께 확인한다."""
+        """해시 연결과 기록별 형식·서명을 함께 확인한다."""
         result = Integrity(chain=self.verify_chain())
         for record in self.records:
-            problems = validate_record(record)
+            problems = validate_record(record) + self.signature_problems(record)
             if problems:
                 key = record.id if record.kind == "approve" else (record.target or record.id)
                 result.records.setdefault(key, []).extend(problems)
         return result
 
-    def append(self, record: Record) -> Record:
+    def append(self, record: Record, sign_key: Path | None = None) -> Record:
         problems = self.verify_chain()
         if problems:
             raise ConfigError("승인 기록의 무결성이 깨져 있어 기록을 추가하지 않습니다: " + "; ".join(problems[:2]))
         record.seq = len(self.records) + 1
+        if record.kind == "approve" and record.finding is not None and any(r.id == record.id for r in self.records):
+            # 같은 지적을 같은 초에 다시 승인하면 ID가 겹친다. 겹치면 철회·삭제 기록이 두 승인을 함께 가리키므로 순번을 섞어 새로 만든다
+            record.id = new_record_id(record.finding.fingerprint, record.created, str(record.seq))
         record.prev = self.records[-1].hash if self.records else GENESIS
         record.hash = record.compute_hash()
+        if sign_key is not None:
+            from iron_laws.evidence.signing import APPROVAL_NAMESPACE, SigningError, sign_bytes
+
+            try:
+                record.signature = sign_bytes(record.signed_payload(), sign_key, APPROVAL_NAMESPACE)
+            except SigningError as e:
+                raise ConfigError(f"승인 기록에 서명하지 못해 기록하지 않습니다: {e}") from e
         with self.path.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps(record.model_dump(mode="json"), ensure_ascii=False, sort_keys=True) + "\n")
+            fh.write(record.line())
         self.records.append(record)
         return record
+
+    def write_checkpoint(self, output: Path, sign_key: Path) -> Path:
+        """지금까지의 기록 수와 마지막 해시를 서명해 남긴다. 저장소 밖(후보 변경과 기록 작성자가 바꿀 수 없는 곳)에 두어야 의미가 있다."""
+        from iron_laws.evidence.signing import APPROVAL_NAMESPACE, SigningError, sign_file
+
+        problems = self.verify_chain()
+        if problems:
+            raise ConfigError("승인 기록의 무결성이 깨져 있어 체크포인트를 남기지 않습니다: " + "; ".join(problems[:2]))
+        payload = {"kind": CHECKPOINT_KIND, "count": len(self.records), "head": self.records[-1].hash if self.records else GENESIS,
+                   "created": datetime.now(UTC).strftime(CREATED_FORMAT)}
+        output.write_text(json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8")
+        try:
+            return sign_file(output, sign_key, APPROVAL_NAMESPACE)
+        except SigningError as e:
+            raise ConfigError(f"체크포인트에 서명하지 못했습니다: {e}") from e
+
+    def checkpoint_problems(self, checkpoint: Path, allowed_signers: Path) -> list[str]:
+        """서명된 체크포인트와 지금 기록을 대조한다. 체크포인트 이후의 추가는 정상이고, 그 이전 기록이 줄거나 바뀌면 문제다."""
+        from iron_laws.evidence.signing import APPROVAL_NAMESPACE, SigningError, verify_file
+
+        try:
+            verify_file(checkpoint, allowed_signers, APPROVAL_NAMESPACE)
+            data = json.loads(checkpoint.read_text(encoding="utf-8"))
+        except (SigningError, OSError, json.JSONDecodeError) as e:
+            return [f"체크포인트를 확인하지 못했다: {e}"]
+        if not isinstance(data, dict) or data.get("kind") != CHECKPOINT_KIND or type(data.get("count")) is not int or not isinstance(data.get("head"), str):
+            return ["체크포인트 형식이 맞지 않는다"]
+        count, head = data["count"], data["head"]
+        if len(self.records) < count:
+            return [f"체크포인트 시점({count}건)보다 기록이 적다(끝부분 삭제·이전 파일로 되돌리기 의심)"]
+        current = self.records[count - 1].hash if count else GENESIS
+        if current != head:
+            return [f"체크포인트 시점의 {count}번째 기록 해시가 다르다(기록 재작성·되돌리기 의심, 보존기간 정리 뒤라면 체크포인트를 새로 만드십시오)"]
+        return []
 
     def approvals(self) -> list[Approval]:
         """철회·삭제를 반영한 현재 승인 목록"""
@@ -255,14 +342,14 @@ class ApprovalStore:
             record.hash = record.compute_hash()
             previous = record.hash
             rebuilt.append(record)
-        self.path.write_text("".join(json.dumps(r.model_dump(mode="json"), ensure_ascii=False, sort_keys=True) + "\n" for r in rebuilt), encoding="utf-8")
+        self.path.write_text("".join(r.line() for r in rebuilt), encoding="utf-8")
         removed = len(self.records) - len(rebuilt)
         self.records = rebuilt
         return removed
 
 
-def new_record_id(fingerprint: str, created: str) -> str:
-    return "AP-" + hashlib.sha256(f"{fingerprint}|{created}".encode()).hexdigest()[:10]
+def new_record_id(fingerprint: str, created: str, salt: str = "") -> str:
+    return "AP-" + hashlib.sha256(f"{fingerprint}|{created}{'|' + salt if salt else ''}".encode()).hexdigest()[:10]
 
 
 def approve_record(violation: Violation, reason: str, reviewer: str, policy: ApprovalPolicy, expires: date | None, receipt_digest: str | None, minutes: int) -> Record:

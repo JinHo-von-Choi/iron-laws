@@ -84,7 +84,7 @@ SAFE_CHANGES = [
     ("int-cast-query", {"a.py": "from flask import request\ndef f(cur):\n    uid = int(request.args['id'])\n    cur.execute('SELECT * FROM t WHERE id = ' + str(uid))\n"}),
     ("closed-multiline", {"a.py": "import os\ndef f():\n    parts = ['ls', '-l']\n    os.system(' '.join(parts))\n"}),
     ("test-file-only", {"tests/test_a.py": "import os\ndef test_x():\n    os.system(compute())\n"}),
-    ("non-python-only", {"a.js": "const {exec} = require('child_process'); exec(cmd);\n"}),
+    ("unsupported-language-only", {"a.go": "package main\n\nimport \"os/exec\"\n\nfunc f(cmd string) { exec.Command(cmd).Run() }\n"}),
     ("closed-nested-helper", {"a.py": "import os\ndef a():\n    return 'ls'\ndef b():\n    return a() + ' -l'\ndef f():\n    os.system(b())\n"}),
     ("path-default-literal-arg", {"a.py": "def f():\n    name = 'a.txt'\n    return open(name)\n"}),
     ("sql-fstring-closed", {"a.py": "T = 'users'\ndef f(cur):\n    cur.execute(f'SELECT * FROM {T}')\n"}),
@@ -161,14 +161,14 @@ def test_ledger_denominators_include_unsupported_and_out_of_scope_files(tmp_path
         tmp_path,
         {
             "a.py": "import os\ndef f():\n    os.system('ls')\n",
-            "b.js": "const x = 1;\n",
+            "b.go": "package main\n\nfunc main() {}\n",
             "notes.md": "# 문서\n",
             "config.yml": "a: 1\n",
         },
     )
     kinds = {f.path: f.classification for f in report.coverage_ledger.files}
     assert kinds["a.py"] == "analyzed"
-    assert kinds["b.js"] == "unsupported_language"
+    assert kinds["b.go"] == "unsupported_language"
     assert kinds["notes.md"] == "out_of_scope"
     assert kinds["config.yml"] == "out_of_scope"
 
@@ -251,7 +251,7 @@ def test_contract_file_loading_and_validation(tmp_path: Path):
     assert contract.mode == "block" and len(digest) == 16
     for bad in (
         {"families": {"network": {}}},
-        {"languages": ["java"]},
+        {"languages": ["go"]},
         {"exclude_paths": ["x/*"]},
         {"version": 9},
         {"mode": "enforce"},

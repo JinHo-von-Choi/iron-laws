@@ -8,13 +8,16 @@ import typer
 from rich.markup import escape
 
 from iron_laws.commands.common import (
+    AllowedSignersOpt,
     AllowEmptyOpt,
     ApprovalsOpt,
     BaselineOpt,
+    BuildManifestOpt,
     ChangedSinceOpt,
     ConfigOpt,
     ContractModeOpt,
     ContractOpt,
+    FullCoverageOpt,
     GitignoreOpt,
     LimitOpt,
     MaxUnknownOpt,
@@ -24,6 +27,7 @@ from iron_laws.commands.common import (
     PackageIndexOpt,
     PathArg,
     ReportFormat,
+    RequireSignedOpt,
     SearchParentsOpt,
     TriageOpt,
     _build_scanner,
@@ -64,6 +68,10 @@ def check_command(
     contract: Path | None = ContractOpt,
     contract_mode: str | None = ContractModeOpt,
     approvals: Path | None = ApprovalsOpt,
+    allowed_signers: Path | None = AllowedSignersOpt,
+    require_signed_approvals: bool = RequireSignedOpt,
+    build_manifest: str | None = BuildManifestOpt,
+    require_full_coverage: bool = FullCoverageOpt,
     metrics: Path | None = MetricsOpt,
     max_unknown: float | None = MaxUnknownOpt,
     max_unverified: float | None = MaxUnverifiedOpt,
@@ -74,7 +82,7 @@ def check_command(
     """
     프로젝트의 보안 약점과 품질 결함을 신속 진단합니다. (CI/CD 적합)
     """
-    scanner = _build_scanner(path, config, search_parents, baseline, changed_since, respect_gitignore, contract, contract_mode, approvals, gates=_gates(max_unknown, max_unverified), package_index=package_index, max_wall_seconds=max_wall_seconds)
+    scanner = _build_scanner(path, config, search_parents, baseline, changed_since, respect_gitignore, contract, contract_mode, approvals, gates=_gates(max_unknown, max_unverified), package_index=package_index, max_wall_seconds=max_wall_seconds, allowed_signers=allowed_signers, require_signed_approvals=require_signed_approvals, build_manifest=build_manifest, require_full_coverage=require_full_coverage)
     if fail_on is not None:
         scanner.config.fail_on = fail_on
         scanner.fail_on_source = "명령행 옵션"
@@ -122,6 +130,10 @@ def audit_command(
     contract: Path | None = ContractOpt,
     contract_mode: str | None = ContractModeOpt,
     approvals: Path | None = ApprovalsOpt,
+    allowed_signers: Path | None = AllowedSignersOpt,
+    require_signed_approvals: bool = RequireSignedOpt,
+    build_manifest: str | None = BuildManifestOpt,
+    require_full_coverage: bool = FullCoverageOpt,
     metrics: Path | None = MetricsOpt,
     max_unknown: float | None = MaxUnknownOpt,
     max_unverified: float | None = MaxUnverifiedOpt,
@@ -132,7 +144,7 @@ def audit_command(
     """
     점검을 수행하고 보고서를 발행합니다. markdown 보고서에는 행안부 구현단계 49개 항목별 점검 현황이 포함됩니다.
     """
-    scanner = _build_scanner(path, config, search_parents, baseline, changed_since, respect_gitignore, contract, contract_mode, approvals, gates=_gates(max_unknown, max_unverified), package_index=package_index, max_wall_seconds=max_wall_seconds)
+    scanner = _build_scanner(path, config, search_parents, baseline, changed_since, respect_gitignore, contract, contract_mode, approvals, gates=_gates(max_unknown, max_unverified), package_index=package_index, max_wall_seconds=max_wall_seconds, allowed_signers=allowed_signers, require_signed_approvals=require_signed_approvals, build_manifest=build_manifest, require_full_coverage=require_full_coverage)
     report = _timed_scan(scanner, metrics, "audit")
     if triage_model:
         from iron_laws.core.triage import TriageError, apply_triage
@@ -182,6 +194,8 @@ def fix_prompt_command(
 def review_bundle_command(
     path: Path = PathArg,
     approvals: Path | None = typer.Option(None, "--approvals", help="승인 기록 파일(기본 .iron-laws-approvals.jsonl)"),
+    allowed_signers: Path | None = AllowedSignersOpt,
+    require_signed_approvals: bool = RequireSignedOpt,
     config: Path | None = ConfigOpt,
     contract: Path | None = ContractOpt,
     changed_since: str | None = ChangedSinceOpt,
@@ -200,12 +214,12 @@ def review_bundle_command(
         err.print("[bold red]--format은 markdown 또는 json이어야 합니다.[/bold red]")
         raise typer.Exit(2)
     store_path = approvals or Path(DEFAULT_APPROVALS_FILE)
-    scanner = _build_scanner(path, config, False, None, changed_since, None, contract, None, store_path, True)
+    scanner = _build_scanner(path, config, False, None, changed_since, None, contract, None, store_path, True, allowed_signers=allowed_signers, require_signed_approvals=require_signed_approvals)
     report = _timed_scan(scanner, metrics, "review-bundle")
     if report.summary.scan_status != "complete":
         err.print("[bold red]점검이 끝까지 이루어지지 않아 검토 묶음이 불완전합니다(미확인을 유지로 보지 않습니다).[/bold red]")
         raise typer.Exit(2)
-    command = f"iron-laws review-bundle {path.as_posix()}" + (f" --approvals {store_path.as_posix()}" if approvals else "") + (f" --contract {contract.as_posix()}" if contract else "") + (f" --changed-since {changed_since}" if changed_since else "")
+    command = f"iron-laws review-bundle {path.as_posix()}" + (f" --approvals {store_path.as_posix()}" if approvals else "") + (f" --contract {contract.as_posix()}" if contract else "") + (f" --changed-since {changed_since}" if changed_since else "") + (f" --allowed-signers {allowed_signers.as_posix()}" if allowed_signers else "") + (" --require-signed-approvals" if require_signed_approvals else "")
     bundle = build_bundle(report, scanner.approval_rows, changed_files=scanner.changed_files, command=command, approvals_path=store_path.as_posix() if store_path.exists() else None)
     if pilot_store is not None:
         from iron_laws.core.pilot import summarize

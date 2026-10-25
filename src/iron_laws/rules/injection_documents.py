@@ -38,7 +38,7 @@ from iron_laws.standards import mois_ref
 
 
 class LdapInjectionRule(SinkRule):
-    version = 2
+    version = 3
     rule_id = "IL-508"
     taint_ctx = Ctx.LDAP
     name = "LDAP 삽입 탐지"
@@ -204,6 +204,7 @@ class CsrfDisabledRule(BaseRule):
 
 
 class XPathInjectionRule(SinkRule):
+    version = 2
     rule_id = "IL-527"
     taint_ctx = Ctx.XPATH
     name = "XML(XPath) 삽입 탐지"

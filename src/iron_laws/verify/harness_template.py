@@ -2,8 +2,14 @@
 오철칙 회귀시험 harness: 격리 환경 안에서 후보·원본 코드를 부르고, 실제 명령·파일·DB 대신 기록 장치(mock sink)로 관측한다
 이 파일의 HARNESS_SOURCE는 신뢰된 도구 코드다. 검증할 때마다 작업영역에 복사해 `python -B harness.py spec.json attack|benign`으로 실행한다.
 - 실제 셸·네트워크·작업영역 밖 파일 접근은 하지 않는다. 호출은 기록만 하고 가짜 결과를 돌려준다.
-- 결과는 마지막 줄 `IRON_LAWS_RESULT {json}`으로 낸다. 오직 도구의 평가 코드만 이 줄을 쓴다.
-- 후보 코드가 같은 프로세스 안에서 결과를 조작하는 것까지 막지 못한다. 이 한계는 문서에 밝혀 둔다.
+- 결과는 `IRON_LAWS_RESULT <봉인값> {json}` 줄로 낸다. 봉인값은 실행마다 도구가 새로 만들어 기준 폴더의 seal 파일로 건네며,
+  harness가 후보 코드를 불러오기 전에 읽고 지운다. 출력 함수(os.write)와 종료 함수도 그 전에 잡아 둔다.
+  후보 코드가 결과 줄을 흉내 내거나 sys.stdout·os.write를 바꿔도 봉인값이 없어 도구가 받아들이지 않는다(판정 불가로 끝난다).
+- 명령 실행 계열은 판정 전에 공격 입력 끝에 카나리아 명령(probe 파일의 값으로 만든 파일 생성)을 붙여 한 번 따로 부른다.
+  후보 코드가 기록 장치를 거치지 않고 실제 셸을 부르면 카나리아 파일이 생기고, 도구가 실행이 끝난 뒤 밖에서 확인해 결함 재현으로 판정한다.
+  판정 자체는 원래 공격 입력으로 한다.
+- 기록 장치는 저수준 경로(posix.system, os.open·posix.open, io.FileIO, _io.open, sqlite3.dbapi2·_sqlite3)에도 건다.
+- 같은 프로세스의 메모리를 뒤져 봉인값을 꺼내거나 ctypes로 시스템 호출을 직접 부르는 의도적인 조작까지는 막지 못한다.
 작성자: 최진호
 작성일: 2026-10-04
 """
@@ -11,6 +17,7 @@
 HARNESS_SOURCE = r'''
 import builtins
 import importlib
+import inspect
 import io
 import json
 import os
@@ -18,6 +25,28 @@ import subprocess
 import sys
 import types
 
+def _seal():
+    base = os.path.join(os.getcwd(), "_iron_laws_harness", "base")
+    values = []
+    for name in ("seal", "probe"):
+        path = os.path.join(base, name)
+        try:
+            with open(path, encoding="utf-8") as handle:
+                values.append(handle.read().strip())
+            os.remove(path)
+        except OSError:
+            values.append("")
+    write, finish, dumps = os.write, os._exit, json.dumps
+    seal = values[0]
+
+    def sealed(payload):
+        write(1, ("\nIRON_LAWS_RESULT " + seal + " " + dumps(payload, ensure_ascii=False, default=str) + "\n").encode("utf-8"))
+        finish(0)
+
+    return sealed, values[1], base
+
+
+_SEALED_EMIT, PROBE, PROBE_BASE = _seal()
 SPEC_PATH, RAW_MODE = sys.argv[1], sys.argv[2]
 MODE, _, VARIANT = RAW_MODE.partition(":")  # `attack:2`는 명세의 변형 입력 2번으로 공격한다
 with open(SPEC_PATH, encoding="utf-8") as handle:
@@ -40,9 +69,7 @@ real_open = builtins.open
 def emit(outcome, reason="", **extra):
     payload = {"outcome": outcome, "reason": reason, "mode": RAW_MODE, "calls": CALLS[:20]}
     payload.update(extra)
-    sys.stdout.write("\nIRON_LAWS_RESULT " + json.dumps(payload, ensure_ascii=False, default=str) + "\n")
-    sys.stdout.flush()
-    os._exit(0)
+    _SEALED_EMIT(payload)
 
 
 class Part(dict):
@@ -242,6 +269,8 @@ def install_sinks():
 
         os.system = make("os.system", lambda: 0)
         os.popen = make("os.popen", lambda: io.StringIO(""))
+        import posix
+        posix.system = make("os.system", lambda: 0)  # os.system의 원래 구현. 우회 경로도 기록한다
         subprocess.run = make("subprocess.run", completed)
         subprocess.call = make("subprocess.call", lambda: 0)
         subprocess.check_call = make("subprocess.check_call", lambda: 0)
@@ -251,12 +280,34 @@ def install_sinks():
         subprocess.Popen = FakePopen
     elif FAMILY == "path":
         def fake_open(file, mode="r", *a, **k):
-            CALLS.append({"api": "open", "path": resolve_path(file), "mode": str(mode)})
+            if not isinstance(file, int):  # 파일 기술자(os.fdopen)는 os.open에서 이미 경로를 기록했다
+                CALLS.append({"api": "open", "path": resolve_path(file), "mode": str(mode)})
             return io.BytesIO(b"") if "b" in str(mode) else io.StringIO("")
+
+        import _io
+        import pathlib
+        import posix
 
         builtins.open = fake_open
         io.open = fake_open
-        import pathlib
+        _io.open = fake_open  # 모듈 불러오기는 _io.open_code·_io.FileIO를 쓰므로 영향이 없다
+
+        def fake_fileio(file, mode="r", *a, **k):
+            return fake_open(file, mode if "b" in str(mode) else str(mode) + "b")
+
+        io.FileIO = fake_fileio
+
+        real_os_open = os.open
+        empty_file = os.path.join(BASE, "_empty")
+        with real_open(empty_file, "w"):
+            pass
+
+        def fake_os_open(path, flags=0, *a, **k):
+            CALLS.append({"api": "os.open", "path": resolve_path(path), "mode": str(flags)})
+            return real_os_open(empty_file, os.O_RDONLY)  # 실제 파일 대신 기준 폴더의 빈 일반 파일을 연다
+
+        os.open = fake_os_open
+        posix.open = fake_os_open
 
         def path_method(name, result):
             def method(self, *a, **k):
@@ -276,17 +327,24 @@ def install_sinks():
                 return result()
             return function
 
-        for name, result in (("remove", lambda: None), ("unlink", lambda: None), ("listdir", lambda: []), ("makedirs", lambda: None), ("mkdir", lambda: None), ("rmdir", lambda: None), ("stat", lambda: None)):
+        for name, result in (("remove", lambda: None), ("unlink", lambda: None), ("listdir", lambda: []), ("makedirs", lambda: None), ("mkdir", lambda: None), ("rmdir", lambda: None), ("stat", lambda: os.stat_result((0o100644, 0, 0, 1, 0, 0, 0, 0, 0, 0)))):
             setattr(os, name, os_function(name, result))
         os.chdir(BASE)
     elif FAMILY == "sql":
         import sqlite3
+        import sqlite3.dbapi2
+
         sqlite3.connect = lambda *a, **k: FakeConnection()
+        sqlite3.dbapi2.connect = sqlite3.connect
+        try:
+            import _sqlite3
+
+            _sqlite3.connect = sqlite3.connect
+        except ImportError:
+            pass
 
 
 def build_arguments(function):
-    import inspect
-
     values = {}
     markers = {"$cursor": FakeCursor, "$connection": FakeConnection}
     call_args = SPEC.get("call_args", {})
@@ -305,6 +363,39 @@ def build_arguments(function):
     return values
 
 
+def probe_bypass(function):
+    """공격 입력 끝에 카나리아 명령을 붙여 한 번 따로 부른다. 기록 장치를 우회해 실제 셸이 실행하면 카나리아 파일이 생기고,
+    도구가 실행이 끝난 뒤 밖에서 확인한다. 이 호출의 기록은 판정에 쓰지 않는다(판정은 원래 공격 입력으로 한다)."""
+    global VALUE
+    attack = VALUE
+    VALUE = attack + "; touch " + os.path.join(PROBE_BASE, "canary_" + PROBE)
+    REQUEST.set(VALUE)
+    try:
+        function(**build_arguments(function))
+    except BaseException:
+        pass
+    del CALLS[:]
+    VALUE = attack
+    REQUEST.set(VALUE)
+
+
+def probe_base(function):
+    """명세에 허용 폴더가 없으면 같은 코드에 정상 입력을 먼저 넣어 접근한 폴더를 허용 폴더로 본다(코드가 정한 기준 폴더)."""
+    global VALUE
+    attack = VALUE
+    VALUE = SPEC["input"]["benign"]
+    REQUEST.set(VALUE)
+    try:
+        function(**build_arguments(function))
+    except BaseException:
+        pass
+    paths = [call["path"] for call in CALLS if call.get("path")]
+    del CALLS[:]
+    VALUE = attack
+    REQUEST.set(VALUE)
+    return os.path.dirname(paths[0]) if paths else None
+
+
 def main():
     target = SPEC["target"]
     try:
@@ -319,7 +410,10 @@ def main():
         if hasattr(module, "request"):
             module.request = REQUEST
     install_sinks()
+    if MODE == "attack" and FAMILY == "command" and PROBE:
+        probe_bypass(function)
     allowed = tuple(SPEC.get("allowed_exceptions", ["ValueError", "PermissionError", "RuntimeError"]))
+    observed_base = probe_base(function) if FAMILY == "path" and MODE == "attack" and not SPEC["expect"].get("base") else None
     error_name = ""
     try:
         function(**build_arguments(function))
@@ -333,7 +427,7 @@ def main():
             if FAMILY == "command" and call.get("interpreted") and VALUE in call.get("command", ""):
                 violation = "입력이 셸이 해석하는 명령 문자열에 그대로 들어갔다: " + call["api"]
             elif FAMILY == "path":
-                base = os.path.abspath(SPEC["expect"].get("base") or BASE)
+                base = os.path.abspath(SPEC["expect"].get("base") or observed_base or BASE)
                 resolved = call.get("path", "")
                 if resolved != base and not resolved.startswith(base + os.sep):
                     violation = "접근한 경로가 허용 폴더 밖이다: " + resolved

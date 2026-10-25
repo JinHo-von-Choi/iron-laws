@@ -18,4 +18,4 @@ jobs:
           name: realworld-triage
           path: work/triage.md
       - if: steps.loop.outcome == 'failure'
-        run: echo "고정 커밋 실제 프로젝트의 보안 지적이 달라졌습니다. triage.md를 분류하십시오." && exit 1
+        run: echo "고정 커밋 실제 프로젝트의 보안 지적이 달라졌습니다(종료코드 3이면 판 번호를 올리지 않은 판정 변경 포함). triage.md를 확인하십시오." && exit 1

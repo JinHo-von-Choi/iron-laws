@@ -89,7 +89,7 @@ def shape_errors(value: object, spec: object, path: str = "$", *, optional: bool
     return []
 
 
-SUPPORTED_REPORT_VERSIONS = ("1.3", "1.4", "1.5", "1.6", "1.7")
+SUPPORTED_REPORT_VERSIONS = ("1.3", "1.4", "1.5", "1.6", "1.7", "1.8")
 SUPPORTED_RECEIPT_VERSIONS = ("1",)
 
 # 검사 계열 → 그 계열의 지적을 내는 규칙. 보고서가 다른 계열의 지적을 연결하면 모순이다.
@@ -209,6 +209,7 @@ def verify_report(data: dict[str, Any], *, as_of: date | None = None, checkout: 
     _check_passed(c, data, summary, ledger, violations, execution)
     _check_trust(c, data, summary, ledger, violations)
     _check_standards(c, data, violations)
+    _check_file_coverage(c, data)
     _check_approvals(c, data, ledger, execution, findings, violations, as_of)
     if checkout is not None:
         _check_checkout(c, ledger, execution, checkout)
@@ -360,7 +361,7 @@ GATE_FIELDS = {"max_analysis_unknown_rate": "analysis_unknown_rate", "max_unveri
 
 def _check_standards(c: _Collector, data: dict[str, Any], violations: list[dict[str, Any]]) -> None:
     """기준 팩 참조(1.5 이후): 지적의 기준 항목이 보고서에 적힌 팩·판본을 가리키고, 대응표 확인 여부가 팩의 값과 같은지 본다."""
-    if data.get("schema_version") not in ("1.5", "1.6", "1.7"):  # iron-laws: ignore[IL-307] 1.5 이전 보고서에는 기준 팩 칸이 없어 이 검사를 적용하지 않는다
+    if data.get("schema_version") not in ("1.5", "1.6", "1.7", "1.8"):  # iron-laws: ignore[IL-307] 1.5 이전 보고서에는 기준 팩 칸이 없어 이 검사를 적용하지 않는다
         return
     listed = (data.get("metadata") or {}).get("standard_packs") or []
     if not c.check(isinstance(listed, list) and all(isinstance(p, dict) for p in listed), "standards.shape", "metadata.standard_packs가 객체 목록이 아니다", "metadata.standard_packs"):  # iron-laws: ignore[IL-307] 형식 위반은 c.check가 결과에 기록한 뒤 다음 검사를 멈춘다
@@ -380,9 +381,25 @@ def _check_standards(c: _Collector, data: dict[str, Any], violations: list[dict[
             c.check(bool(ref.get("mapping_verified")) == bool(pack.get("mapping_verified")), "standards.verified_mismatch", f"{pack.get('id')} 대응표 확인 여부가 팩 목록과 다르다(확인되지 않은 대응을 확인된 것처럼 표시)", where)
 
 
+def _check_file_coverage(c: _Collector, data: dict[str, Any]) -> None:
+    """파일 목록 대조(1.8 이후): 상태별 수의 합이 목록 수와 같고, 사유 없이 빠진 파일이 있으면 진단으로 밝혔는지 본다."""
+    coverage = (data.get("metadata") or {}).get("file_coverage")
+    if coverage is None:
+        return
+    if not c.check(isinstance(coverage, dict) and isinstance(coverage.get("counts"), dict) and isinstance(coverage.get("listed"), int), "coverage.shape", "metadata.file_coverage 형식이 맞지 않는다", "metadata.file_coverage"):  # iron-laws: ignore[IL-307] 형식 위반은 c.check가 결과에 기록한 뒤 다음 검사를 멈춘다
+        return
+    counts = coverage["counts"]
+    c.check(sum(n for n in counts.values() if isinstance(n, int)) == coverage["listed"], "coverage.count_mismatch", "파일 목록의 상태별 수 합이 목록 수와 다르다", "metadata.file_coverage")
+    unexplained = counts.get("unexplained", 0)
+    c.check(len(coverage.get("unexplained") or []) == min(unexplained, 200), "coverage.unexplained_mismatch", "사유 없이 빠진 파일 목록과 수가 다르다", "metadata.file_coverage")
+    if unexplained:
+        noted = any(d.get("kind") == "coverage" for d in data.get("diagnostics") or [])
+        c.check(noted, "coverage.unexplained_hidden", "사유 없이 빠진 파일이 있는데 진단으로 밝히지 않았다", "metadata.file_coverage")
+
+
 def _check_trust(c: _Collector, data: dict[str, Any], summary: dict[str, Any], ledger: dict[str, Any], violations: list[dict[str, Any]]) -> None:
     """신뢰 지표(1.4 이후): 분석 unknown 비율을 장부에서 다시 계산해 대조하고, 상한 초과가 통과로 표시되지 않았는지 본다."""
-    if data.get("schema_version") not in ("1.4", "1.5", "1.6", "1.7"):  # iron-laws: ignore[IL-307] 1.4 이전 보고서에는 신뢰 칸이 없어 이 검사를 적용하지 않는다
+    if data.get("schema_version") not in ("1.4", "1.5", "1.6", "1.7", "1.8"):  # iron-laws: ignore[IL-307] 1.4 이전 보고서에는 신뢰 칸이 없어 이 검사를 적용하지 않는다
         return
     for index, v in enumerate(violations):
         c.check(v.get("verification_grade", "") in ("", "verified", "unverified"), "trust.grade_unknown", f"알 수 없는 검증 등급: {v.get('verification_grade')!r}", f"violations[{index}]")

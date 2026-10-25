@@ -40,6 +40,7 @@ from iron_laws.standards import mois_ref
 
 
 class XssRule(BaseRule):
+    version = 2
     rule_id = "IL-505"
     name = "크로스사이트 스크립트(XSS) 탐지"
     iron_law = IronLaw.LAW_5
@@ -231,6 +232,7 @@ class XssRule(BaseRule):
 
 
 class SsrfRule(SinkRule):
+    version = 2
     rule_id = "IL-506"
     taint_ctx = Ctx.URL
     name = "서버사이드 요청 위조(SSRF) 탐지"
@@ -303,6 +305,7 @@ class SsrfRule(SinkRule):
 
 
 class OpenRedirectRule(SinkRule):
+    version = 2
     rule_id = "IL-507"
     taint_ctx = Ctx.URL
     name = "신뢰되지 않는 URL로 자동접속(오픈 리다이렉트) 탐지"
@@ -340,6 +343,7 @@ class OpenRedirectRule(SinkRule):
 
 
 class HeaderInjectionRule(SinkRule):
+    version = 2
     rule_id = "IL-511"
     taint_ctx = Ctx.HEADER
     name = "HTTP 응답분할(헤더 삽입) 탐지"

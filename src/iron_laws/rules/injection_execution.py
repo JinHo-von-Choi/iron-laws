@@ -40,7 +40,7 @@ from iron_laws.standards import mois_ref
 
 
 class SqlInjectionRule(SinkRule):
-    version = 2
+    version = 3
     rule_id = "IL-501"
     taint_ctx = Ctx.SQL
     name = "SQL Injection 취약점 탐지"
@@ -128,6 +128,7 @@ class SqlInjectionRule(SinkRule):
 
 
 class CodeInjectionRule(SinkRule):
+    version = 2
     rule_id = "IL-503"
     taint_ctx = Ctx.CODE
     name = "코드 삽입 (동적 코드 실행) 탐지"
@@ -233,6 +234,7 @@ class CodeInjectionRule(SinkRule):
 
 
 class CommandInjectionRule(SinkRule):
+    version = 2
     rule_id = "IL-504"
     taint_ctx = Ctx.SHELL
     name = "운영체제 명령어 삽입 탐지"

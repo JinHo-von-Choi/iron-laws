@@ -27,6 +27,7 @@ from iron_laws.standards import mois_ref
 
 
 class DeserializationRule(BaseRule):
+    version = 2
     rule_id = "IL-515"
     name = "신뢰할 수 없는 데이터의 역직렬화 탐지"
     iron_law = IronLaw.LAW_5
@@ -77,6 +78,7 @@ class DeserializationRule(BaseRule):
 
 
 class ToctouRule(BaseRule):
+    version = 2
     rule_id = "IL-516"
     name = "경쟁조건: 검사시점과 사용시점(TOCTOU) 탐지"
     iron_law = IronLaw.LAW_5
@@ -185,6 +187,7 @@ RELEASE_FN = r"(close|Close|dispose|Dispose|release|shutdown|disconnect|fclose|p
 
 
 class ResourceLeakRule(BaseRule):
+    version = 2
     rule_id = "IL-518"
     name = "부적절한 자원 해제 탐지"
     iron_law = IronLaw.LAW_5
@@ -491,6 +494,7 @@ class WeakApiRule(BaseRule):
 
 
 class MemorySafetyRule(BaseRule):
+    version = 2
     rule_id = "IL-514"
     name = "메모리 버퍼 오버플로우·포맷 스트링·정수 오버플로우 탐지"
     iron_law = IronLaw.LAW_5

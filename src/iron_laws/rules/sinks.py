@@ -23,6 +23,7 @@ from iron_laws.engine.ast_tools import (
 from iron_laws.engine.languages import ALL_LANGS, C_FAMILY, JS_FAMILY, Lang
 from iron_laws.engine.source import SourceFile
 from iron_laws.engine.taint import Ctx, is_tainted, param_name, reaching_definitions, resolve_any
+from iron_laws.engine.taint.constants import in_dead_branch, is_closed_value
 from iron_laws.engine.xfile import note_limit
 
 PY = frozenset({Lang.PYTHON})
@@ -76,12 +77,12 @@ def assess(
     if arg.type in ("identifier", "variable_name"):
         scope = enclosing_function(arg, src.lang) or src.root
         if scope is not None:
-            candidates.extend(reaching_definitions(src, scope, src.text_of(arg).lstrip("$"), arg.start_byte))
+            candidates.extend(d for d in reaching_definitions(src, scope, src.text_of(arg).lstrip("$"), arg.start_byte) if not in_dead_branch(src, d))
     for node in candidates:
         if not is_literal(node) and is_tainted(src, node, cli, seeds, ctx):
             return Flow.TAINTED
     for node in candidates:
-        if is_dynamic_composition(src, node):
+        if is_dynamic_composition(src, node) and not is_closed_value(src, node):
             return Flow.DYNAMIC
     return Flow.SAFE
 

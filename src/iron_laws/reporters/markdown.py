@@ -117,6 +117,14 @@ def _ledger_section(report: AuditReport) -> list[str]:
     for t in ledger.families:
         states = ", ".join(f"{_STATE_LABEL.get(k, k)} {v}" for k, v in sorted(t.by_state.items())) or "-"
         md.append(f"| {t.family} | {'예' if t.required else '아니오'} | {t.in_scope}/{t.total} | {states} |")
+    repeated = _repeated_callees(ledger)
+    if repeated:
+        md.append("\n같은 위험 함수를 여러 곳에서 부르는 경우(범위 안 지점):\n")
+        md.append("| 계열 | 함수 | 곳 | 근거 확인 | 지적 | 확인 못 함 |")
+        md.append("|---|---|---|---|---|---|")
+        md.extend(f"| {family} | `{callee}` | {total} | {met} | {flagged} | {gap} |" for family, callee, total, met, flagged, gap in repeated[:20])
+        if len(repeated) > 20:
+            md.append(f"\n… 외 {len(repeated) - 20}개 함수")
     unclassified = [f for f in ledger.files if f.classification == "unclassified"]
     md.append(f"\n분모: 분석한 파일 {sum(1 for f in ledger.files if f.classification in ('analyzed', 'policy_excluded'))}개, "
               f"계약 범위 밖 파일 {sum(1 for f in ledger.files if f.classification in ('out_of_scope', 'unsupported_language'))}개, "
@@ -130,6 +138,32 @@ def _ledger_section(report: AuditReport) -> list[str]:
     md.extend(f"- {x}" for x in ledger.limitations)
     md.append("")
     return md
+
+
+def _repeated_callees(ledger) -> list[tuple[str, str, int, int, int, int]]:
+    """범위 안 지점을 (계열, 호출 함수)로 묶어 두 곳 이상인 것만. (계열, 함수, 곳, 근거 확인, 지적, 확인 못 함)"""
+    groups: dict[tuple[str, str], list] = {}
+    for p in ledger.points:
+        if p.in_scope:
+            groups.setdefault((p.family, p.callee), []).append(p)
+    rows = []
+    for (family, callee), points in groups.items():
+        if len(points) < 2:
+            continue
+        met = sum(1 for p in points if p.state == "evidence_met" and not p.finding)
+        flagged = sum(1 for p in points if p.finding)
+        rows.append((family, callee, len(points), met, flagged, len(points) - met - flagged))
+    return sorted(rows, key=lambda r: (-r[2], r[0], r[1]))
+
+
+def _file_coverage_line(report: AuditReport) -> str | None:
+    coverage = (report.metadata or {}).get("file_coverage")
+    if not coverage:
+        return None
+    counts = coverage.get("counts", {})
+    label = {"analyzed": "분석", "skipped": "건너뜀", "excluded": "제외 설정", "unsupported": "점검하지 않는 확장자", "outside_root": "점검 폴더 밖", "missing": "파일 없음", "unexplained": "사유 없이 빠짐"}
+    parts = ", ".join(f"{label.get(k, k)} {v}" for k, v in counts.items())
+    return f"- 파일 목록({coverage.get('source')}) {coverage.get('listed', 0)}개와 대조: {parts}"
 
 
 def cost_section(report: AuditReport) -> list[str]:
@@ -148,6 +182,9 @@ def cost_section(report: AuditReport) -> list[str]:
         total = sum(t.total for t in ledger.families)
         if total:
             md.append(f"- 보안 관심 지점 {total}개 가운데 {gaps}개를 확인하지 못했습니다")
+    coverage_line = _file_coverage_line(report)
+    if coverage_line:
+        md.append(coverage_line)
     s = report.summary
     if s.unverified_rule_language_pairs:
         md.append(f"- 적용된 (규칙, 언어) 조합 {s.evaluated_rule_language_pairs}개 중 {s.unverified_rule_language_pairs}개는 양성·음성 시험이 없어 미검증입니다")

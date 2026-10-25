@@ -8,6 +8,8 @@
 - 기록: benchmarks/realworld/<이름>.json(보안 규칙 지적의 규칙·경로·줄·심각도·확정 여부). --update를 주면 이번 결과로 바꾼다.
 - 대기열: <작업 폴더>/triage.md. 새로 생긴 지적과 사라진 지적을 프로젝트별로 적는다. 사람이 TP/FP와 사유를 분류하고,
   오탐·미탐으로 확인된 것은 tests/counterexamples/에 반례로 고정한다(docs/COUNTEREXAMPLES.md).
+- 기록에는 규칙별 판 번호도 남긴다. 지적이 달라졌는데 그 규칙의 판 번호가 기록과 같으면 판정 변경을 알리지 않은 것이다.
+  이 경우 대기열 맨 앞에 규칙을 적고 종료코드 3으로 끝난다(CONTRIBUTING: 판정이 바뀐 규칙은 version을 올린다).
 - 달라진 지적이 있으면 종료코드 1(정기 실행이 사람의 분류를 요청하는 신호), 없으면 0.
 작성자: 최진호
 작성일: 2026-10-12
@@ -16,6 +18,7 @@
 import json
 import subprocess
 import sys
+from collections import Counter
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
@@ -46,12 +49,28 @@ def findings(root: Path) -> list[list]:
     )
 
 
+def rule_versions() -> dict[str, int]:
+    from iron_laws.rules.catalog import ALL_RULES
+
+    return {cls.rule_id: cls.version for cls in ALL_RULES if cls.rule_id.startswith(SECURITY_PREFIXES)}
+
+
+def unbumped_rules(previous: list[list], current: list[list], recorded: dict[str, int], versions: dict[str, int]) -> list[str]:
+    """지적 묶음이 달라졌는데 판 번호는 기록과 같은 규칙. 판 번호를 기록하지 않은 규칙은 판단하지 않는다."""
+    before = Counter(tuple(f) for f in previous)
+    after = Counter(tuple(f) for f in current)
+    changed = {f[0] for f in (before - after) + (after - before)}
+    return sorted(rule for rule in changed if rule in recorded and recorded[rule] == versions.get(rule))
+
+
 def main(work: Path, fetch: bool, update: bool) -> int:
     from iron_laws.core.scanner import tool_version
 
     projects = json.loads((ROOT / "realworld" / "projects.json").read_text(encoding="utf-8"))
     lines = [f"# 실측 누락 순환 대기열 (오철칙 {tool_version()})", ""]
     changed = False
+    versions = rule_versions()
+    unbumped: dict[str, list[str]] = {}
     for project in projects:
         root = checkout(work, project, fetch)
         if root is None:
@@ -59,7 +78,8 @@ def main(work: Path, fetch: bool, update: bool) -> int:
             continue
         current = findings(root)
         record_path = ROOT / "realworld" / f"{project['name']}.json"
-        previous = json.loads(record_path.read_text(encoding="utf-8"))["findings"] if record_path.is_file() else None
+        record = json.loads(record_path.read_text(encoding="utf-8")) if record_path.is_file() else None
+        previous = record["findings"] if record is not None else None
         lines.append(f"## {project['name']} ({project['commit'][:12]})")
         if previous is None:
             lines.append(f"- 첫 기록: 보안 지적 {len(current)}건")
@@ -67,15 +87,23 @@ def main(work: Path, fetch: bool, update: bool) -> int:
             new = [f for f in current if f not in previous]
             gone = [f for f in previous if f not in current]
             changed |= bool(new or gone)
+            for rule in unbumped_rules(previous, current, record.get("rule_versions", {}), versions):
+                unbumped.setdefault(rule, []).append(project["name"])
             lines += [f"- 새 지적 {len(new)}건, 사라진 지적 {len(gone)}건"]
             lines += [f"  - [ ] 새로 생김 {f[0]} {f[1]}:{f[2]} {f[3]}·{f[4]} — 분류: TP/FP, 사유:" for f in new[:50]]
             lines += [f"  - [ ] 사라짐 {f[0]} {f[1]}:{f[2]} {f[3]}·{f[4]} — 분류: 오탐 제거/미탐 발생, 사유:" for f in gone[:50]]
         lines.append("")
         if update or previous is None:
-            record_path.write_text(json.dumps({"tool_version": tool_version(), "commit": project["commit"], "findings": current}, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+            payload = {"tool_version": tool_version(), "commit": project["commit"], "rule_versions": versions, "findings": current}
+            record_path.write_text(json.dumps(payload, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+    if unbumped:
+        head = ["## 판 번호를 올리지 않고 판정이 바뀐 규칙", *(f"- {rule} (판 {versions[rule]}): {', '.join(names)}" for rule, names in sorted(unbumped.items())), ""]
+        lines[2:2] = head
     work.mkdir(parents=True, exist_ok=True)
     (work / "triage.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
     print("\n".join(lines))
+    if unbumped:
+        return 3
     return 1 if changed else 0
 
 

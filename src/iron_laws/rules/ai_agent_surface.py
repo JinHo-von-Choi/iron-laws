@@ -44,6 +44,7 @@ TOOL_DECORATOR = re.compile(r"@\s*\w+\.tool\b")
 
 
 class LlmOutputExecutionRule(AiAttackRule):
+    version = 2
     rule_id = "AIA-103"
     name = "LLM 응답을 검증 없이 실행·명령·SQL에 쓰는 코드 탐지"
     severity = Severity.HIGH
@@ -77,6 +78,7 @@ class LlmOutputExecutionRule(AiAttackRule):
 
 
 class SystemPromptInjectionRule(AiAttackRule):
+    version = 2
     rule_id = "AIA-104"
     name = "외부 입력이 LLM 시스템 지시 자리에 들어가는 코드 탐지"
     severity = Severity.MEDIUM
@@ -132,6 +134,7 @@ class SystemPromptInjectionRule(AiAttackRule):
 
 
 class McpServerToolRule(AiAttackRule):
+    version = 2
     rule_id = "AIA-105"
     name = "MCP 서버 도구의 숨은 지시·무검증 경로·명령 인자 탐지"
     severity = Severity.HIGH
@@ -243,6 +246,7 @@ class BrowserModelKeyRule(AiAttackRule):
 
 
 class UncappedLlmCallRule(AiAttackRule):
+    version = 2
     rule_id = "AIA-108"
     name = "웹 입력을 받는 LLM 호출의 출력 상한 부재 탐지"
     severity = Severity.MEDIUM

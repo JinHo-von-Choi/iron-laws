@@ -23,7 +23,7 @@ uv run iron-laws check .     # 오철칙으로 이 저장소 점검
 3. 코드를 씁니다.
    - 새 규칙에는 양성(잡아야 하는 코드)·음성(잡으면 안 되는 코드) 사례를 `tests/`에 더합니다.
    - 규칙을 더하거나 사례를 바꾸면 지원 행렬을 다시 만듭니다: `uv run python benchmarks/build_support_manifest.py` 실행 뒤 `uv run iron-laws support > docs/SUPPORT_MATRIX.md`.
-   - 규칙의 판정 방식을 바꾸면 그 규칙의 `version`을 올립니다.
+   - 규칙의 판정 방식을 바꾸면 그 규칙의 `version`을 올립니다. 실측 순환(`benchmarks/realworld_loop.py`)은 고정 커밋 프로젝트의 지적이 달라졌는데 판 번호가 그대로인 규칙을 종료코드 3으로 알립니다.
 4. `uv run iron-laws check .`가 통과하는지 확인합니다.
 5. 사용자에게 보이는 변경은 `CHANGELOG.md`의 `[Unreleased]`에 적습니다.
 6. Pull Request를 올립니다.

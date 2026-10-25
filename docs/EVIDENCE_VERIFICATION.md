@@ -2,7 +2,7 @@
 
 점검 보고서와 검증 기록(Receipt) 안의 **지적·근거 장부·승인·신뢰 지표**가 서로 맞는지 확인합니다. 점검 엔진과 별도의 코드(`src/iron_laws/evidence/verifier.py`)이며, 표준 라이브러리만 쓰고 규칙·분석 엔진·장부 작성 코드를 부르지 않습니다.
 
-- 읽는 보고서 형식: 1.3·1.4·1.5·1.6. 그 밖의 형식은 통과가 아니라 판정 불가(종료코드 2)입니다.
+- 읽는 보고서 형식: 1.3·1.4·1.5·1.6·1.7·1.8. 그 밖의 형식은 통과가 아니라 판정 불가(종료코드 2)입니다.
 - 먼저 객체·목록·숫자·비율 같은 형식을 검사하고, 형식이 틀린 입력은 오류 추적 대신 판정 불가로 돌려줍니다. 형식이 맞아도 내용 사이의 모순은 따로 검사합니다.
 - 보고서에 적힌 계산 결과를 그대로 믿지 않고, 참조·집계·상태·실행 식별자를 직접 다시 계산해 비교합니다.
 - 1.5 이후 보고서에서는 지적에 붙은 기준 항목(OWASP 등)이 보고서에 적힌 기준 목록·판본을 가리키는지, 대응표 확인 여부가 그 기준의 값과 같은지도 봅니다.
@@ -55,6 +55,7 @@
 | 장부 지점 | `point.suppression_too_wide` `point.excluded_unexplained` `point.file_not_analyzed` `point.id_duplicate` | 다른 규칙으로 번진 억제, 이유 없는 정책 제외, 분석 대상이 아닌 파일의 지점, 중복 id |
 | 집계·상태 | `tally.total` `tally.in_scope` `tally.by_state` `ledger.blocker_missing` `ledger.blocker_extra` `ledger.unclassified_mismatch` `ledger.unclassified_not_blocked` `ledger.status_mismatch` | 지점 목록과 집계의 불일치, 차단 상태 지점이 사유 목록에서 빠지거나 근거 없는 사유가 남음, 점검하지 못한 변경 파일이 사유에 없음, 사유·분석 파일에서 계산한 상태와 다름(비적용이나 충족이 차단을 가린 경우) |
 | 통과 | `pass.incomplete_passed` `pass.contract_unmet_passed` `pass.gate_exceeded_passed` `pass.unexplained` `summary.total_mismatch` `summary.severity_mismatch` | 불완전한 점검·미충족 계약(차단 모드)·상한을 넘은 점검이 통과로 표시됨, 실패 기준 이상의 지적 유무와 맞지 않는 통과 표시, 지적 수 불일치 |
+| 파일 목록 대조(1.8) | `coverage.shape` `coverage.count_mismatch` `coverage.unexplained_mismatch` `coverage.unexplained_hidden` | `metadata.file_coverage` 형식 오류, 상태별 수의 합이 목록 수와 다름, 사유 없이 빠진 파일 목록과 수가 다름, 사유 없이 빠진 파일이 있는데 `coverage` 진단이 없음 |
 | 신뢰 지표(1.4) | `trust.unknown_rate_mismatch` `trust.pairs_invalid` `trust.unverified_rate_mismatch` `trust.gate_unknown` `trust.gate_mismatch` `trust.grade_unknown` | 장부에서 다시 계산한 `analysis_unknown_rate`와 다른 값, 미검증 조합 수가 평가한 조합 수보다 큼, 비율이 조합 수와 다름, 상한과 지표의 비교 결과가 `gate_exceeded`와 다름, 알 수 없는 검증 등급 |
 | 승인 | `approval.valid_without_finding` `approval.valid_other_rule` `approval.valid_fingerprint_differs` `approval.valid_clone_inherited` `approval.valid_not_applied` `approval.approved_without_valid_row` `approval.valid_duplicate` | 이번 실행의 지적이 아닌 승인, 지문·규칙이 다른 승인, 원본이 남아 있는데 복제본이 물려받은 승인 |
 | 승인 | `approval.valid_expired` `approval.expiry_invalid` `approval.valid_other_contract` `approval.valid_other_config` | 만료된 승인, 날짜가 아닌 유효기간, 다른 계약·설정에서 한 승인 |

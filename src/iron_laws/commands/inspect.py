@@ -291,8 +291,9 @@ def spec_draft_command(
     llm_cmd: str | None = typer.Option(None, "--llm-cmd", help="초안 보강에 쓸 LLM 명령(표준 입력으로 지시문을 받아 YAML을 출력). 예: \"claude -p\". 지정하지 않으면 코드 분석 후보만 씁니다"),
 ):
     """
-    코드에서 소스·싱크·정제 함수 후보를 찾아 명세 초안을 만듭니다. 초안의 예제(positive·negative)는 비어 있으며,
+    코드에서 소스·싱크·정제 함수 후보를 찾아 명세 초안을 만듭니다. 코드에서 찾은 후보의 예제(positive·negative)는 비어 있으며,
     사람이 검토해 채우고 `iron-laws spec check`가 통과해야 설정 policies.custom_spec으로 불러올 수 있습니다.
+    --llm-cmd의 제안은 LLM이 낸 예제로 바로 판정해, 어긋나면 rejected로 빼고 정제 함수는 예제가 맞아도 사람 확인을 남깁니다.
     """
     import shlex
     import subprocess
@@ -300,7 +301,7 @@ def spec_draft_command(
     import yaml
 
     from iron_laws.core.scanner import AuditScanner
-    from iron_laws.core.spec_draft import build_draft, llm_prompt, merge_llm
+    from iron_laws.core.spec_draft import build_draft, check_llm_entries, llm_prompt, merge_llm
 
     sources = AuditScanner(path)._read_sources()
     draft = build_draft(sources)
@@ -312,7 +313,11 @@ def spec_draft_command(
             err.print(f"[bold red]LLM 명령을 실행하지 못했습니다: {escape(str(e))}[/bold red]")
             raise typer.Exit(2) from e
         added = merge_llm(draft, done.stdout)
-        err.print(f"[dim]LLM 제안 {added}건을 초안에 더했습니다(origin: llm). 사람이 검토해야 합니다.[/dim]")
+        checked = check_llm_entries(draft)
+        err.print(
+            f"[dim]LLM 제안 {added}건: 예제 통과 {checked['passed']}, 정제 함수라 사람 확인 필요 {checked['needs_review']}, "
+            f"예제 불일치로 제외 {checked['rejected']}(rejected 목록). 통과한 항목도 사람이 검토해야 합니다.[/dim]"
+        )
     text = "# 오철칙 사용자 명세 초안: 각 항목을 검토하고 positive(지적되어야 하는 코드)·negative(지적되지 않아야 하는 코드)를 채우십시오.\n"
     text += yaml.safe_dump(draft, allow_unicode=True, sort_keys=False)
     _write_or_print(text, output, "명세 초안")

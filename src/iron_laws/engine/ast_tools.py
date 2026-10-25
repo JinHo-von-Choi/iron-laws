@@ -242,10 +242,15 @@ def iter_calls(src: SourceFile) -> Iterator[Call]:
 
 def _collect_calls(src: SourceFile) -> list[Call]:
     types = CALL_TYPES.get(src.lang, set()) if src.lang else set()
+    canonical = None
+    if src.lang is Lang.PYTHON:
+        from iron_laws.engine.python_bindings import canonical_callee as canonical
     calls = []
     for node in src.nodes:
         if node.type in types:
             callee = re.sub(r"\s+", "", _callee_text(src, node))
+            if canonical is not None:
+                callee = canonical(src, callee, node.start_point[0] + 1)
             calls.append(Call(node, callee, _args_of(node)))
     return calls
 

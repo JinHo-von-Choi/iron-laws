@@ -5,6 +5,34 @@
 
 ## [Unreleased]
 
+## [1.11.0] - 2026-10-26
+
+### Changed
+- 보고서 형식 버전을 1.8로 올린다. `metadata.file_coverage`와 `review_opinion`의 `basis`·`check`를 추가했고, 독립 검증기가 상태별 수의 합과 사유 없이 빠진 파일의 진단 여부를 대조한다.
+- Python에서 위험 호출을 정의한 표준 모듈(os, os.path, subprocess, shutil, pickle, marshal, shelve, yaml, sqlite3, commands, pty)의 별칭, 가져온 이름, 변수에 담은 함수, 상수 이름의 `getattr`, `__import__`·`importlib.import_module`로 부른 호출을 모듈 경로로 풀어 찾는다(`import os as o` → `o.system`은 `os.system`, `from pickle import loads` → `loads`는 `pickle.loads`, `run = os.system` 뒤의 `run`은 `os.system`). 그 이름이 매개변수나 대입으로 다시 묶였으면 풀지 않는다. 판정이 바뀐 규칙의 판 번호를 올린다: IL-502는 3, IL-504·IL-515·IL-516·IL-518·PERF-105는 2.
+- 흐름 해석이 코드만으로 정해지는 값을 계산한다. 조건이 상수인 if·조건식, 선택값이 상수인 switch(break까지의 이어짐 포함)와 Python `match`는 실행되는 갈래만 따라간다. 같은 블록에서 만들고 add·put(상수 키)·remove·clear만 한 지역 List·Map(Python은 list·dict·configparser)에서 상수 위치·키로 꺼낸 리터럴, 같은 파일에 하나뿐인 메서드가 돌려주는 상수는 깨끗한 값으로 본다. 값이 조금이라도 불확실하면(다시 대입, 매개변수, 다른 메서드 호출, 갈래·반복 안의 변경) 지금처럼 모든 갈래를 따라간다. 외부 입력 추적을 쓰는 규칙의 판 번호를 올린다: IL-501·IL-508은 3, IL-503·IL-505·IL-506·IL-507·IL-511·IL-512·IL-513·IL-514·IL-526·IL-527·IL-533·IL-104·IL-107·IL-112·AI-112·AI-113·AI-115·AIA-103·AIA-104·AIA-105·AIA-108은 2.
+- 명령 실행·SQL 규칙이 검증으로 인정하는 조건을 넓힌다. 허용 목록 검사에 더해 문자 종류 검사(`isalnum`·`isalpha`·`isdigit`·`isdecimal`·`isnumeric`·`isidentifier`)와 영문·숫자·밑줄·하이픈만 허용하는 `re.fullmatch`(또는 끝이 고정된 `re.match`) 검사를 거부 분기가 실행을 끊고 값이 바뀌지 않을 때 인정한다.
+
+### Added
+- `iron-laws guidelines export`: 규칙을 코딩 에이전트 지침(CLAUDE.md·AGENTS.md에 붙여 넣을 마크다운)으로 내보낸다. 줄마다 그 지침을 무엇이 확인하는지(차단·실행 검증·보고)와 양성·음성 시험으로 검증된 언어를 붙인다.
+- `iron-laws guidelines check <지침 파일>`: 지침 파일의 지시 문장마다 대응하는 규칙과 강제 수단을 보여 준다. 대응 규칙이 없는 문장은 '강제 수단 없음'으로 표시한다. `--fail-on-unenforced`를 주면 그런 문장이 있을 때 종료코드 1이다.
+- 승인 기록 서명: `approvals add --sign-key`로 승인에 OpenSSH 서명(이름공간 `iron-laws-approval`)을 붙인다. `check`·`audit`·`review-bundle`·`approvals verify`에 `--allowed-signers`를 주면 서명이 틀린 승인을, `--require-signed-approvals`(`approvals verify`는 `--require-signed`)를 더하면 서명 없는 승인도 `invalid`로 보고 쓰지 않는다. 서명 대상은 순번·앞 기록 해시를 뺀 승인 내용이라 보존기간 정리 뒤에도 유지된다.
+- `approvals checkpoint`: 기록 수와 마지막 해시를 서명해 남긴다. `approvals verify --checkpoint`가 체크포인트 이전 기록의 삭제·되돌리기·사슬 재작성을 알아챈다.
+- `--build-manifest auto|git|tsc|go|file:<목록>`: 오철칙 밖에서 얻은 파일 목록과 분석한 파일을 대조해 파일마다 상태(분석·건너뜀·제외 설정·점검하지 않는 확장자·점검 폴더 밖·파일 없음·사유 없이 빠짐)를 보고서 `metadata.file_coverage`에 남긴다. 사유 없이 빠진 파일이 있으면 경고하고, `--require-full-coverage`면 점검을 끝내지 못한 것으로 본다(종료코드 2). 목록을 만들지 못하면 대조하지 않았다고 밝힌다.
+- 회귀시험 결과 봉인: harness 결과 줄에 실행마다 새로 만든 봉인값을 붙이고, 봉인값이 없는 결과는 받아들이지 않는다. 수정본 코드가 결과 줄을 흉내 내거나 출력을 바꿔 통과를 꾸미는 경우를 막는다.
+- 명령 실행 계열 회귀시험은 공격 입력에 카나리아 명령을 붙인 호출을 한 번 따로 해서, 수정본이 기록 장치를 우회해 실제 셸을 실행하면 결함 재현으로 판정한다. 기록 장치를 저수준 경로(`posix.system`, `os.open`, `io.FileIO`, `_io.open`, `sqlite3.dbapi2`)에도 건다.
+- `--triage-model`의 `likely_false` 의견에 근거(`basis`: constant·sanitized_by·unreachable·not_external, 줄, 이름)를 요구하고, 코드와 엔진의 입력 경로로 대조한 결과를 `review_opinion.check`(corroborated·unsupported·contradicted)에 남긴다. 판정은 바꾸지 않는다.
+- `spec draft --llm-cmd`: LLM이 항목과 함께 낸 양성·음성 예로 항목을 바로 판정한다. 예가 어긋나거나 없는 항목은 `rejected`로 빼고, 소스·싱크는 예가 맞으면 예를 채운다. 정제 함수는 예가 맞아도 `proposed_positive`·`proposed_negative`에만 두어 사람이 옮기기 전에는 불러오지 않는다.
+- 근거 장부를 Java·JavaScript·TypeScript로 넓힌다. 계약의 기본 언어가 python·java·javascript·typescript·tsx가 된다. Python 밖의 언어는 리터럴·상수 조건·지역 컬렉션·같은 파일 도우미의 반환값으로 정해지는 값만 닫힌 값으로 보고 그 밖은 '확인 못 함'으로 남긴다. SQL 지점은 DB 객체에서 부른 호출과 SQL 실행에만 쓰는 이름으로 한정한다(라우터 `app.get`, 설정 `config.get`은 지점이 아니다).
+- 마크다운 보고서의 검사 공백 장부에 같은 위험 함수를 여러 곳에서 부르는 경우의 표(곳 수, 근거 확인, 지적, 확인 못 함)를 둔다.
+- 실측 순환(`benchmarks/realworld_loop.py`) 기록에 규칙별 판 번호를 남긴다. 지적이 달라졌는데 판 번호가 기록과 같은 규칙은 대기열 맨 앞에 적고 종료코드 3으로 끝난다.
+
+### Fixed
+- 회귀시험 하네스의 오판: 경로 계열의 가짜 `os.stat`이 `None`을 돌려 `os.path.isfile` 검사를 하는 올바른 수정이 실패로 나오던 것, 가짜 `os.open`이 문자 장치를 열어 `S_ISREG` 검사가 실패하던 것, `os.fdopen`이 넘긴 파일 기술자 번호를 경로로 기록하던 것을 고친다. 명세에 허용 폴더가 없으면 같은 코드에 정상 입력을 먼저 넣어 접근한 폴더를 허용 폴더로 쓴다(코드가 정한 기준 폴더 안의 접근을 이탈로 보지 않는다).
+- 회귀시험 변형 입력을 원본에서 재현되지 않는 것까지 수정본에 돌린다. `../`를 한 번만 지우는 필터처럼 수정이 원본에 없던 우회 입력을 만드는 경우를 실패로 판정한다. 변형 입력에 공백 없는 구분자·줄바꿈·`....//`·URL 인코딩·대소문자 섞인 키워드·주석 공백을 더한다.
+- 정상 입력에서 원본과 수정본이 위험 호출에 넘긴 내용(명령·경로·SQL)을 비교해 회귀시험 근거에 남긴다. 명세의 `expect.benign_behavior: require`면 달라졌을 때 실패로 본다.
+- 같은 지적을 철회한 뒤 같은 초에 다시 승인하면 승인 ID가 겹쳐 철회 기록이 두 승인을 함께 가리키던 것을 고친다. 겹치면 순번을 섞어 새 ID를 만든다.
+
 ## [1.10.0] - 2026-10-25
 
 ### Changed

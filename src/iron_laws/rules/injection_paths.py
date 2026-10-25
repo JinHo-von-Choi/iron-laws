@@ -56,7 +56,7 @@ from iron_laws.standards import mois_ref
 
 
 class PathTraversalRule(SinkRule):
-    version = 2
+    version = 3
     rule_id = "IL-502"
     taint_ctx = Ctx.PATH
     name = "경로 조작 및 자원 삽입 (Path Traversal) 탐지"
@@ -273,6 +273,7 @@ class PathTraversalRule(SinkRule):
 
 
 class UploadFilenameRule(SinkRule):
+    version = 2
     rule_id = "IL-513"
     taint_ctx = Ctx.PATH
     name = "위험한 형식 파일 업로드 (클라이언트 파일명 사용)"

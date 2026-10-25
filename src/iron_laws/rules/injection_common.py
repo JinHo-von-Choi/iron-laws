@@ -115,6 +115,28 @@ class SinkRule(BaseRule):
             return bool(defs) and all(self._literal_collection(src, d, depth + 1) for d in defs)
         return False
 
+    @staticmethod
+    def _character_check(src: SourceFile, cond: Node) -> str | None:
+        """`x.isalnum()`·`x.isdigit()` 같은 문자 종류 검사나 `re.fullmatch(r'[A-Za-z0-9_-]+', x)` 검사이면 검사한 변수 이름.
+        이런 검사를 통과한 값에는 따옴표·공백·셸 메타문자·경로 구분자가 없다."""
+        if cond.type != "call":
+            return None
+        function, args = cond.child_by_field_name("function"), cond.child_by_field_name("arguments")
+        if function is None or args is None:
+            return None
+        if function.type == "attribute":
+            target, attribute = function.child_by_field_name("object"), function.child_by_field_name("attribute")
+            if target is not None and target.type == "identifier" and attribute is not None and not args.named_children \
+                    and src.text_of(attribute) in SAFE_CHARACTER_PREDICATES:
+                return src.text_of(target)
+            if src.text_of(function) in ("re.fullmatch", "re.match") and len(args.named_children) >= 2:
+                pattern, value = args.named_children[0], args.named_children[1]
+                body = re.sub(r"^[rRbB]*['\"]|['\"]$", "", src.text_of(pattern))
+                anchored = src.text_of(function) == "re.fullmatch" or body.endswith("$") or body.endswith("\\Z")
+                if value.type == "identifier" and pattern.type == "string" and anchored and SAFE_CHARACTER_PATTERN.fullmatch(body.lstrip("^").rstrip("$")):
+                    return src.text_of(value)
+        return None
+
     def _membership(self, src: SourceFile, cond: Node) -> tuple[str, bool] | None:
         """`x in 허용목록` / `x not in 허용목록` 형태의 조건이면 (변수 이름, 부정 여부)"""
         negated = False
@@ -122,6 +144,9 @@ class SinkRule(BaseRule):
             negated, cond = True, cond.named_children[0]
         while cond.type == "parenthesized_expression" and cond.named_children:
             cond = cond.named_children[0]
+        checked = self._character_check(src, cond)
+        if checked is not None:
+            return checked, negated  # 안전한 문자만 허용하는 검사: 참이면 통과, 부정이면 거부
         if cond.type != "comparison_operator" or len(cond.named_children) != 2:
             return None
         left, right = cond.named_children
@@ -238,6 +263,9 @@ class SinkRule(BaseRule):
         return found
 
 
+SAFE_CHARACTER_PREDICATES = frozenset({"isalnum", "isalpha", "isdigit", "isdecimal", "isnumeric", "isidentifier"})
+# 허용하는 글자가 영문·숫자·밑줄·하이픈뿐인 정규식(따옴표·공백·점·슬래시·셸 메타문자가 없다)
+SAFE_CHARACTER_PATTERN = re.compile(r"(?:\[(?:A-Z|a-z|0-9|\\w|\\d|_|-)+\]|\\w|\\d)(?:[+*]|\{\d+(?:,\d*)?\})")
 DB_RECEIVER_RE = re.compile(
     r"(?i)(stmt|statement|ps\b|prepared|conn|connection|cursor|\bcur\b|\bdb\b|jdbc|template|session|entitymanager|\bem\b|repo|dao|query|sql|pool|client|knex|prisma|sequelize|mongo|collection|database|\bcmd\b|command|\bdbo\b)"
 )

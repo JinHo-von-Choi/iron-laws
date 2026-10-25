@@ -1,5 +1,5 @@
 {
-  "tool_version": "1.6.0",
+  "tool_version": "1.10.0",
   "dataset_commit": "8b67a88d73b2594570fc21150705283de884620b",
   "mode": "all",
   "command": "benchmarks/owasp_benchmark.py <BenchmarkJava 폴더> all",
@@ -8,10 +8,10 @@
     "cmdi": {
       "TP": 64,
       "FN": 62,
-      "FP": 42,
-      "TN": 83,
+      "FP": 0,
+      "TN": 125,
       "TPR": 0.5079,
-      "FPR": 0.336
+      "FPR": 0.0
     },
     "crypto": {
       "TP": 130,
@@ -32,18 +32,18 @@
     "ldapi": {
       "TP": 27,
       "FN": 0,
-      "FP": 32,
-      "TN": 0,
+      "FP": 15,
+      "TN": 17,
       "TPR": 1.0,
-      "FPR": 1.0
+      "FPR": 0.4688
     },
     "pathtraver": {
       "TP": 118,
       "FN": 15,
-      "FP": 68,
-      "TN": 67,
+      "FP": 0,
+      "TN": 135,
       "TPR": 0.8872,
-      "FPR": 0.5037
+      "FPR": 0.0
     },
     "securecookie": {
       "TP": 36,
@@ -56,18 +56,18 @@
     "sqli": {
       "TP": 218,
       "FN": 54,
-      "FP": 171,
-      "TN": 61,
+      "FP": 57,
+      "TN": 175,
       "TPR": 0.8015,
-      "FPR": 0.7371
+      "FPR": 0.2457
     },
     "trustbound": {
       "TP": 65,
       "FN": 18,
-      "FP": 28,
-      "TN": 15,
+      "FP": 0,
+      "TN": 43,
       "TPR": 0.7831,
-      "FPR": 0.6512
+      "FPR": 0.0
     },
     "weakrand": {
       "TP": 0,
@@ -80,18 +80,18 @@
     "xpathi": {
       "TP": 15,
       "FN": 0,
-      "FP": 20,
-      "TN": 0,
+      "FP": 4,
+      "TN": 16,
       "TPR": 1.0,
-      "FPR": 1.0
+      "FPR": 0.2
     },
     "xss": {
       "TP": 220,
       "FN": 26,
-      "FP": 75,
-      "TN": 134,
+      "FP": 12,
+      "TN": 197,
       "TPR": 0.8943,
-      "FPR": 0.3589
+      "FPR": 0.0574
     }
   }
 }

@@ -130,7 +130,7 @@ def generate_mois_report(report: AuditReport, rules) -> str:
 def write_mois_docx(report: AuditReport, rules, path: Path) -> None:
     try:
         from docx import Document
-    except ImportError as e:  # iron-laws: ignore[IL-301] 선택 의존성이 없을 때는 설치 방법을 알리는 오류로 바꿔 던진다
+    except ImportError as e:
         raise RuntimeError("docx 출력에는 선택 의존성이 필요합니다: pip install 'iron-laws[docx]'") from e
     rows = build_rows(report, rules)
     doc = Document()
@@ -166,7 +166,7 @@ def write_mois_hwpx(report: AuditReport, rules, path: Path) -> None:
     """같은 내용을 한글 문서(HWPX, OWPML)로 쓴다. 한글이 없어도 만들 수 있다."""
     try:
         from hwpx import HwpxDocument
-    except ImportError as e:  # iron-laws: ignore[IL-301] 선택 의존성이 없을 때는 설치 방법을 알리는 오류로 바꿔 던진다
+    except ImportError as e:
         raise RuntimeError("hwpx 출력에는 선택 의존성이 필요합니다: pip install 'iron-laws[hwpx]'") from e
     rows = build_rows(report, rules)
     doc = HwpxDocument.new()

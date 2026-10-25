@@ -25,6 +25,7 @@ def _all_text(project: ProjectContext) -> str:
 
 
 class UploadVerificationRule(BaseRule):
+    version = 2
     rule_id = "IL-530"
     name = "업로드 파일 검증 체계 미흡 (콘텐츠 판정·확장자 허용 목록)"
     iron_law = IronLaw.LAW_5
@@ -46,16 +47,19 @@ class UploadVerificationRule(BaseRule):
     magic_libs = re.compile(
         r"(?i)\bTika\b|jmimemagic|python-?magic|\bimport\s+magic\b|\bfiletype\b|\bimghdr\b|file-type|libmagic|DetectContentType|MimeDetective|FileSignatures|FileTypeChecker|sniff"
     )
+    # JS 패키지는 이름이 import 문자열 안에만 있어 따로 찾는다
+    magic_imports = re.compile(r"""(?:require\(\s*|\bfrom\s+|\bimport\s+)["'](?:file-type|mmmagic|magic-bytes\.js|@?[\w./-]*filetype)["']""")
     ext_allow = re.compile(
         r"(?i)allowed_?(ext|types|mime)|whitelist|allowlist|\bALLOWED\b|endsWith\(|splitext|getExtension|GetExtension|extname|FilenameUtils|\.suffix\b|mimetypes|fileFilter|accept\b"
     )
 
     def check_project(self, project: ProjectContext) -> list[Violation]:
-        magic_present = bool(self.magic_libs.search(_all_text(project)))
+        magic_present = any(self._uses_magic_lib(src) for src in project.source_files())
         found: list[Violation] = []
         for src in project.source_files():
             text = src.code_text
-            if not self.upload_marker.search(text) or not self.save_marker.search(text):
+            # 저장 호출은 문자열 밖에 있어야 실제 호출이다(표시어를 정규식 문자열로 정의한 파일을 거른다)
+            if not self.upload_marker.search(text) or not self.save_marker.search(src.code_text_without_strings):
                 continue
             first = self.upload_marker.search(text)
             marker_line = _line_of(text, first.start()) if first else 1
@@ -81,6 +85,10 @@ class UploadVerificationRule(BaseRule):
                     )
                 )
         return found
+
+    def _uses_magic_lib(self, src: SourceFile) -> bool:
+        """운영 코드에서 내용 판정 라이브러리를 실제로 쓰는지 본다. 주석·문자열·시험 코드에 이름만 있는 경우는 사용이 아니다."""
+        return bool(self.magic_libs.search(src.code_text_without_strings) or self.magic_imports.search(src.code_text))
 
 
 LOGIN_PATTERNS = [

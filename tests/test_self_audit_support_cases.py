@@ -18,6 +18,9 @@ CASES = [
     ('mkdir-external', 'IL-502', {'a.py': 'from pathlib import Path\nfrom flask import request\ndef create():\n    target=Path("/srv") / request.args["p"]\n    target.mkdir()\n'}, {'a.py': [5]}),
     ('mkdir-closed', 'IL-502', {'a.py': 'from pathlib import Path\ndef create():\n    Path("/srv/fixed").mkdir()\n'}, {}),
     ('ldap-external', 'IL-508', {'a.py': 'from flask import request\ndef search(conn):\n    conn.search("(uid=" + request.args["q"])\n'}, {'a.py': [3]}),
+    ('report-lookup-loop', 'ARC-212', {'a.py': 'def load(report, rows):\n    for row in rows:\n        report.get(row)\n'}, {}),
+    ('weak-hash-path-string', 'IL-102', {'a.py': 'FILES = ["lessons/challenge7/MD5.java"]\n'}, {}),
+    ('weak-hash-call', 'IL-102', {'a.py': 'import hashlib\ndef digest(data):\n    return hashlib.md5(data).hexdigest()\n'}, {'a.py': [3]}),
     ('regex-ldap-shaped', 'IL-508', {'a.py': 'import re as rx\nfrom flask import request\ndef search():\n    rx.search("(uid=" + request.args["q"])\n'}, {}),
 ]
 

@@ -289,14 +289,14 @@ def parse_result(excerpt_source: str) -> dict[str, Any] | None:
                 parsed = json.loads(line[len(RESULT_PREFIX) :])
             except json.JSONDecodeError:  # iron-laws: ignore[IL-301] 해석하지 못한 결과 줄은 None으로 알리고 호출부가 '결과를 내지 못했다' 오류로 기록한다
                 return None
-            if not isinstance(parsed, dict):
+            if not isinstance(parsed, dict):  # iron-laws: ignore[IL-307] 결과 줄 형식이 아니면 None으로 알리고 호출부가 결과를 내지 못했다는 오류로 기록한다
                 return None
-            if parsed.get("outcome") not in ("passed", "defect_reproduced", "control_failed", "error"):
+            if parsed.get("outcome") not in ("passed", "defect_reproduced", "control_failed", "error"):  # iron-laws: ignore[IL-307] 결과 줄 형식이 아니면 None으로 알리고 호출부가 결과를 내지 못했다는 오류로 기록한다
                 return None
-            if not isinstance(parsed.get("reason", ""), str):
+            if not isinstance(parsed.get("reason", ""), str):  # iron-laws: ignore[IL-307] 결과 줄 형식이 아니면 None으로 알리고 호출부가 결과를 내지 못했다는 오류로 기록한다
                 return None
             count = parsed.get("sink_calls", 0)
-            if type(count) is not int or count < 0:
+            if type(count) is not int or count < 0:  # iron-laws: ignore[IL-307] 결과 줄 형식이 아니면 None으로 알리고 호출부가 결과를 내지 못했다는 오류로 기록한다
                 return None
             return parsed
     return None
@@ -470,7 +470,7 @@ def _variant_phase(
     return _VariantOutcome({"checked": checked, "inapplicable": inapplicable, "total": len(spec.input.variants)})
 
 
-def _check(result: CheckState, reason: str = "", executed: bool = True, **evidence: Any) -> CheckResult:
+def _check(result: CheckState, reason: str = "", executed: bool = True, **evidence: Any) -> CheckResult:  # iron-laws: ignore[TYP-302] 검사마다 다른 근거 값을 그대로 담는 키워드 인자다
     return CheckResult(id="regression_test", title="결함을 구별하는 회귀시험(원본 실패·후보 통과·mutant 재실패)", result=result, reason=reason, required=True, executed=executed, evidence=evidence)
 
 

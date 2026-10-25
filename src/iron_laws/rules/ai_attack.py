@@ -148,7 +148,7 @@ class AgentRuleFileRule(AiAttackRule):
             raw = m.group(0)
             try:
                 decoded = base64.b64decode(raw + "=" * (-len(raw) % 4), validate=True).decode("utf-8")
-            except (binascii.Error, UnicodeDecodeError, ValueError):
+            except (binascii.Error, UnicodeDecodeError, ValueError):  # iron-laws: ignore[IL-301] base64로 풀리지 않는 문자열은 숨은 지시문 후보가 아니다
                 continue
             printable = sum(1 for ch in decoded if ch.isprintable() or ch in "\n\t")
             if decoded and printable / len(decoded) > 0.9 and BLOB_WORDS.search(decoded):

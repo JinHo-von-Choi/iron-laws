@@ -56,7 +56,7 @@ def _config_weakened(original: str, candidate: str) -> list[str]:
     try:
         before = yaml.safe_load(original) or {}
         after = yaml.safe_load(candidate) or {}
-    except yaml.YAMLError:
+    except yaml.YAMLError:  # iron-laws: ignore[IL-301] 설정을 해석하지 못하면 판단 불가 사유를 돌려 우회 검사 실패로 기록한다
         return ["설정 파일을 해석할 수 없어 약화 여부를 판단하지 못했다"]
     if not isinstance(before, dict) or not isinstance(after, dict):
         return ["설정 파일 구조가 바뀌었다"]

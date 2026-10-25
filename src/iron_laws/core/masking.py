@@ -12,8 +12,9 @@ ASSIGN_RE = re.compile(r"""(?P<head>^\s*[\w.\-\[\]"']+\s*[:=]\s*)(?P<value>[^\s#
 TOKEN_RE = re.compile(r"[A-Za-z0-9_\-+/=]{20,}")
 
 
-def mask_secrets(text: str) -> str:
-    """따옴표 안의 값, `KEY=값` 형태의 값, 토큰처럼 긴 문자열을 가린다. 변수 이름과 구조는 남긴다."""
-    masked = QUOTED_RE.sub(lambda m: f"{m.group('q')}{MASK}{m.group('q')}", text)
+def mask_secrets(text: str, keep: frozenset[str] | set[str] = frozenset()) -> str:
+    """따옴표 안의 값, `KEY=값` 형태의 값, 토큰처럼 긴 문자열을 가린다. 변수 이름과 구조는 남긴다.
+    keep은 규칙이 비밀이 아니라고 판정해 보여 줄 따옴표 안 값이다."""
+    masked = QUOTED_RE.sub(lambda m: m.group(0) if m.group("body") in keep else f"{m.group('q')}{MASK}{m.group('q')}", text)
     masked = ASSIGN_RE.sub(lambda m: f"{m.group('head')}{MASK}{m.group('tail')}", masked)
     return TOKEN_RE.sub(MASK, masked)

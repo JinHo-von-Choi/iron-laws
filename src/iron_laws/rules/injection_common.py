@@ -1,5 +1,4 @@
 """injection 계열의 공유 AST·판정 기반."""
-# iron-laws: ignore-file[IL-510] CSRF 해제 구문을 탐지하는 패턴 정의
 import re
 
 from tree_sitter import Node

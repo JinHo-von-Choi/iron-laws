@@ -231,7 +231,7 @@ def _freeze_policies(
     if spec_source is not None:
         try:
             spec_rel = spec_source.resolve().relative_to(original).as_posix()
-        except ValueError:
+        except ValueError:  # iron-laws: ignore[IL-301] 명세가 원본 저장소 밖에 있으면 원본 경로를 그대로 쓴다
             spec_rel = None  # 명세가 원본 저장소 밖에 있으면 원본 경로를 그대로 쓴다
         if spec_rel is not None:
             spec_source = orig_ro / spec_rel  # 명세가 원본 저장소 안에 있으면 후보가 바꾼 것이 아니라 원본 스냅샷의 것을 쓴다

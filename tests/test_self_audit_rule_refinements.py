@@ -166,3 +166,147 @@ def test_imported_typer_app_is_resolved_without_path_exemption(tmp_path):
     from tests.helpers import scan_files
     files = {'common.py': 'import typer\napp=typer.Typer()\n', 'commands.py': 'from common import app\n@app.command()\ndef entry(a,b,c,d,e,f,g,h,i,j):\n    return a\n'}
     assert not [v for v in scan_files(tmp_path, files) if v.rule_id == 'ARC-201']
+
+
+@pytest.mark.parametrize('receiver, expected', [
+    ('report', False),
+    ('reporters', False),
+    ('repo', True),
+    ('repos', True),
+    ('repo_client', True),
+    ('repoClient', True),
+    ('repositories', True),
+    ('userRepository', True),
+])
+def test_db_receiver_name_boundary(receiver, expected):
+    src = SourceFile(Path('app.py'), f'def load({receiver}, rows):\n    for row in rows:\n        {receiver}.find(row)\n')
+    assert bool(DbInLoopRule().check(src)) is expected
+
+
+def test_report_lookups_are_not_db_queries():
+    from iron_laws.rules.performance import ManyQueriesRule
+    body = ''.join(f'    report.get("k{i}")\n' for i in range(6))
+    assert not ManyQueriesRule().check(SourceFile(Path('app.py'), 'def summarize(report):\n' + body))
+    assert ManyQueriesRule().check(SourceFile(Path('app.py'), 'def summarize(repo):\n' + body.replace('report', 'repo')))
+
+
+@pytest.mark.parametrize('name, expected', [
+    ('_assignment_hit', False),
+    ('_sequential_by_design', False),
+    ('_signature_hit', False),
+    ('checkout', False),
+    ('read_payload', False),
+    ('verify_sign', True),
+    ('checkPermission', True),
+    ('check_order', True),
+    ('revalidate', True),
+    ('is_token_expired', True),
+    ('process_payment', True),
+    ('tryparse', True),
+    ('safedecode', True),
+    ('verify_hmac_signature', True),
+    ('webhookSignature', True),
+    ('build_signature', False),
+])
+def test_failure_default_sensitive_name_tokens(name, expected):
+    from iron_laws.rules.errors import FailureAsDefaultRule
+    src = SourceFile(Path('app.py'), f'def {name}(data):\n    if data.size > 10:\n        return None\n    return data\n')
+    assert bool(FailureAsDefaultRule().check(src)) is expected
+
+
+@pytest.mark.parametrize('annotation, expected', [
+    ('Violation | None', False),
+    ('Optional[Violation]', False),
+    ('dict | None', True),
+])
+def test_failure_default_optional_finding_result(annotation, expected):
+    from iron_laws.rules.errors import FailureAsDefaultRule
+    src = SourceFile(Path('app.py'), f'def check_handler(node) -> {annotation}:\n    if node.kind != "call":\n        return None\n    return make(node)\n')
+    assert bool(FailureAsDefaultRule().check(src)) is expected
+
+
+@pytest.mark.parametrize('handler, expected', [
+    ('        result.problems.append((1, "bad date"))\n        continue\n', False),
+    ('        index.config_errors.append(path)\n        continue\n', False),
+    ('        self.result.notes.append(f"cannot read {path}")\n        continue\n', False),
+    ('        missing.append(path)\n        continue\n', False),
+    ('        return [self.at_line(src, 1, "cannot parse")]\n', False),
+    ('        found.append(self.at_line(src, 1, "cannot parse"))\n        continue\n', False),
+    ('        cache.append(path)\n        continue\n', True),
+    ('        return ["fallback value"]\n', True),
+    ('        unused_errors.append(path)\n        continue\n', True),
+])
+def test_swallowed_exception_accepts_reported_failure(handler, expected):
+    from iron_laws.rules.errors import SwallowedExceptionRule
+    code = (
+        'def collect(self, src, paths, result, index):\n'
+        '    missing = []\n'
+        '    found = []\n'
+        '    for path in paths:\n'
+        '        try:\n'
+        '            load(path)\n'
+        '        except ValueError:\n'
+        + handler.replace('        ', '            ', 1).replace('\n        ', '\n            ')
+        + '    return missing, found\n'
+    )
+    assert bool(SwallowedExceptionRule().check(SourceFile(Path('app.py'), code))) is expected
+
+
+@pytest.mark.parametrize('path, line, expected', [
+    ('data.json', '  "src/main/java/org/app/challenge7/MD5.java",', False),
+    ('data.json', '  "lib/SHA1.py",', False),
+    ('app.py', 'import hashlib\nh = hashlib.md5(data)', True),
+    ('App.cs', 'var h = MD5.Create();', True),
+    ('app.py', 'import hashlib\nload("lib/MD5.java"); h = hashlib.md5(data)', True),
+])
+def test_weak_hash_ignores_file_path_strings(path, line, expected):
+    from iron_laws.rules.secrets_crypto import InsecureCryptoRule
+    assert bool(InsecureCryptoRule().check(SourceFile(Path(path), line + '\n'))) is expected
+
+
+def test_upload_rule_ignores_marker_strings(tmp_path):
+    from tests.helpers import lines_of, scan_files
+    files = {'rules.py': 'UPLOAD_MARKERS = ["MultipartFile", "UploadFile"]\nSAVE_MARKERS = [".save(", "transferTo("]\n'}
+    assert not lines_of(scan_files(tmp_path, files), 'IL-530')
+    assert lines_of(scan_files(tmp_path / 'real', {'a.py': 'def up():\n    f = request.files["f"]\n    f.save("x")\n'}), 'IL-530') == [2]
+
+
+UPLOAD_CLIENT_TYPE = 'def up():\n    f = request.files["f"]\n    if f.content_type == "image/png" and f.filename.endswith(".png"):\n        f.save("x")\n'
+
+
+@pytest.mark.parametrize('other, flagged', [
+    ({}, True),
+    ({'notes.py': '# TODO: Tika로 바꾸기\nDOC = "python-magic, file-type, sniff"\n'}, True),
+    ({'tests/test_up.py': 'import magic\n'}, True),
+    ({'detect.py': 'import magic\n'}, False),
+    ({'detect.js': "const { fileTypeFromBuffer } = require('file-type')\n"}, False),
+])
+def test_upload_content_check_needs_real_library_use(tmp_path, other, flagged):
+    from tests.helpers import lines_of, scan_files
+    assert (3 in lines_of(scan_files(tmp_path, {'app.py': UPLOAD_CLIENT_TYPE, **other}), 'IL-530')) is flagged
+
+
+@pytest.mark.parametrize('url, shown', [
+    ('https://openvex.dev/ns/v0.2.0', None),
+    ('https://api.internal.example.io/v1', 'https://api.internal.example.io/v1'),
+    ('postgres://admin:s3cretpass@db.internal.io/app', ''),  # 같은 줄의 비밀 규칙이 주소 전체를 가린다
+    ('redis://cache.internal.io:6379?password=s3cretpass', ''),  # 비밀 질의 값이 있는 주소는 통째로 가린다
+])
+def test_hardcoded_url_finding_shows_host_without_credentials(tmp_path, url, shown):
+    from tests.helpers import scan_files
+    found = [v for v in scan_files(tmp_path, {'app.py': f'CONFIG = {{"@context": "{url}"}}\n'}) if v.rule_id == 'AI-101']
+    if shown is None:
+        assert not found
+        return
+    assert len(found) == 1
+    assert shown in found[0].message
+    assert 's3cretpass' not in found[0].message + found[0].snippet + (found[0].snippet_full or '')
+
+
+def test_public_url_stays_visible_while_other_values_on_the_line_are_masked(tmp_path):
+    from tests.helpers import scan_files
+    code = 'import requests\nrequests.get("https://api.internal.example.io/v1", headers={"X-Api": "q8Zr2Lm9Xc4Vb7Nt1Kp6"})\n'
+    found = [v for v in scan_files(tmp_path, {'app.py': code}) if v.rule_id == 'AI-101']
+    assert found and 'https://api.internal.example.io/v1' in found[0].message
+    assert 'https://api.internal.example.io/v1' in found[0].snippet
+    assert all('q8Zr2Lm9Xc4Vb7Nt1Kp6' not in v.snippet + (v.snippet_full or '') + v.message for v in found)

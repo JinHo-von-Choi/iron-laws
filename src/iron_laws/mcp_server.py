@@ -258,7 +258,7 @@ def serve(settings: ServerSettings) -> None:
     """stdio MCP 서버를 띄운다. MCP SDK(선택 extra `iron-laws[mcp]`)가 필요하다."""
     try:
         from mcp.server.fastmcp import FastMCP
-    except ImportError as e:  # iron-laws: ignore[IL-301] 선택 extra가 없을 때는 설치 방법을 알리는 오류로 바꿔 던진다
+    except ImportError as e:
         raise ConfigError("MCP 서버에는 선택 의존성이 필요합니다: pip install 'iron-laws[mcp]'") from e
     tools = IronLawsTools(settings)
     server = FastMCP("iron-laws", instructions=INSTRUCTIONS)

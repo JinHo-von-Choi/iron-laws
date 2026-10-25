@@ -36,7 +36,7 @@ def validate_record(record: object, number: int) -> dict:
                 invalid(field)
             try:
                 finite = math.isfinite(value)
-            except OverflowError:
+            except OverflowError:  # iron-laws: ignore[IL-301] 유한수로 볼 수 없는 값은 바로 아래에서 invalid로 기록한다
                 finite = False
             if not finite:
                 invalid(field)

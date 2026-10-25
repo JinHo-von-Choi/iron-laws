@@ -110,7 +110,7 @@ def validate_record(record: "Record") -> list[str]:
     problems: list[str] = []
     try:
         datetime.strptime(record.created, CREATED_FORMAT)
-    except (ValueError, TypeError):  # iron-laws: ignore[IL-301] 형식 오류는 problems 목록에 담아 호출부가 승인을 invalid로 처리한다
+    except (ValueError, TypeError):
         problems.append(f"생성 시각 형식이 맞지 않는다({record.created!r})")
     if record.kind == "approve":
         if not record.id.startswith("AP-"):

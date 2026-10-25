@@ -6,7 +6,6 @@
 작성자: 최진호
 작성일: 2026-10-04
 """
-# iron-laws: ignore-file[IL-302] 우회 변경 표본이 skip 문자열을 포함한다
 
 import json
 import os

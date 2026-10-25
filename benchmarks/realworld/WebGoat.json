@@ -1,5 +1,5 @@
 {
- "tool_version": "1.6.0 출시 전 개발 판",
+ "tool_version": "1.9.0",
  "commit": "10cecda8b93f9ea1439188a6257dfb7fc9c954d5",
  "findings": [
   [
@@ -846,6 +846,13 @@
    "IL-502",
    "src/main/java/org/owasp/webgoat/lessons/pathtraversal/ProfileUploadRetrieval.java",
    101,
+   "HIGH",
+   "CONFIRMED"
+  ],
+  [
+   "IL-502",
+   "src/main/java/org/owasp/webgoat/lessons/pathtraversal/ProfileZipSlip.java",
+   79,
    "HIGH",
    "CONFIRMED"
   ],

@@ -302,6 +302,7 @@ class LineRegexRule(BaseRule):
 
 
 class InsecureCryptoRule(BaseRule):
+    version = 2
     rule_id = "IL-102"
     name = "취약한 암호 알고리즘 사용 금지"
     iron_law = IronLaw.LAW_1
@@ -320,6 +321,10 @@ class InsecureCryptoRule(BaseRule):
     quoted_cipher_re = re.compile(r"[\"'](?:DES|RC2|RC4|RC5|RC6|ARCFOUR|ARC4)(?:[/_\-][A-Za-z0-9/_\-]*)?[\"']", re.IGNORECASE)
     security_context = re.compile(r"(?i)pass(word|wd)?|pwd|secret|token|sign|auth|credential|salt|hmac|session|cookie|jwt|login|hash_password|digest")
     skip_line = re.compile(r"usedforsecurity\s*=\s*False")
+    # 따옴표 안의 소스 파일 경로(예: "lessons/challenge7/MD5.java")는 해시 사용이 아니라 파일 이름이다
+    path_literal = re.compile(
+        r"""(["'])[^"'\n]*/[^"'\n/]*\.(?:java|kt|scala|py|js|jsx|ts|tsx|mjs|cjs|cs|go|php|rb|rs|swift|c|cc|cpp|h|hpp|m)\1"""
+    )
 
     @staticmethod
     def _function_name_at(src: SourceFile, line_number: int) -> str:
@@ -341,7 +346,7 @@ class InsecureCryptoRule(BaseRule):
                 found.append(self.at_line(src, idx, "가이드가 취약 알고리즘으로 명시한 대칭키 암호(DES/RC2/RC4/RC5/RC6)가 사용됩니다. AES 등으로 교체하십시오."))
             elif self.ecb_re.search(line):
                 found.append(self.at_line(src, idx, "ECB 운용 모드는 같은 평문이 같은 암호문이 되어 패턴이 노출됩니다 (CWE-327). GCM 또는 CBC+인증으로 교체하십시오."))
-            elif self.hash_re.search(line):
+            elif self.hash_re.search(self.path_literal.sub("", line)):
                 if self.security_context.search(line + " " + self._function_name_at(src, idx)):
                     found.append(self.at_line(src, idx, "가이드가 취약 알고리즘으로 명시한 해시(MD4/MD5/SHA-1)가 보안 용도로 보이는 곳에 쓰입니다. SHA-256 이상으로 교체하십시오."))
                 else:

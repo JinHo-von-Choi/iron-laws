@@ -82,7 +82,7 @@ def require_commit(root: Path, expected: str) -> None:
 
     try:
         actual = subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"], capture_output=True, text=True, check=True).stdout.strip()
-    except (OSError, subprocess.SubprocessError):
+    except (OSError, subprocess.SubprocessError):  # iron-laws: ignore[IL-301] git 정보가 없으면 실제 커밋을 빈 값으로 두고 바로 아래에서 커밋 불일치로 알린다
         actual = ""
     if not actual.startswith(expected) or not expected:
         print(f"측정 대상 커밋이 다릅니다: 기대 {expected}, 실제 {actual or '(git 정보 없음)'}", file=sys.stderr)

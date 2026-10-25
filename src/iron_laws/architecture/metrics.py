@@ -103,7 +103,7 @@ def _git_change_counts(root: Path, commits: int) -> Counter:
             timeout=20,
             check=False,
         )
-    except (OSError, subprocess.SubprocessError):
+    except (OSError, subprocess.SubprocessError):  # iron-laws: ignore[IL-301] git이 없거나 실패하면 변경 빈도 없이 진단하며, 빈 집계가 곧 정보 없음을 뜻한다
         return Counter()
     if out.returncode != 0:
         return Counter()
@@ -138,7 +138,7 @@ def _duplicate_patterns(sources: list[SourceFile]) -> list[str]:
             continue
         try:
             tree = ast.parse(src.text)
-        except SyntaxError:
+        except SyntaxError:  # iron-laws: ignore[IL-301] 구문 분석이 안 되는 파일은 import 집계에서 빼고, 같은 파일은 아래 함수 구조 단계에서 notes로 알린다
             continue
         module = src.path.parent.as_posix()
         for node in ast.walk(tree):
@@ -179,7 +179,7 @@ def collect(root: Path, config: IronLawsConfig | None = None) -> Metrics:
                 length = fn.node.end_point[0] - fn.node.start_point[0] + 1
                 if length > limits.max_function_lines:
                     m.large_functions.append(f"{src.path.as_posix()}:{fn.node.start_point[0] + 1}")
-        except Exception:  # noqa: BLE001 - 구문 분석이 안 되는 파일 하나가 전체 진단을 막지 않게 하되 아래에서 알린다
+        except Exception:  # noqa: BLE001 - 구문 분석이 안 되는 파일 하나가 전체 진단을 막지 않게 하되 아래에서 알린다  # iron-laws: ignore[IL-304] 구문 분석이 안 되는 파일 하나가 전체 진단을 막지 않게 하고 notes로 알린다
             m.notes.append(f"{src.path.as_posix()}: 함수 구조를 읽지 못했습니다.")
     graph_rule = CircularDependencyRule()
     graph, _lines = graph_rule._build_graph(project)

@@ -222,7 +222,7 @@ class ReusableObjectRule(ArchRule):
 
 
 class DbInLoopRule(ArchRule):
-    version = 2
+    version = 3
     rule_id = "ARC-212"
     name = "반복문 안의 DB 조회(N+1)와 요청마다 반복되는 DB 조회"
     severity = Severity.MEDIUM

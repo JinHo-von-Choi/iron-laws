@@ -20,7 +20,7 @@ from pathlib import Path, PurePosixPath
 try:  # Windows에는 resource가 없다
     import resource
 except ImportError:  # pragma: no cover - Windows 경로
-    resource = None  # type: ignore[assignment]
+    resource = None  # type: ignore[assignment]  # iron-laws: ignore[TYP-302] Windows에는 resource 모듈이 없어 None으로 두고 사용 전에 확인한다
 
 from iron_laws.core.approvals import (
     ApprovalStatusRow,
@@ -173,11 +173,11 @@ def _decode(raw: bytes) -> tuple[str, str | None]:
     """바이트를 문자열로 바꾼다. UTF-8이 아니면 CP949를 시도하고, 어느 쪽도 아니면 깨진 글자를 대체하며 사유를 돌려준다."""
     try:
         return raw.decode("utf-8-sig"), None
-    except UnicodeDecodeError:
+    except UnicodeDecodeError:  # iron-laws: ignore[IL-301] UTF-8이 아니면 다음 인코딩으로 해석을 시도한다
         pass
     try:
         return raw.decode("cp949"), "UTF-8이 아니어서 CP949로 해석했습니다"
-    except UnicodeDecodeError:
+    except UnicodeDecodeError:  # iron-laws: ignore[IL-301] CP949도 아니면 다음 단계에서 해석 실패를 진단으로 남긴다
         return raw.decode("utf-8", errors="replace"), "인코딩을 알 수 없어 일부 글자를 대체해 읽었습니다"
 
 
@@ -539,7 +539,7 @@ class AuditScanner(ScanEvidenceBuilder, ScanResultBuilder):
     def _redact(self, violations: list[Violation], sources: list[SourceFile]) -> None:
         """비밀로 판정된 줄과 비밀 이름에 대입된 값을 뽑아, 같은 줄의 다른 규칙 지적과 진단을 포함한 모든 출력에서 지운다.
         길이를 제한하기 전의 원문을 먼저 가리고 나서 제한한다."""
-        sensitive_ids = {rule.rule_id for rule in self.rules if rule.sensitive_snippet}
+        sensitive = {rule.rule_id: rule for rule in self.rules if rule.sensitive_snippet}
         by_path = {s.path.as_posix(): s for s in sources}
         secrets: set[str] = set()
         for v in violations:
@@ -547,7 +547,8 @@ class AuditScanner(ScanEvidenceBuilder, ScanResultBuilder):
             if src is None or not (1 <= v.line_number <= len(src.lines)):
                 continue
             line = src.lines[v.line_number - 1]
-            secrets |= collect_secret_values(line) if v.rule_id in sensitive_ids else collect_named_secrets(line)
+            rule = sensitive.get(v.rule_id)
+            secrets |= collect_secret_values(line) - rule.public_values(line) if rule is not None else collect_named_secrets(line)
         for v in violations:
             full = redact_text(v.snippet_full or v.snippet, secrets)
             v.snippet = limit(full, MAX_SNIPPET_LENGTH)
@@ -692,7 +693,7 @@ class AuditScanner(ScanEvidenceBuilder, ScanResultBuilder):
     def _cpu_baseline() -> tuple[float, ...]:
         try:
             times = os.times()
-        except OSError:  # pragma: no cover - os.times는 POSIX에서만 있다
+        except OSError:  # pragma: no cover - os.times는 POSIX에서만 있다  # iron-laws: ignore[IL-301] os.times가 없는 플랫폼에서는 CPU 사용량을 0으로 기록한다
             return (0.0, 0.0, 0.0, 0.0)
         return (times.user, times.system, times.children_user, times.children_system)
 
@@ -701,7 +702,7 @@ class AuditScanner(ScanEvidenceBuilder, ScanResultBuilder):
         """이 프로세스와 작업 프로세스가 함께 쓴 CPU 시간(초). 작업 프로세스 몫까지 더한다."""
         try:
             times = os.times()
-        except OSError:  # pragma: no cover - os.times는 POSIX에서만 있다
+        except OSError:  # pragma: no cover - os.times는 POSIX에서만 있다  # iron-laws: ignore[IL-301] os.times가 없는 플랫폼에서는 CPU 사용량을 0으로 기록한다
             return 0.0
         now = (times.user, times.system, times.children_user, times.children_system)
         return max(0.0, sum(now[i] - cpu_baseline[i] for i in range(4)))

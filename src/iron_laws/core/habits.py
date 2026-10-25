@@ -47,7 +47,7 @@ def load(history: Path) -> list[dict]:
     for line in history.read_text(encoding="utf-8").splitlines():
         try:
             row = json.loads(line)
-        except ValueError:
+        except ValueError:  # iron-laws: ignore[IL-301] 손상된 습관 기록 줄은 건너뛰고 나머지 줄로 집계한다
             continue
         if isinstance(row, dict) and isinstance(row.get("counts"), dict):
             rows.append(row)

@@ -196,7 +196,7 @@ def _changed_files(root: Path, ref: str) -> set[str]:
     for name in names:
         try:
             changed.add((top / name).resolve().relative_to(base).as_posix())
-        except ValueError:  # 점검 폴더 밖의 변경은 이번 점검 대상이 아니다
+        except ValueError:  # 점검 폴더 밖의 변경은 이번 점검 대상이 아니다  # iron-laws: ignore[IL-301] 점검 폴더 밖의 변경은 이번 점검 대상이 아니다
             continue
     return changed
 
@@ -213,7 +213,7 @@ def _renamed_paths(root: Path, ref: str) -> list[tuple[str, str]]:
         try:
             old = (top / fields[index + 1]).resolve().relative_to(base).as_posix()
             new = (top / fields[index + 2]).resolve().relative_to(base).as_posix()
-        except ValueError:
+        except ValueError:  # iron-laws: ignore[IL-301] 점검 폴더 밖으로 옮긴 파일은 경로 쌍에 넣지 않는다
             continue
         pairs.append((old, new))
     return sorted(pairs)

@@ -1,5 +1,5 @@
 {
- "tool_version": "1.6.0 출시 전 개발 판",
+ "tool_version": "1.9.0",
  "commit": "0e6d909b7466e76bc8deabf2fdb62bc5c849961f",
  "findings": [
   [
@@ -3170,6 +3170,20 @@
    "IL-502",
    "routes/dataErasure.ts",
    104,
+   "HIGH",
+   "CONFIRMED"
+  ],
+  [
+   "IL-502",
+   "routes/fileUpload.ts",
+   31,
+   "HIGH",
+   "CONFIRMED"
+  ],
+  [
+   "IL-502",
+   "routes/fileUpload.ts",
+   34,
    "HIGH",
    "CONFIRMED"
   ],

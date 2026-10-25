@@ -3,7 +3,6 @@
 작성자: 최진호
 작성일: 2026-10-04
 """
-# iron-laws: ignore-file[IL-101] 시험 입력으로 쓰는 무효 합성 비밀값이다
 
 import json
 import subprocess

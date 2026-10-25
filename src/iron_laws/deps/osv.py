@@ -65,7 +65,7 @@ def _symbols(item: dict[str, Any], raw: dict[str, Any]) -> list[str]:
 
 
 def parse_advisory(raw: dict[str, Any]) -> Advisory | None:
-    if raw.get("withdrawn"):
+    if raw.get("withdrawn"):  # iron-laws: ignore[IL-307] 철회된 권고는 None으로 돌려 색인에서 뺀다(None이 철회의 뜻이다)
         return None
     affected: list[Affected] = []
     for item in raw.get("affected") or []:
@@ -122,7 +122,7 @@ def load_db(path: Path) -> AdvisoryDb:
     return db
 
 
-def _add(db: AdvisoryDb, raw: Any) -> None:
+def _add(db: AdvisoryDb, raw: Any) -> None:  # iron-laws: ignore[TYP-302] OSV 원본 JSON 값을 받아 형식을 확인하는 경계 함수다
     if isinstance(raw, dict) and raw.get("id"):
         advisory = parse_advisory(raw)
         if advisory is not None:

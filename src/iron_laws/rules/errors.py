@@ -3,7 +3,6 @@
 작성자: 최진호
 작성일: 2026-10-04
 """
-# iron-laws: ignore-file[IL-302] 테스트 회피 구문을 탐지하는 패턴 정의
 
 import ast
 import re
@@ -82,8 +81,34 @@ def records_failure(src: SourceFile, handler: Node, body: Node) -> bool:
     return False
 
 
+FINDING_CALL_RE = re.compile(r"(?:\bself\.)?(?:at_line|at_node|violation|Violation|Problem|Diagnostic)\(")
+FAILURE_SINK_RE = re.compile(r"(?i)(?:^|_)(?:problems|errors|failures|missing|diagnostics|issues|warnings|notes)$")
+
+
+def reports_failure_result(src: SourceFile, handler: Node, body: Node) -> bool:
+    """좁은 예외에서 실패를 지적·진단 결과로 돌려주거나, 실패 목록에 담아 함수 밖으로 넘기는 처리를 인정한다."""
+    fn = enclosing_function(handler, src.lang)
+    after = src.data[handler.end_byte : fn.end_byte].decode("utf-8", errors="replace") if fn is not None else ""
+    for stmt in body_statements(body):
+        text = src.text_of(stmt).strip()
+        if re.match(r"return\b", text) and FINDING_CALL_RE.search(text):
+            return True
+        m = re.match(r"([\w.]+)\.append\((.*)\)$", text, re.DOTALL)
+        if m is None:
+            continue
+        receiver, arg = m.group(1), m.group(2)
+        if FINDING_CALL_RE.match(arg.strip()):
+            return True
+        if not FAILURE_SINK_RE.search(receiver.rsplit(".", 1)[-1]):
+            continue
+        # 속성에 담으면 객체를 통해 밖으로 나가고, 지역 목록은 처리 뒤에 다시 쓰여야 기록으로 본다
+        if "." in receiver or re.search(rf"(?<![\w.]){re.escape(receiver)}(?!\w)", after):
+            return True
+    return False
+
+
 class SwallowedExceptionRule(BaseRule):
-    version = 2
+    version = 3
     rule_id = "IL-301"
     name = "예외 은폐 (로그도 전파도 없는 오류 처리) 탐지"
     iron_law = IronLaw.LAW_3
@@ -123,7 +148,7 @@ class SwallowedExceptionRule(BaseRule):
         header = handler_header(src, handler)
         if src.lang is Lang.PYTHON and BENIGN_PY_EXCEPTIONS.search(header):
             return None
-        if has_throw(src, body) or has_logging(src, body) or records_failure(src, handler, body):
+        if has_throw(src, body) or has_logging(src, body) or records_failure(src, handler, body) or reports_failure_result(src, handler, body):
             return None
         if re.search(r"\.interrupt\(\)|Thread\.currentThread", src.text_of(body)):
             return None
@@ -623,7 +648,7 @@ NULL_GUARD_RE = re.compile(
 
 
 class FailureAsDefaultRule(BaseRule):
-    version = 2
+    version = 3
     rule_id = "IL-307"
     name = "검증·처리 실패를 null·기본값으로 대체하고 기록하지 않음"
     iron_law = IronLaw.LAW_3
@@ -631,9 +656,16 @@ class FailureAsDefaultRule(BaseRule):
     gov_standard = mois_ref("4-2")
     plain = "검증이나 복호화가 실패했는데 예외 없이 null·false를 돌려주면, 호출한 쪽은 실패를 모른 채 정상처럼 처리를 이어 갑니다. 결제·인증처럼 정확성이 중요한 곳에서는 잘못된 결과가 조용히 쌓이고 원인도 남지 않습니다."
     how_to_fix = "정상 흐름을 벗어나면 예외를 던지세요(복구할 수 있는 경우에만 처리). 던지지 않고 값을 돌려줘야 한다면 실패 사유를 로그로 남기고, 호출한 쪽이 실패를 구분할 수 있게 결과 타입(성공·실패)을 명시하세요."
-    sensitive_fn = re.compile(
-        r"(?i)(verif|validat|decrypt|decod|encrypt|authenticat|authoriz|check|parse|token|sign|checksum|permission|credential|pay|charge|refund|settle|transfer|withdraw|deposit|order|amount|balance|login|otp)"
+    # 함수 이름을 snake_case·camelCase 낱말로 나눠 낱말 머리에서만 찾는다(assignment·design의 sign, checkout의 check를 거른다).
+    # 짧은 어근은 다른 낱말의 머리가 되기 쉬워 정해진 활용형만 인정한다.
+    sensitive_stem = re.compile(
+        r"(?:re|pre|un|de|auto|safe|try)?(?:verif|validat|decrypt|decod|encrypt|authenticat|authoriz|pars|token|checksum|permission|credential|charg|refund|settl|transfer|withdraw|deposit|amount|balance|login|otp)"
     )
+    sensitive_word = re.compile(r"(?:check(?:s|ed|ing|er)?|sign(?:s|ed|ing|er)?|orders?|pay(?:s|ment|ments|out|outs)?|paid)")
+    name_word_re = re.compile(r"[A-Z]+(?![a-z])|[A-Z]?[a-z]+|\d+")
+    # signature는 함수 시그니처를 뜻하기도 해서 서명 알고리즘·전달 형식 낱말과 함께 쓰일 때만 민감한 이름으로 본다
+    signature_word = re.compile(r"signatures?")
+    signature_context = re.compile(r"(?:hmac|jwt|jws|rsa|ecdsa|ed25519|webhook|request|header|payload|message|digest|crypto|sha\d*)")
     or_null = re.compile(r"(?i)(OrNull|_or_none|OrDefault|_or_default|OrEmpty)$")
     return_types = {"return_statement"}
 
@@ -682,22 +714,31 @@ class FailureAsDefaultRule(BaseRule):
                         confidence=Confidence.REVIEW,
                     )
                 )
-            if not self.sensitive_fn.search(fn.name):
+            if not self._sensitive_name(fn.name):
                 continue
             result_type = fn.node.child_by_field_name("return_type")
             annotation = src.text_of(result_type) if result_type is not None else ""
-            analysis_result = bool(re.search(r"list\[(?:Violation|Problem)\]", annotation)) and not re.search(r"(?i)auth|pay|charge|transfer|token|credential|login|permission", fn.name)
+            analysis_result = not re.search(r"(?i)auth|pay|charge|transfer|token|credential|login|permission", fn.name)
+            # 지적 목록의 빈 값이나 지적 하나의 None은 '찾은 것이 없다'는 결과이지 실패 대체가 아니다
+            list_result = analysis_result and bool(re.search(r"list\[(?:Violation|Problem)\]", annotation))
+            optional_finding = analysis_result and bool(re.fullmatch(r"\s*(?:(?:Violation|Problem)\s*\|\s*None|None\s*\|\s*(?:Violation|Problem)|Optional\[(?:Violation|Problem)\])\s*", annotation))
             for node in walk_no_nested_functions(fn.body, src.lang):
                 if node.type in IF_TYPES:
                     if node.start_point[0] + 1 in allowlist_success:
                         continue
                     block = node.child_by_field_name("consequence")
-                    if analysis_result and block is not None and src.text_of(block).strip() == "return []":
+                    if block is not None and (list_result and src.text_of(block).strip() == "return []" or optional_finding and re.fullmatch(r"return(?:\s+None)?\s*(?:#.*)?", src.text_of(block).strip())):
                         continue
                     violation = self._check_branch(src, fn.name, node)
                     if violation is not None:
                         found.append(violation)
         return found
+
+    def _sensitive_name(self, name: str) -> bool:
+        words = [w.lower() for w in self.name_word_re.findall(name)]
+        if any(self.sensitive_word.fullmatch(w) or self.sensitive_stem.match(w) for w in words):
+            return True
+        return any(self.signature_word.fullmatch(w) for w in words) and any(self.signature_context.fullmatch(w) for w in words)
 
     def _check_branch(self, src: SourceFile, fn_name: str, node: Node) -> Violation | None:
         cond = node.child_by_field_name("condition")

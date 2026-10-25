@@ -122,7 +122,7 @@ def cleanup_workspace(path: Path) -> list[str]:
     """임시 작업영역을 제거하고 실패한 정리 단계의 사유를 반환한다."""
     from iron_laws.core.redaction import limit, redact_text
 
-    if not path.exists():
+    if not path.exists():  # iron-laws: ignore[IL-516] 도구가 만든 임시 작업영역이며, 확인 뒤 사라져도 rmtree 실패가 정리 기록에 남는다
         return []
     try:
         notes = make_writable(path)

@@ -22,7 +22,7 @@ IGNORED_POINTERS: tuple[tuple[str, str], ...] = (
 )
 
 
-def _drop(data: Any, tokens: list[str]) -> None:
+def _drop(data: Any, tokens: list[str]) -> None:  # iron-laws: ignore[TYP-302] 임의 JSON 값을 순회하는 경계 함수다
     if not tokens:
         return
     head, rest = tokens[0], tokens[1:]

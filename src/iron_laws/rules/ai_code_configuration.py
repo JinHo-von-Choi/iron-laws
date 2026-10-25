@@ -9,6 +9,7 @@ from pathlib import Path, PurePosixPath
 
 from tree_sitter import Node
 
+from iron_laws.core.masking import QUOTED_RE
 from iron_laws.core.models import Confidence, IronLaw, Severity, Violation
 from iron_laws.core.paths import TEST_DIR_NAMES
 from iron_laws.deps.lockfiles import PARSERS as LOCK_PARSERS
@@ -34,9 +35,11 @@ from iron_laws.rules.ai_code_common import (
 )
 from iron_laws.rules.secrets_crypto import SECRET_NAME, LineRegexRule
 
+OPENVEX_NAMESPACE = "https://openvex.dev/ns/"
+
 
 class HardcodedConfigRule(AiRule):
-    version = 2
+    version = 3
     rule_id = "AI-101"
     sensitive_snippet = True
     name = "하드코딩된 설정값(URL·IP·경로·포트) 탐지"
@@ -52,6 +55,8 @@ class HardcodedConfigRule(AiRule):
         r"apache\.org|json-schema\.org|schema\.org|xmlsoap\.org|springframework\.org|example\.(com|org|net)|sun\.com|oracle\.com|microsoft\.com|"
         r"googleapis\.com|gstatic\.com|fonts\.googleapis\.com|cdn\.jsdelivr\.net|unpkg\.com|cdnjs\.cloudflare\.com|creativecommons\.org|ietf\.org|rfc-editor\.org|docs\.\w+\.\w+|readthedocs\.io|medium\.com|youtube\.com|youtu\.be)$"
     )
+    # 고칠 대상을 알려 주려고 주소는 보여 주되, 계정 정보·비밀 이름의 질의 값·토큰처럼 긴 조각이 있는 주소는 가린다
+    url_secret_re = re.compile(r"(?i)://[^/\s\"'`@]*@|[?&;#][\w.\-]*(?:pass|pwd|secret|token|key|auth|sig)[\w.\-]*=|[A-Za-z0-9_\-+=]{20,}")
     env_default_re = re.compile(r"process\.env|os\.environ|getenv|os\.Getenv|Environment\.GetEnvironmentVariable|System\.getenv|\$\{\w+:-")
     skip_context_re = re.compile(r"(?i)^(print|println|printf|console\.\w+|logger?\.\w+|logging\.\w+|log\.\w+|warn|warnings\.warn|raise|throw|Error|new\w*Exception|Exception|panic|fmt\.Print\w*|System\.out\.\w+|Console\.\w+|echo|error_log|import|require)")
 
@@ -96,14 +101,14 @@ class HardcodedConfigRule(AiRule):
         if m:
             host = m.group("host")
             # OSV 공개 조회 프로토콜은 환경별 배포 설정이 아니다. 경로까지 한정한다.
-            public_protocol = value in ("https://api.osv.dev/v1/query", "https://api.osv.dev/v1/querybatch")
+            public_protocol = value in ("https://api.osv.dev/v1/query", "https://api.osv.dev/v1/querybatch") or self._openvex_namespace(value)
             if public_protocol or self.doc_hosts.search(host) or host.startswith(("$", "{", "<")):
                 return None
             local = bool(re.match(r"(?i)(localhost|127\.|0\.0\.0\.0|\[::1\]|host\.docker\.internal)", host))
             return self.at_node(
                 src,
                 node,
-                f"URL {value[:80]}이(가) 코드에 고정되어 있습니다. " + ("개발용 주소는 배포 환경에서 동작하지 않습니다." if local else "환경별로 바뀌는 주소는 설정으로 분리하십시오."),
+                f"URL {self._display_url(value)[:80]}이(가) 코드에 고정되어 있습니다. " + ("개발용 주소는 배포 환경에서 동작하지 않습니다." if local else "환경별로 바뀌는 주소는 설정으로 분리하십시오."),
                 severity=Severity.MEDIUM if not local else Severity.LOW,
                 confidence=Confidence.REVIEW,
             )
@@ -121,6 +126,21 @@ class HardcodedConfigRule(AiRule):
         if self.path_re.match(value):
             return self.at_node(src, node, f"개인 PC의 절대 경로 {value[:60]}이(가) 코드에 고정되어 있습니다.", severity=Severity.HIGH, confidence=Confidence.CONFIRMED)
         return None
+
+    def public_values(self, line: str) -> set[str]:
+        return {m.group("body") for m in QUOTED_RE.finditer(line) if self.url_re.match(m.group("body")) and not self.url_secret_re.search(m.group("body"))}
+
+    @staticmethod
+    def _openvex_namespace(value: str) -> bool:
+        """OpenVEX 문서의 @context는 판본이 붙은 어휘 이름 공간이다(예: …/ns/v0.2.0)."""
+        if value == OPENVEX_NAMESPACE:
+            return True
+        return value.startswith(OPENVEX_NAMESPACE) and re.fullmatch(r"v\d+(?:\.\d+)*", value[len(OPENVEX_NAMESPACE) :]) is not None
+
+    @staticmethod
+    def _display_url(value: str) -> str:
+        """계정 정보와 질의·조각을 뺀 주소"""
+        return re.split(r"[?#]", re.sub(r"(?<=://)[^/\s@]*@", "", value), maxsplit=1)[0]
 
     def _ports(self, src: SourceFile) -> list[Violation]:
         found = []

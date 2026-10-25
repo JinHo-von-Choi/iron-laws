@@ -73,7 +73,7 @@ def load_cases(root: Path) -> list[Case]:
 def dataset_commit(root: Path) -> str:
     try:
         return subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"], capture_output=True, text=True, check=True).stdout.strip()
-    except (OSError, subprocess.SubprocessError):
+    except (OSError, subprocess.SubprocessError):  # iron-laws: ignore[IL-301] 측정 기록의 데이터셋 커밋 칸에 git 정보가 없음을 그대로 적는다
         return "(git 정보 없음)"
 
 

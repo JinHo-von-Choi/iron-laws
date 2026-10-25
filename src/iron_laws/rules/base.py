@@ -48,6 +48,10 @@ class BaseRule(ABC):
     how_to_fix: str = ""
     config: IronLawsConfig | None = None
 
+    def public_values(self, line: str) -> set[str]:
+        """sensitive_snippet 규칙이 가리지 않고 보여 줄 따옴표 안 값. 비밀이 아님을 규칙이 확인한 값만 돌려준다."""
+        return set()
+
     def configure(self, config: IronLawsConfig) -> None:
         self.config = config
 
@@ -80,7 +84,7 @@ class BaseRule(ABC):
         # 원문을 먼저 가린 뒤 길이를 제한한다. 자른 뒤에 가리면 잘린 비밀 조각이 남는다
         full = redact_text(snippet.strip())
         if self.sensitive_snippet:
-            full = mask_secrets(full)
+            full = mask_secrets(full, self.public_values(full))
         shown = limit(full, MAX_SNIPPET_LENGTH)
         return Violation(
             rule_id=self.rule_id,

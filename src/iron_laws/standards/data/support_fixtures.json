@@ -331,7 +331,7 @@
    "positive": 1
   },
   "python": {
-   "negative": 1,
+   "negative": 2,
    "positive": 1
   }
  },
@@ -383,8 +383,8 @@
    "positive": 2
   },
   "python": {
-   "negative": 2,
-   "positive": 2
+   "negative": 3,
+   "positive": 3
   }
  },
  "IL-103": {

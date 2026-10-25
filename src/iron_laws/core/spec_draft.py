@@ -96,7 +96,7 @@ def merge_llm(draft: dict, text: str) -> int:
     body = re.sub(r"^```\w*\n|```\s*$", "", text.strip(), flags=re.MULTILINE)
     try:
         data = yaml.safe_load(body)
-    except yaml.YAMLError:
+    except yaml.YAMLError:  # iron-laws: ignore[IL-301] YAML로 읽지 못하면 JSON으로 다시 읽는다
         try:
             data = json.loads(body)
         except ValueError:  # iron-laws: ignore[IL-301] 읽을 수 없는 LLM 출력은 제안 0건으로 보고하고 코드 후보 초안은 그대로 둔다
@@ -112,7 +112,7 @@ def merge_llm(draft: dict, text: str) -> int:
                 continue
             try:
                 re.compile(str(entry[field]))
-            except re.error:
+            except re.error:  # iron-laws: ignore[IL-301] 정규식으로 컴파일되지 않는 LLM 제안 항목은 초안에 넣지 않는다
                 continue
             clean = {k: entry[k] for k in ("id", "family", "languages", field, "arg", "context") if k in entry}
             clean.update({"origin": "llm", "positive": "", "negative": ""})

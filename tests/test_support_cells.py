@@ -3,7 +3,6 @@
 작성자: 최진호
 작성일: 2026-10-12
 """
-# iron-laws: ignore-file[IL-302] 탐지 대상 샘플 문자열
 
 from pathlib import Path
 

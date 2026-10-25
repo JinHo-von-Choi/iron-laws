@@ -70,7 +70,7 @@ class TypeScriptSafetyRule(TypeRule):
             text = re.sub(r",(\s*[}\]])", r"\1", text)
             try:
                 data = json.loads(text)
-            except json.JSONDecodeError:  # iron-laws: ignore[IL-301] 해석 실패를 LOW 지적으로 보고한다
+            except json.JSONDecodeError:
                 found.append(self.at_line(src, 1, f"{src.path.name}을 해석할 수 없어 타입 엄격성 설정을 점검하지 못했습니다.", severity=Severity.LOW))
                 continue
             options = (data.get("compilerOptions") or {}) if isinstance(data, dict) else {}

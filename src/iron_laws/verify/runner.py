@@ -70,7 +70,7 @@ def validate_command(argv: list[str], allowed: list[list[str]]) -> str | None:
     if Path(argv[0]).name.lower() in SHELL_NAMES:
         return "shell을 직접 실행하는 명령은 허용하지 않는다"
     for entry in allowed:
-        if argv[: len(entry)] == entry:
+        if argv[: len(entry)] == entry:  # iron-laws: ignore[IL-307] None은 허용 목록에 있다는 뜻이고 거절은 사유 문자열로 돌려준다
             return None
     return f"신뢰된 명령 목록에 없는 명령이다: {' '.join(argv[:3])}"
 
@@ -167,7 +167,7 @@ class Runner(ABC):
             try:
                 proc.wait(timeout=0.01)
                 break
-            except subprocess.TimeoutExpired:
+            except subprocess.TimeoutExpired:  # iron-laws: ignore[IL-301] 짧게 기다린 뒤 시간 초과 여부를 바로 아래에서 다시 확인한다
                 pass
             if over.is_set():
                 break

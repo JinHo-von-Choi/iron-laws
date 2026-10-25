@@ -182,7 +182,7 @@ LOOP_NODE_TYPES = {
 
 
 DB_RECEIVER = re.compile(
-    r"(?i)(repo\w*|repository|\w*Repository|dao\w*|\w*Dao|mapper|\w*Mapper|entityManager|\bem\b|jdbc\w*|^db\b|\.db\b|cursor|\bcur\b|conn\w*|prisma\.\w+|collection|knex|sequelize)|(?-i:\w+Model\b|\b_?db_?[Cc]ontext\b|\b_context\b|\bdbContext\b)"
+    r"(?i)((?-i:repo\b|repos\b|repo_\w*|repo[A-Z0-9]\w*|\w*Repos?\b|\w*Repo[A-Z0-9]\w*)|repositor(?:y|ies)|\w*Repository|dao\w*|\w*Dao|mapper|\w*Mapper|entityManager|\bem\b|jdbc\w*|^db\b|\.db\b|cursor|\bcur\b|conn\w*|prisma\.\w+|collection|knex|sequelize)|(?-i:\w+Model\b|\b_?db_?[Cc]ontext\b|\b_context\b|\bdbContext\b)"
 )
 
 

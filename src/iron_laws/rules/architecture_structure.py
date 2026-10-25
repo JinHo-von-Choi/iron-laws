@@ -114,14 +114,14 @@ class LayeringRule(ArchRule):
             return []
         text = src.code_text_without_strings
         if src.lang in JS_FAMILY:
-            is_route, db = self.js_route.search(text), self.js_db
+            is_route, db_marker = self.js_route.search(text), self.js_db
         else:
             marker = self.route_markers.get(src.lang)
             is_route = marker.search(text) if marker else None
-            db = self.db_markers.get(src.lang)
-        if not is_route or db is None:
+            db_marker = self.db_markers.get(src.lang)
+        if not is_route or db_marker is None:
             return []
-        hits = [m for m in db.finditer(text)]
+        hits = [m for m in db_marker.finditer(text)]
         if not hits:
             return []
         first_line = text.count("\n", 0, hits[0].start()) + 1

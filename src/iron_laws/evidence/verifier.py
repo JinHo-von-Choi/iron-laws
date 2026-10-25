@@ -155,7 +155,7 @@ def _normalized(path: str) -> bool:
     return ".." not in parts and "." not in parts and path == "/".join(parts)
 
 
-def _parse_date(value: Any) -> date | None:
+def _parse_date(value: Any) -> date | None:  # iron-laws: ignore[TYP-302] 보고서 JSON의 날짜 칸 값을 형식 확인하는 경계 함수다
     try:
         return date.fromisoformat(value) if isinstance(value, str) else None
     except ValueError:  # iron-laws: ignore[IL-301] 날짜가 아니면 None으로 알리고, 호출부가 `approval.expiry_invalid` 문제로 기록한다
@@ -360,10 +360,10 @@ GATE_FIELDS = {"max_analysis_unknown_rate": "analysis_unknown_rate", "max_unveri
 
 def _check_standards(c: _Collector, data: dict[str, Any], violations: list[dict[str, Any]]) -> None:
     """기준 팩 참조(1.5 이후): 지적의 기준 항목이 보고서에 적힌 팩·판본을 가리키고, 대응표 확인 여부가 팩의 값과 같은지 본다."""
-    if data.get("schema_version") not in ("1.5", "1.6", "1.7"):
+    if data.get("schema_version") not in ("1.5", "1.6", "1.7"):  # iron-laws: ignore[IL-307] 1.5 이전 보고서에는 기준 팩 칸이 없어 이 검사를 적용하지 않는다
         return
     listed = (data.get("metadata") or {}).get("standard_packs") or []
-    if not c.check(isinstance(listed, list) and all(isinstance(p, dict) for p in listed), "standards.shape", "metadata.standard_packs가 객체 목록이 아니다", "metadata.standard_packs"):
+    if not c.check(isinstance(listed, list) and all(isinstance(p, dict) for p in listed), "standards.shape", "metadata.standard_packs가 객체 목록이 아니다", "metadata.standard_packs"):  # iron-laws: ignore[IL-307] 형식 위반은 c.check가 결과에 기록한 뒤 다음 검사를 멈춘다
         return
     packs = {p.get("id"): p for p in listed}
     for index, v in enumerate(violations):
@@ -382,7 +382,7 @@ def _check_standards(c: _Collector, data: dict[str, Any], violations: list[dict[
 
 def _check_trust(c: _Collector, data: dict[str, Any], summary: dict[str, Any], ledger: dict[str, Any], violations: list[dict[str, Any]]) -> None:
     """신뢰 지표(1.4 이후): 분석 unknown 비율을 장부에서 다시 계산해 대조하고, 상한 초과가 통과로 표시되지 않았는지 본다."""
-    if data.get("schema_version") not in ("1.4", "1.5", "1.6", "1.7"):
+    if data.get("schema_version") not in ("1.4", "1.5", "1.6", "1.7"):  # iron-laws: ignore[IL-307] 1.4 이전 보고서에는 신뢰 칸이 없어 이 검사를 적용하지 않는다
         return
     for index, v in enumerate(violations):
         c.check(v.get("verification_grade", "") in ("", "verified", "unverified"), "trust.grade_unknown", f"알 수 없는 검증 등급: {v.get('verification_grade')!r}", f"violations[{index}]")
@@ -479,7 +479,7 @@ def _check_checkout(c: _Collector, ledger: dict[str, Any], execution: dict[str, 
             c.result.undeterminable = True
             return
         loaded.append((f["path"], text))
-    if not c.check(not missing, "snapshot.files_missing", f"보고서가 점검했다고 한 파일이 이 checkout에 없다: {', '.join(missing[:3])}"):
+    if not c.check(not missing, "snapshot.files_missing", f"보고서가 점검했다고 한 파일이 이 checkout에 없다: {', '.join(missing[:3])}"):  # iron-laws: ignore[IL-307] 누락 파일은 c.check가 결과에 기록한 뒤 지문 비교를 멈춘다
         return
     c.check(code_digest_of(loaded) == execution.get("code_digest"), "snapshot.code_mismatch", "이 checkout의 코드가 보고서가 점검한 코드와 다르다(다른 코드의 근거)")
 

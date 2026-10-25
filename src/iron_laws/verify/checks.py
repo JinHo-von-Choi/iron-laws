@@ -29,7 +29,7 @@ def resolve_finding(report: AuditReport, spec: str) -> Violation:
     return candidates[0]
 
 
-def _check(id_: str, title: str, result: CheckState, reason: str = "", required: bool = True, executed: bool = True, **evidence: Any) -> CheckResult:
+def _check(id_: str, title: str, result: CheckState, reason: str = "", required: bool = True, executed: bool = True, **evidence: Any) -> CheckResult:  # iron-laws: ignore[TYP-302] 검사마다 다른 근거 값을 그대로 담는 키워드 인자다
     return CheckResult(id=id_, title=title, result=result, reason=reason, required=required, executed=executed, evidence=evidence)
 
 

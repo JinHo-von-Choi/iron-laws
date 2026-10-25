@@ -539,6 +539,7 @@ class BlockingInAsyncRule(PerfRule):
 
 
 class ManyQueriesRule(PerfRule):
+    version = 2
     rule_id = "PERF-101"
     name = "한 함수 안의 DB 조회 과다 탐지"
     severity = Severity.LOW

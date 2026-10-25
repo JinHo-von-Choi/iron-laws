@@ -23,6 +23,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 import types
 
 def _seal():
@@ -298,13 +299,12 @@ def install_sinks():
         io.FileIO = fake_fileio
 
         real_os_open = os.open
-        empty_file = os.path.join(BASE, "_empty")
-        with real_open(empty_file, "w"):
-            pass
+        handle, empty_file = tempfile.mkstemp(prefix="iron-laws-empty-")  # 실행마다 새로 만든다(작업 폴더에 남기지 않는다)
+        os.close(handle)
 
         def fake_os_open(path, flags=0, *a, **k):
             CALLS.append({"api": "os.open", "path": resolve_path(path), "mode": str(flags)})
-            return real_os_open(empty_file, os.O_RDONLY)  # 실제 파일 대신 기준 폴더의 빈 일반 파일을 연다
+            return real_os_open(empty_file, os.O_RDONLY)  # 실제 파일 대신 빈 일반 파일을 연다
 
         os.open = fake_os_open
         posix.open = fake_os_open

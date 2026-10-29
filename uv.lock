@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.12"
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform == 'win32'",
@@ -853,14 +853,14 @@ wheels = [
 
 [[package]]
 name = "python-hwpx"
-version = "6.6.0"
+version = "6.9.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "lxml" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/8f/64/bbbbd6468e13f76ffa148ba68f1efa5382ae2f79c1e8f597800f7c17efa2/python_hwpx-6.6.0.tar.gz", hash = "sha256:3dbeb1e183e163e57272adda3844e4324ed7128f7312525a7a99489c19a0d7ad", size = 1328103, upload-time = "2026-09-27T15:40:25.549Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/fc/aa/c12affef5b0b256f89648b8cb73eddfb5fa81a43c541fc361408d5e2811e/python_hwpx-6.9.0.tar.gz", hash = "sha256:390fa81077dddd3fc6796e50c28271aa95739b2d3ca2d0c0d75915cc05b9b18a", size = 1709623, upload-time = "2026-10-23T14:40:48.262Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/f6/a1/b7b295f7fe02ed3ac9fc2fe59b3658623eb8e8cdc8e0207d2b26428a4d2f/python_hwpx-6.6.0-py3-none-any.whl", hash = "sha256:382081817486df356fbc85b14639ef757a597585a4fecb51152653085475ff1c", size = 904616, upload-time = "2026-09-27T15:40:23.357Z" },
+    { url = "https://files.pythonhosted.org/packages/97/c9/7ac5378d605197c7a9a4254312f96b1ddbe3a950b1e1e211be13aee64a01/python_hwpx-6.9.0-py3-none-any.whl", hash = "sha256:b1a5d7f1e3c0d2935a7e47a8682e0fe6e4b007ca38b32a2cecbedb30d441479c", size = 1130884, upload-time = "2026-10-23T14:40:46.268Z" },
 ]
 
 [[package]]

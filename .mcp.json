@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "iron-laws": {
+      "command": "iron-laws",
+      "args": ["mcp", "--root", "${CLAUDE_PROJECT_DIR}"]
+    }
+  }
+}

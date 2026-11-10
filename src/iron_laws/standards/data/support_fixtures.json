@@ -253,7 +253,7 @@
    "positive": 1
   },
   "python": {
-   "negative": 0,
+   "negative": 2,
    "positive": 1
   }
  },
@@ -265,8 +265,8 @@
  },
  "ARC-205": {
   "python": {
-   "negative": 0,
-   "positive": 1
+   "negative": 2,
+   "positive": 2
   }
  },
  "ARC-206": {
@@ -1087,8 +1087,8 @@
    "positive": 3
   },
   "python": {
-   "negative": 17,
-   "positive": 5
+   "negative": 20,
+   "positive": 8
   },
   "typescript": {
    "negative": 3,

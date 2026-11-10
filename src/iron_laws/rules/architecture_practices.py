@@ -35,8 +35,31 @@ from iron_laws.rules.architecture_common import (
     _is_generated,
 )
 
+GRAMMAR_COMPARE_RE = re.compile(r"\.type\b|\.kind\b|\bnode_type\b|\bgetType\(\)|\bnodeType\b")
+GRAMMAR_NAME_RE = re.compile(r"(?i)(?:^|_)(?:types?|kinds?)$")
+GRAMMAR_CONTEXT_TYPES = {"comparison_operator", "binary_expression", "boolean_operator"}
+GRAMMAR_ASSIGN_TYPES = {"assignment", "variable_declarator", "assignment_expression", "pair"}
+
+
+def _is_grammar_name(src: SourceFile, node: Node) -> bool:
+    """구문 트리 노드 종류를 가리키는 이름인가(`node.type == "call_expression"`, `CALL_TYPES = {...}`).
+    문법이 정한 이름이라 상수로 빼도 바꿀 일이 없다."""
+    current = node.parent
+    for _ in range(6):
+        if current is None:
+            return False
+        if current.type in GRAMMAR_CONTEXT_TYPES and GRAMMAR_COMPARE_RE.search(src.text_of(current)):
+            return True
+        if current.type in GRAMMAR_ASSIGN_TYPES:
+            left = current.child_by_field_name("left") or current.child_by_field_name("name") or current.child_by_field_name("key")
+            if left is not None and GRAMMAR_NAME_RE.search(src.text_of(left).strip().rsplit(".", 1)[-1]):
+                return True
+        current = current.parent
+    return False
+
 
 class RepeatedLiteralRule(ArchRule):
+    version = 2
     rule_id = "ARC-205"
     name = "여러 곳에 반복된 문자열 상수 탐지"
     severity = Severity.LOW
@@ -61,7 +84,7 @@ class RepeatedLiteralRule(ArchRule):
                 value = string_value(src, node)
                 if len(value) < 10 or len(value) > 120 or "\n" in value or re.search(r"\s{2,}", value):
                     continue
-                if helper._in_skipped_call(src, node):
+                if helper._in_skipped_call(src, node) or _is_grammar_name(src, node):
                     continue
                 if re.match(r"^[./@]|^\w+://|^(application|text|image)/", value) and "/" in value and " " not in value and not value.startswith(("http", "ws")):
                     continue

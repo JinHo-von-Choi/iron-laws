@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [{ "command": "iron-laws hook cursor --fail-on HIGH" }],
+    "afterFileEdit": [{ "command": "iron-laws hook cursor --fail-on HIGH" }],
+    "stop": [{ "command": "iron-laws hook cursor --fail-on HIGH", "loop_limit": 3 }]
+  }
+}

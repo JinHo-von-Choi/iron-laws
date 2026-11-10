@@ -16,6 +16,7 @@
 
 HARNESS_SOURCE = r'''
 import builtins
+import html.parser as html_parser
 import importlib
 import inspect
 import io
@@ -64,6 +65,9 @@ if MODE == "attack" and VARIANT:
 else:
     VALUE = SPEC["input"]["payload"] if MODE == "attack" else SPEC["input"]["benign"]
 CALLS = []
+URLS = []
+HTMLS = []
+XSS_TOKEN = "IL_XSS"
 real_open = builtins.open
 
 
@@ -330,6 +334,10 @@ def install_sinks():
         for name, result in (("remove", lambda: None), ("unlink", lambda: None), ("listdir", lambda: []), ("makedirs", lambda: None), ("mkdir", lambda: None), ("rmdir", lambda: None), ("stat", lambda: os.stat_result((0o100644, 0, 0, 1, 0, 0, 0, 0, 0, 0)))):
             setattr(os, name, os_function(name, result))
         os.chdir(BASE)
+    elif FAMILY == "ssrf":
+        install_http_sinks()
+    elif FAMILY == "xss":
+        install_html_sinks()
     elif FAMILY == "sql":
         import sqlite3
         import sqlite3.dbapi2
@@ -342,6 +350,242 @@ def install_sinks():
             _sqlite3.connect = sqlite3.connect
         except ImportError:
             pass
+
+
+class FakeHttpResponse:
+    status_code = 200
+    status = 200
+    ok = True
+    text = ""
+    content = b""
+    reason = "OK"
+    encoding = "utf-8"
+
+    def __init__(self, url=""):
+        self.url = url
+        self.headers = {}
+        self.history = []
+
+    def json(self, *a, **k):
+        return {}
+
+    def raise_for_status(self):
+        return None
+
+    def iter_content(self, *a, **k):
+        return iter(())
+
+    def iter_bytes(self, *a, **k):
+        return iter(())
+
+    def read(self, *a, **k):
+        return b""
+
+    def getcode(self):
+        return 200
+
+    def info(self):
+        return self.headers
+
+    def close(self):
+        return None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
+def record_http(api, method, url):
+    text = getattr(url, "full_url", url)
+    CALLS.append({"api": api, "method": method, "url": str(text)[:300]})
+    URLS.append(str(text))
+    return FakeHttpResponse(str(text))
+
+
+def install_http_sinks():
+    """requests·httpx·urllib 호출을 기록만 하는 대역으로 바꾼다. 실제 네트워크에는 접속하지 않는다.
+    이름 풀이도 대역이다: IP 문자열은 그대로, localhost는 127.0.0.1, 그 밖의 이름은 공개 주소 하나로 돌려준다."""
+    import socket
+    import urllib.request
+
+    verbs = ("get", "post", "put", "patch", "delete", "head", "options")
+
+    def module_functions(name):
+        namespace = {}
+        for verb in verbs:
+            namespace[verb] = (lambda api, v: lambda *a, **k: record_http(api, v.upper(), a[0] if a else k.get("url", "")))(name + "." + verb, verb)
+        namespace["request"] = lambda method, url=None, *a, **k: record_http(name + ".request", str(method).upper(), url if url is not None else (a[0] if a else k.get("url", "")))
+        return namespace
+
+    def session_class(name):
+        def make_method(verb):
+            return lambda self, *a, **k: record_http(name + "." + verb, verb.upper(), a[0] if a else k.get("url", ""))
+
+        members = {verb: make_method(verb) for verb in verbs}
+        members["request"] = lambda self, method, url=None, *a, **k: record_http(name + ".request", str(method).upper(), url if url is not None else (a[0] if a else k.get("url", "")))
+        members["__init__"] = lambda self, *a, **k: None
+        members["__enter__"] = lambda self: self
+        members["__exit__"] = lambda self, *a: False
+        members["close"] = lambda self: None
+        return type("Fake" + name.title() + "Session", (), members)
+
+    class RequestError(Exception):
+        pass
+
+    for module_name, session_names in (("requests", ("Session",)), ("httpx", ("Client",))):
+        fake = types.ModuleType(module_name)
+        for key, value in module_functions(module_name).items():
+            setattr(fake, key, value)
+        for session_name in session_names:
+            setattr(fake, session_name, session_class(module_name))
+        fake.RequestException = fake.HTTPError = fake.ConnectionError = fake.Timeout = fake.RequestError = RequestError
+        fake.exceptions = types.SimpleNamespace(RequestException=RequestError, HTTPError=RequestError, ConnectionError=RequestError, Timeout=RequestError)
+        fake.codes = types.SimpleNamespace(ok=200)
+        sys.modules[module_name] = fake
+    urllib.request.urlopen = lambda url, *a, **k: record_http("urllib.request.urlopen", "GET", url)
+
+    def resolve(host, ipv4_only=False):
+        text = str(host or "")
+        if text == "localhost":
+            return "127.0.0.1"
+        if ":" in text:
+            if ipv4_only:
+                raise socket.gaierror(-2, "Name or service not known")
+            return text
+        try:
+            socket.inet_aton(text)
+            return text
+        except OSError:
+            return "93.184.216.34"
+
+    socket.gethostbyname = lambda host: resolve(host, True)
+    socket.getaddrinfo = lambda host, port=None, *a, **k: [(socket.AF_INET6 if ":" in str(host) else socket.AF_INET, socket.SOCK_STREAM, 6, "", (resolve(host), port or 0))]
+
+
+def internal_host(host):
+    """내부망·루프백·링크 로컬(클라우드 메타데이터)·예약 주소인가. `127.1`·`0x7f.0.0.1`·`2130706433` 같은 축약 표기도 같은 주소로 본다."""
+    import ipaddress
+    import socket
+
+    name = host.lower().rstrip(".")
+    if not name:
+        return False
+    if name == "localhost" or name.endswith((".localhost", ".internal", ".local")):
+        return True
+    try:
+        address = ipaddress.ip_address(name)
+    except ValueError:
+        try:
+            address = ipaddress.IPv4Address(socket.inet_aton(name))
+        except OSError:
+            return False
+    return address.is_private or address.is_loopback or address.is_link_local or address.is_reserved or address.is_unspecified or address.is_multicast
+
+
+def http_violation():
+    from urllib.parse import urlsplit
+
+    allowed = [h.lower() for h in SPEC["expect"].get("allowed_hosts", [])]
+    for url in URLS:
+        try:
+            host = (urlsplit(url).hostname or "").lower()
+        except ValueError:
+            return "URL을 해석할 수 없는 값으로 요청했다: " + url[:120]
+        if allowed and host and host not in allowed:
+            return "허용 목록에 없는 호스트로 요청했다: " + host
+        if not allowed and internal_host(host):
+            return "내부망·루프백·메타데이터 주소로 요청했다: " + host
+    return ""
+
+
+def text_of_html(value):
+    if isinstance(value, bytes):
+        return value.decode("utf-8", "replace")
+    if isinstance(value, str):
+        return value
+    if isinstance(value, tuple) and value:
+        return text_of_html(value[0])
+    return ""
+
+
+def record_html(api, value):
+    text = text_of_html(value)
+    if text:
+        CALLS.append({"api": api, "html": text[:300]})
+        HTMLS.append(text[:20000])
+
+
+def install_html_sinks():
+    """flask 응답 생성 함수의 출력 문자열을 기록한다. 반환값도 main()에서 같이 기록한다."""
+    import html as html_module
+
+    def response(body="", *a, **k):
+        record_html("flask.Response", body)
+        return body
+
+    def make_response(body="", *a, **k):
+        record_html("flask.make_response", body)
+        return body
+
+    def render_template_string(source="", *a, **k):
+        record_html("flask.render_template_string", source)  # 템플릿 원문에 입력이 섞이면 이스케이프가 적용되지 않는다
+        return ""
+
+    flask.Response = response
+    flask.make_response = make_response
+    flask.render_template_string = render_template_string
+    try:
+        import markupsafe  # noqa: F401
+    except ImportError:
+        class Markup(str):
+            @classmethod
+            def escape(cls, value):
+                return cls(html_module.escape(str(value), quote=True))
+
+        fake = types.ModuleType("markupsafe")
+        fake.Markup = Markup
+        fake.escape = Markup.escape
+        sys.modules["markupsafe"] = fake
+        flask.Markup = Markup
+        flask.escape = Markup.escape
+
+
+class _TagCollector(html_parser.HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.dangerous = ""
+        self._script = False
+
+    def handle_starttag(self, tag, attrs):
+        if XSS_TOKEN in tag:
+            self.dangerous = "입력이 태그 이름이 되었다: " + tag[:60]
+        self._script = tag == "script"
+        for name, value in attrs:
+            lowered, text = (name or "").lower(), (value or "")
+            if XSS_TOKEN in name or (XSS_TOKEN in text and (lowered.startswith("on") or lowered == "srcdoc" or text.strip().lower().startswith("javascript:"))):
+                self.dangerous = "입력이 태그 속성(" + lowered[:30] + ")으로 실행 가능한 위치에 들어갔다"
+
+    def handle_endtag(self, tag):
+        self._script = False
+
+    def handle_data(self, data):
+        if self._script and XSS_TOKEN in data:
+            self.dangerous = "입력이 script 요소 안에 그대로 들어갔다"
+
+
+def html_violation():
+    for text in HTMLS:
+        collector = _TagCollector()
+        try:
+            collector.feed(text)
+            collector.close()
+        except Exception:
+            continue
+        if collector.dangerous:
+            return collector.dangerous
+    return ""
 
 
 def build_arguments(function):
@@ -398,6 +642,8 @@ def probe_base(function):
 
 def main():
     target = SPEC["target"]
+    if FAMILY in ("ssrf", "xss"):
+        install_sinks()  # `from requests import get`·`from flask import Response`가 대역을 가리키도록 불러오기 전에 설치한다
     try:
         module = importlib.import_module(target["module"])
         function = getattr(module, target["function"])
@@ -409,19 +655,26 @@ def main():
     if SPEC["source"]["kind"] == "request":
         if hasattr(module, "request"):
             module.request = REQUEST
-    install_sinks()
+    if FAMILY not in ("ssrf", "xss"):
+        install_sinks()
     if MODE == "attack" and FAMILY == "command" and PROBE:
         probe_bypass(function)
     allowed = tuple(SPEC.get("allowed_exceptions", ["ValueError", "PermissionError", "RuntimeError"]))
     observed_base = probe_base(function) if FAMILY == "path" and MODE == "attack" and not SPEC["expect"].get("base") else None
     error_name = ""
     try:
-        function(**build_arguments(function))
+        returned = function(**build_arguments(function))
+        if FAMILY == "xss":
+            record_html("return", returned)
     except BaseException as error:
         error_name = type(error).__name__
         if error_name not in allowed:
             emit("error", "exception: " + error_name + ": " + str(error)[:160], sink_calls=len(CALLS))
     violation = ""
+    if MODE == "attack" and FAMILY == "ssrf":
+        violation = http_violation()
+    elif MODE == "attack" and FAMILY == "xss":
+        violation = html_violation()
     if MODE == "attack":
         for call in CALLS:
             if FAMILY == "command" and call.get("interpreted") and VALUE in call.get("command", ""):

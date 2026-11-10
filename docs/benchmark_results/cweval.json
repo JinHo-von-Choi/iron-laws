@@ -1,0 +1,1338 @@
+{
+  "cases": [
+    {
+      "cwe": 20,
+      "id": "cwe_020_0-py",
+      "kind": "safe",
+      "lang": "py",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 22,
+      "id": "cwe_022_0-py",
+      "kind": "safe",
+      "lang": "py",
+      "other_rules": [
+        "IL-301",
+        "IL-304"
+      ],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 22,
+      "id": "cwe_022_0-py",
+      "kind": "unsafe",
+      "lang": "py",
+      "other_rules": [
+        "IL-301",
+        "IL-304"
+      ],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 22,
+      "id": "cwe_022_2-py",
+      "kind": "safe",
+      "lang": "py",
+      "other_rules": [
+        "IL-301",
+        "IL-304"
+      ],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 22,
+      "id": "cwe_022_2-py",
+      "kind": "unsafe",
+      "lang": "py",
+      "other_rules": [
+        "IL-301",
+        "IL-304"
+      ],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 78,
+      "id": "cwe_078_0-py",
+      "kind": "safe",
+      "lang": "py",
+      "other_rules": [
+        "IL-301"
+      ],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 78,
+      "id": "cwe_078_0-py",
+      "kind": "unsafe",
+      "lang": "py",
+      "other_rules": [
+        "IL-301"
+      ],
+      "same_cwe": [
+        "IL-504"
+      ],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 79,
+      "id": "cwe_079_0-py",
+      "kind": "safe",
+      "lang": "py",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 79,
+      "id": "cwe_079_0-py",
+      "kind": "unsafe",
+      "lang": "py",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 95,
+      "id": "cwe_095_0-py",
+      "kind": "safe",
+      "lang": "py",
+      "other_rules": [
+        "IL-301",
+        "IL-304"
+      ],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 95,
+      "id": "cwe_095_0-py",
+      "kind": "unsafe",
+      "lang": "py",
+      "other_rules": [
+        "IL-301",
+        "IL-304"
+      ],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 113,
+      "id": "cwe_113_0-py",
+      "kind": "safe",
+      "lang": "py",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 113,
+      "id": "cwe_113_0-py",
+      "kind": "unsafe",
+      "lang": "py",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 117,
+      "id": "cwe_117_0-py",
+      "kind": "safe",
+      "lang": "py",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 117,
+      "id": "cwe_117_0-py",
+      "kind": "unsafe",
+      "lang": "py",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 1333,
+      "id": "cwe_1333_0-py",
+      "kind": "safe",
+      "lang": "py",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 1333,
+      "id": "cwe_1333_0-py",
+      "kind": "unsafe",
+      "lang": "py",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 326,
+      "id": "cwe_326_0-py",
+      "kind": "safe",
+      "lang": "py",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 326,
+      "id": "cwe_326_0-py",
+      "kind": "unsafe",
+      "lang": "py",
+      "other_rules": [],
+      "same_cwe": [
+        "IL-103"
+      ],
+      "same_cwe_confirmed": [
+        "IL-103"
+      ]
+    },
+    {
+      "cwe": 326,
+      "id": "cwe_326_1-py",
+      "kind": "safe",
+      "lang": "py",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 326,
+      "id": "cwe_326_1-py",
+      "kind": "unsafe",
+      "lang": "py",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 327,
+      "id": "cwe_327_0-py",
+      "kind": "safe",
+      "lang": "py",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 327,
+      "id": "cwe_327_1-py",
+      "kind": "safe",
+      "lang": "py",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 327,
+      "id": "cwe_327_1-py",
+      "kind": "unsafe",
+      "lang": "py",
+      "other_rules": [
+        "IL-301",
+        "IL-304"
+      ],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 327,
+      "id": "cwe_327_2-py",
+      "kind": "safe",
+      "lang": "py",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 327,
+      "id": "cwe_327_2-py",
+      "kind": "unsafe",
+      "lang": "py",
+      "other_rules": [],
+      "same_cwe": [
+        "IL-102"
+      ],
+      "same_cwe_confirmed": [
+        "IL-102"
+      ]
+    },
+    {
+      "cwe": 329,
+      "id": "cwe_329_0-py",
+      "kind": "safe",
+      "lang": "py",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 329,
+      "id": "cwe_329_0-py",
+      "kind": "unsafe",
+      "lang": "py",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 347,
+      "id": "cwe_347_0-py",
+      "kind": "safe",
+      "lang": "py",
+      "other_rules": [
+        "IL-301",
+        "IL-304"
+      ],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 347,
+      "id": "cwe_347_0-py",
+      "kind": "unsafe",
+      "lang": "py",
+      "other_rules": [
+        "IL-101"
+      ],
+      "same_cwe": [
+        "IL-105"
+      ],
+      "same_cwe_confirmed": [
+        "IL-105"
+      ]
+    },
+    {
+      "cwe": 377,
+      "id": "cwe_377_0-py",
+      "kind": "safe",
+      "lang": "py",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 377,
+      "id": "cwe_377_0-py",
+      "kind": "unsafe",
+      "lang": "py",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 400,
+      "id": "cwe_400_0-py",
+      "kind": "safe",
+      "lang": "py",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 400,
+      "id": "cwe_400_0-py",
+      "kind": "unsafe",
+      "lang": "py",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 502,
+      "id": "cwe_502_0-py",
+      "kind": "safe",
+      "lang": "py",
+      "other_rules": [
+        "IL-304",
+        "IL-305"
+      ],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 502,
+      "id": "cwe_502_0-py",
+      "kind": "unsafe",
+      "lang": "py",
+      "other_rules": [
+        "IL-304",
+        "IL-305"
+      ],
+      "same_cwe": [
+        "IL-515"
+      ],
+      "same_cwe_confirmed": [
+        "IL-515"
+      ]
+    },
+    {
+      "cwe": 643,
+      "id": "cwe_643_0-py",
+      "kind": "safe",
+      "lang": "py",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 643,
+      "id": "cwe_643_0-py",
+      "kind": "unsafe",
+      "lang": "py",
+      "other_rules": [],
+      "same_cwe": [
+        "IL-527"
+      ],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 732,
+      "id": "cwe_732_2-py",
+      "kind": "safe",
+      "lang": "py",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 760,
+      "id": "cwe_760_0-py",
+      "kind": "safe",
+      "lang": "py",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 918,
+      "id": "cwe_918_0-py",
+      "kind": "safe",
+      "lang": "py",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 918,
+      "id": "cwe_918_0-py",
+      "kind": "unsafe",
+      "lang": "py",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 918,
+      "id": "cwe_918_1-py",
+      "kind": "safe",
+      "lang": "py",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 918,
+      "id": "cwe_918_1-py",
+      "kind": "unsafe",
+      "lang": "py",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 943,
+      "id": "cwe_943_0-py",
+      "kind": "safe",
+      "lang": "py",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 943,
+      "id": "cwe_943_0-py",
+      "kind": "unsafe",
+      "lang": "py",
+      "other_rules": [
+        "IL-501"
+      ],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 20,
+      "id": "cwe_020_0_js-js",
+      "kind": "safe",
+      "lang": "js",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 20,
+      "id": "cwe_020_0_js-js",
+      "kind": "unsafe",
+      "lang": "js",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 22,
+      "id": "cwe_022_0_js-js",
+      "kind": "safe",
+      "lang": "js",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 22,
+      "id": "cwe_022_0_js-js",
+      "kind": "unsafe",
+      "lang": "js",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 78,
+      "id": "cwe_078_0_js-js",
+      "kind": "safe",
+      "lang": "js",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 78,
+      "id": "cwe_078_0_js-js",
+      "kind": "unsafe",
+      "lang": "js",
+      "other_rules": [],
+      "same_cwe": [
+        "IL-504"
+      ],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 79,
+      "id": "cwe_079_0_js-js",
+      "kind": "safe",
+      "lang": "js",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 79,
+      "id": "cwe_079_0_js-js",
+      "kind": "unsafe",
+      "lang": "js",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 95,
+      "id": "cwe_095_0_js-js",
+      "kind": "safe",
+      "lang": "js",
+      "other_rules": [
+        "IL-301"
+      ],
+      "same_cwe": [
+        "IL-503"
+      ],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 95,
+      "id": "cwe_095_0_js-js",
+      "kind": "unsafe",
+      "lang": "js",
+      "other_rules": [],
+      "same_cwe": [
+        "IL-503"
+      ],
+      "same_cwe_confirmed": [
+        "IL-503"
+      ]
+    },
+    {
+      "cwe": 113,
+      "id": "cwe_113_0_js-js",
+      "kind": "safe",
+      "lang": "js",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 113,
+      "id": "cwe_113_0_js-js",
+      "kind": "unsafe",
+      "lang": "js",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 117,
+      "id": "cwe_117_0_js-js",
+      "kind": "safe",
+      "lang": "js",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 117,
+      "id": "cwe_117_0_js-js",
+      "kind": "unsafe",
+      "lang": "js",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 1333,
+      "id": "cwe_1333_0_js-js",
+      "kind": "safe",
+      "lang": "js",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 1333,
+      "id": "cwe_1333_0_js-js",
+      "kind": "unsafe",
+      "lang": "js",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 326,
+      "id": "cwe_326_0_js-js",
+      "kind": "safe",
+      "lang": "js",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 326,
+      "id": "cwe_326_0_js-js",
+      "kind": "unsafe",
+      "lang": "js",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 326,
+      "id": "cwe_326_1_js-js",
+      "kind": "safe",
+      "lang": "js",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 326,
+      "id": "cwe_326_1_js-js",
+      "kind": "unsafe",
+      "lang": "js",
+      "other_rules": [],
+      "same_cwe": [
+        "IL-103"
+      ],
+      "same_cwe_confirmed": [
+        "IL-103"
+      ]
+    },
+    {
+      "cwe": 327,
+      "id": "cwe_327_0_js-js",
+      "kind": "safe",
+      "lang": "js",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 327,
+      "id": "cwe_327_0_js-js",
+      "kind": "unsafe",
+      "lang": "js",
+      "other_rules": [],
+      "same_cwe": [
+        "IL-102"
+      ],
+      "same_cwe_confirmed": [
+        "IL-102"
+      ]
+    },
+    {
+      "cwe": 327,
+      "id": "cwe_327_1_js-js",
+      "kind": "safe",
+      "lang": "js",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 327,
+      "id": "cwe_327_1_js-js",
+      "kind": "unsafe",
+      "lang": "js",
+      "other_rules": [
+        "AI-112"
+      ],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 327,
+      "id": "cwe_327_2_js-js",
+      "kind": "safe",
+      "lang": "js",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 327,
+      "id": "cwe_327_2_js-js",
+      "kind": "unsafe",
+      "lang": "js",
+      "other_rules": [],
+      "same_cwe": [
+        "IL-102"
+      ],
+      "same_cwe_confirmed": [
+        "IL-102"
+      ]
+    },
+    {
+      "cwe": 329,
+      "id": "cwe_329_0_js-js",
+      "kind": "safe",
+      "lang": "js",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 329,
+      "id": "cwe_329_0_js-js",
+      "kind": "unsafe",
+      "lang": "js",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 347,
+      "id": "cwe_347_0_js-js",
+      "kind": "safe",
+      "lang": "js",
+      "other_rules": [
+        "IL-301"
+      ],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 347,
+      "id": "cwe_347_0_js-js",
+      "kind": "unsafe",
+      "lang": "js",
+      "other_rules": [
+        "IL-301"
+      ],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 400,
+      "id": "cwe_400_0_js-js",
+      "kind": "safe",
+      "lang": "js",
+      "other_rules": [
+        "IL-301"
+      ],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 400,
+      "id": "cwe_400_0_js-js",
+      "kind": "unsafe",
+      "lang": "js",
+      "other_rules": [
+        "IL-301"
+      ],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 502,
+      "id": "cwe_502_0_js-js",
+      "kind": "safe",
+      "lang": "js",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 502,
+      "id": "cwe_502_0_js-js",
+      "kind": "unsafe",
+      "lang": "js",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 643,
+      "id": "cwe_643_0_js-js",
+      "kind": "safe",
+      "lang": "js",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 643,
+      "id": "cwe_643_0_js-js",
+      "kind": "unsafe",
+      "lang": "js",
+      "other_rules": [],
+      "same_cwe": [
+        "IL-527"
+      ],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 732,
+      "id": "cwe_732_2_js-js",
+      "kind": "safe",
+      "lang": "js",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 732,
+      "id": "cwe_732_2_js-js",
+      "kind": "unsafe",
+      "lang": "js",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 760,
+      "id": "cwe_760_0_js-js",
+      "kind": "safe",
+      "lang": "js",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 760,
+      "id": "cwe_760_0_js-js",
+      "kind": "unsafe",
+      "lang": "js",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 918,
+      "id": "cwe_918_0_js-js",
+      "kind": "safe",
+      "lang": "js",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 918,
+      "id": "cwe_918_0_js-js",
+      "kind": "unsafe",
+      "lang": "js",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 918,
+      "id": "cwe_918_1_js-js",
+      "kind": "safe",
+      "lang": "js",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 918,
+      "id": "cwe_918_1_js-js",
+      "kind": "unsafe",
+      "lang": "js",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 943,
+      "id": "cwe_943_0_js-js",
+      "kind": "safe",
+      "lang": "js",
+      "other_rules": [
+        "IL-301"
+      ],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 943,
+      "id": "cwe_943_0_js-js",
+      "kind": "unsafe",
+      "lang": "js",
+      "other_rules": [
+        "IL-301"
+      ],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 20,
+      "id": "cwe_020_0_go-go",
+      "kind": "safe",
+      "lang": "go",
+      "other_rules": [
+        "AI-101",
+        "IL-301"
+      ],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 20,
+      "id": "cwe_020_0_go-go",
+      "kind": "unsafe",
+      "lang": "go",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 22,
+      "id": "cwe_022_0_go-go",
+      "kind": "safe",
+      "lang": "go",
+      "other_rules": [
+        "IL-301"
+      ],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 22,
+      "id": "cwe_022_0_go-go",
+      "kind": "unsafe",
+      "lang": "go",
+      "other_rules": [
+        "IL-301"
+      ],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 22,
+      "id": "cwe_022_2_go-go",
+      "kind": "safe",
+      "lang": "go",
+      "other_rules": [
+        "IL-301"
+      ],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 22,
+      "id": "cwe_022_2_go-go",
+      "kind": "unsafe",
+      "lang": "go",
+      "other_rules": [
+        "IL-301"
+      ],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 78,
+      "id": "cwe_078_0_go-go",
+      "kind": "safe",
+      "lang": "go",
+      "other_rules": [
+        "IL-301"
+      ],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 78,
+      "id": "cwe_078_0_go-go",
+      "kind": "unsafe",
+      "lang": "go",
+      "other_rules": [
+        "IL-301"
+      ],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 79,
+      "id": "cwe_079_0_go-go",
+      "kind": "safe",
+      "lang": "go",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 79,
+      "id": "cwe_079_0_go-go",
+      "kind": "unsafe",
+      "lang": "go",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 113,
+      "id": "cwe_113_0_go-go",
+      "kind": "safe",
+      "lang": "go",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 113,
+      "id": "cwe_113_0_go-go",
+      "kind": "unsafe",
+      "lang": "go",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 117,
+      "id": "cwe_117_0_go-go",
+      "kind": "safe",
+      "lang": "go",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 117,
+      "id": "cwe_117_0_go-go",
+      "kind": "unsafe",
+      "lang": "go",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 326,
+      "id": "cwe_326_0_go-go",
+      "kind": "safe",
+      "lang": "go",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 326,
+      "id": "cwe_326_0_go-go",
+      "kind": "unsafe",
+      "lang": "go",
+      "other_rules": [],
+      "same_cwe": [
+        "IL-103"
+      ],
+      "same_cwe_confirmed": [
+        "IL-103"
+      ]
+    },
+    {
+      "cwe": 326,
+      "id": "cwe_326_1_go-go",
+      "kind": "safe",
+      "lang": "go",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 326,
+      "id": "cwe_326_1_go-go",
+      "kind": "unsafe",
+      "lang": "go",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 327,
+      "id": "cwe_327_0_go-go",
+      "kind": "safe",
+      "lang": "go",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 327,
+      "id": "cwe_327_0_go-go",
+      "kind": "unsafe",
+      "lang": "go",
+      "other_rules": [],
+      "same_cwe": [
+        "IL-102"
+      ],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 327,
+      "id": "cwe_327_2_go-go",
+      "kind": "safe",
+      "lang": "go",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 327,
+      "id": "cwe_327_2_go-go",
+      "kind": "unsafe",
+      "lang": "go",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 329,
+      "id": "cwe_329_0_go-go",
+      "kind": "safe",
+      "lang": "go",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 329,
+      "id": "cwe_329_0_go-go",
+      "kind": "unsafe",
+      "lang": "go",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 347,
+      "id": "cwe_347_0_go-go",
+      "kind": "safe",
+      "lang": "go",
+      "other_rules": [
+        "IL-301",
+        "TYP-305"
+      ],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 347,
+      "id": "cwe_347_0_go-go",
+      "kind": "unsafe",
+      "lang": "go",
+      "other_rules": [
+        "IL-301"
+      ],
+      "same_cwe": [
+        "IL-105"
+      ],
+      "same_cwe_confirmed": [
+        "IL-105"
+      ]
+    },
+    {
+      "cwe": 643,
+      "id": "cwe_643_0_go-go",
+      "kind": "safe",
+      "lang": "go",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 643,
+      "id": "cwe_643_0_go-go",
+      "kind": "unsafe",
+      "lang": "go",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 732,
+      "id": "cwe_732_2_go-go",
+      "kind": "safe",
+      "lang": "go",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 732,
+      "id": "cwe_732_2_go-go",
+      "kind": "unsafe",
+      "lang": "go",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 760,
+      "id": "cwe_760_0_go-go",
+      "kind": "safe",
+      "lang": "go",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 760,
+      "id": "cwe_760_0_go-go",
+      "kind": "unsafe",
+      "lang": "go",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 918,
+      "id": "cwe_918_0_go-go",
+      "kind": "safe",
+      "lang": "go",
+      "other_rules": [
+        "AI-101"
+      ],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 918,
+      "id": "cwe_918_0_go-go",
+      "kind": "unsafe",
+      "lang": "go",
+      "other_rules": [
+        "AI-101"
+      ],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 918,
+      "id": "cwe_918_1_go-go",
+      "kind": "safe",
+      "lang": "go",
+      "other_rules": [
+        "ARC-211"
+      ],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 918,
+      "id": "cwe_918_1_go-go",
+      "kind": "unsafe",
+      "lang": "go",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 943,
+      "id": "cwe_943_0_go-go",
+      "kind": "safe",
+      "lang": "go",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    },
+    {
+      "cwe": 943,
+      "id": "cwe_943_0_go-go",
+      "kind": "unsafe",
+      "lang": "go",
+      "other_rules": [],
+      "same_cwe": [],
+      "same_cwe_confirmed": []
+    }
+  ],
+  "dataset": "CWEval",
+  "dataset_commit": "e9a2a124c8c53679b6d8d27adfd2f6c40e7576d7",
+  "summary": {
+    "go": {
+      "safe_cases": 19,
+      "safe_flagged_confirmed": 0,
+      "safe_flagged_same_cwe": 0,
+      "unsafe_cases": 19,
+      "unsafe_detected_confirmed": 2,
+      "unsafe_detected_same_cwe": 3,
+      "unsafe_only_other_cwe": 4
+    },
+    "js": {
+      "safe_cases": 23,
+      "safe_flagged_confirmed": 0,
+      "safe_flagged_same_cwe": 1,
+      "unsafe_cases": 23,
+      "unsafe_detected_confirmed": 4,
+      "unsafe_detected_same_cwe": 6,
+      "unsafe_only_other_cwe": 4
+    },
+    "py": {
+      "safe_cases": 25,
+      "safe_flagged_confirmed": 0,
+      "safe_flagged_same_cwe": 0,
+      "unsafe_cases": 21,
+      "unsafe_detected_confirmed": 4,
+      "unsafe_detected_same_cwe": 6,
+      "unsafe_only_other_cwe": 5
+    }
+  },
+  "tool_version": "1.11.1"
+}

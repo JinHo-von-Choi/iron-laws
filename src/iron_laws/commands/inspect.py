@@ -139,6 +139,34 @@ def index_build_command(
     typer.echo(f"{ecosystem} 색인: 이름 {meta['count']}개, 완전한 목록 {'예' if meta['complete'] else '아니오'}, sha256 {meta['sha256'][:16]}")
 
 
+@index_app.command("fetch")
+def index_fetch_command(
+    ecosystem: str = typer.Option(..., "--ecosystem", help="npm 또는 pypi"),
+    out: Path = typer.Option(..., "--out", help="색인 폴더(manifest.json과 압축 목록을 쓴다)"),
+    timeout: float = typer.Option(600, "--timeout", min=1, help="요청 제한 시간(초)"),
+):
+    """
+    레지스트리의 전체 이름 목록을 내려받아 오프라인 색인으로 만듭니다. 이 명령만 네트워크를 씁니다(pypi는 수십 MB, npm은 수백 MB).
+    목록이 끝까지 오지 않았으면 색인을 만들지 않습니다. 코드와 의존성 정보는 보내지 않습니다.
+    """
+    import tempfile
+    from datetime import UTC, datetime
+
+    from iron_laws.deps.package_fetch import FetchError, fetch_names
+    from iron_laws.deps.package_index import PackageIndexError, build_index
+
+    collected = datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    with tempfile.TemporaryDirectory() as tmp:
+        source = Path(tmp) / "names.txt"
+        try:
+            url, count = fetch_names(ecosystem, source, timeout=timeout)
+            meta = build_index(ecosystem, source, out, url, collected, True)
+        except (OSError, ValueError, FetchError, PackageIndexError) as e:
+            err.print(f"[bold red]색인을 만들지 못했습니다: {escape(str(e))}[/bold red]")
+            raise typer.Exit(2) from e
+    typer.echo(f"{ecosystem} 색인: 이름 {meta['count']}개(받은 이름 {count}개), 수집 {collected}, sha256 {meta['sha256'][:16]}")
+
+
 @app.command("mcp")
 def mcp_command(
     root: Path = typer.Option(..., "--root", help="도구 입력 경로를 허용할 기준 폴더. 이 밖을 가리키는 경로(심볼릭 링크 포함)는 거부합니다"),
@@ -201,46 +229,38 @@ def routes_command(
 
 @app.command("hook")
 def hook_command(
-    agent: str = typer.Argument(..., help="claude-code"),
+    agent: str = typer.Argument(..., help="claude-code, codex, cursor"),
     fail_on: str = typer.Option("HIGH", "--fail-on", help="이 심각도 이상 지적이 있으면 에이전트에게 되돌립니다(CRITICAL, HIGH, MEDIUM, LOW)"),
     limit: int = typer.Option(10, "--limit", min=1, help="되돌릴 최대 지적 수"),
+    event: str | None = typer.Option(None, "--event", help="입력에 hook_event_name이 없을 때 시점을 지정합니다(edit, stop, start)"),
 ):
     """
-    코딩 에이전트 훅: 표준 입력으로 받은 편집 정보(Claude Code PostToolUse JSON)에서 바뀐 파일을 점검합니다.
-    기준 이상 지적이 있으면 표준 오류로 지적을 쓰고 종료코드 2로 끝나 에이전트가 고치게 합니다. 점검 대상이 아니면 0입니다.
+    코딩 에이전트 훅. 표준 입력의 훅 JSON에서 시점(편집 직후·종료 직전·세션 시작)을 읽어 처리합니다.
+    편집 직후는 바뀐 파일을, 종료 직전은 세션에서 편집한 파일을 점검해 기준 이상 지적이 있으면 에이전트에게 되돌립니다.
+    세션 시작은 프로젝트 언어에 해당하는 규칙을 지침으로 넘깁니다. 에이전트별 입력·응답 형식은 README를 보십시오.
     """
     import sys
 
+    from iron_laws.core.agent_hook import AGENTS, handle
     from iron_laws.core.models import Severity
-    from iron_laws.core.scanner import AuditScanner
 
-    if agent != "claude-code":
-        err.print("[bold red]지원하는 에이전트: claude-code[/bold red]")
+    if agent not in AGENTS:
+        err.print(f"[bold red]지원하는 에이전트: {', '.join(AGENTS)}[/bold red]")
         raise typer.Exit(2)
     try:
         payload = json.loads(sys.stdin.read() or "{}")
         threshold = Severity(fail_on.upper())
+        if not isinstance(payload, dict):
+            raise ValueError("훅 입력은 JSON 객체여야 합니다")
     except ValueError as e:
         err.print(f"[bold red]입력 오류: {escape(str(e))}[/bold red]")
         raise typer.Exit(2) from e
-    tool_input = payload.get("tool_input") or {}
-    raw = tool_input.get("file_path") or tool_input.get("path") or ""
-    base = Path(payload.get("cwd") or ".")
-    target = (base / raw) if raw and not Path(raw).is_absolute() else Path(raw) if raw else None
-    if target is None or not target.is_file():
-        raise typer.Exit(0)
-    order = [Severity.LOW, Severity.MEDIUM, Severity.HIGH, Severity.CRITICAL]
-    report = AuditScanner(target).scan()
-    blocking = [v for v in report.violations if order.index(v.severity) >= order.index(threshold)]
-    if not blocking:
-        raise typer.Exit(0)
-    lines = [f"오철칙: {target.name}에 {fail_on.upper()} 이상 지적 {len(blocking)}건이 있습니다. 고친 뒤 다시 저장하십시오."]
-    for v in blocking[:limit]:
-        lines.append(f"- {v.rule_id} {v.severity.value} {v.file_path.as_posix()}:{v.line_number} {v.message}")
-        if v.how_to_fix:
-            lines.append(f"  고치는 방법: {v.how_to_fix}")
-    sys.stderr.write("\n".join(lines) + "\n")
-    raise typer.Exit(2)
+    result = handle(agent, payload, threshold, limit, event)
+    if result.stdout:
+        sys.stdout.write(result.stdout if result.stdout.endswith("\n") else result.stdout + "\n")
+    if result.stderr:
+        sys.stderr.write(result.stderr)
+    raise typer.Exit(result.exit_code)
 
 
 @app.command("sbom")

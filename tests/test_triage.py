@@ -91,3 +91,58 @@ def test_constant_and_known_sanitizer_claims_can_be_corroborated():
     assert check_basis(via_call, _violation(3), {"kind": "constant", "line": 1, "name": "g"})["status"] == "unsupported"  # 다른 호출을 거친다
     direct = ["    String g = \"static\"; // 상수", "    stmt.execute(\"x\" + g);"]
     assert check_basis(direct, _violation(2), {"kind": "constant", "line": 1, "name": "g"})["status"] == "corroborated"
+
+
+def _review_report(project: Path):
+    from iron_laws.core.scanner import AuditScanner
+
+    project.mkdir(parents=True, exist_ok=True)
+    (project / "app.py").write_text(CODE, encoding="utf-8")
+    return AuditScanner(project).scan()
+
+
+def test_prompt_carries_cwe_criteria_and_human_judgements(tmp_path: Path):
+    from iron_laws.core.triage import build_prompt
+
+    report = _review_report(tmp_path / "p")
+    rule = next(v.rule_id for v in report.violations if v.confidence.value == "REVIEW")
+    lessons = {rule: ["이 모양의 인자는 셸을 거치지 않으므로 오탐이다 (키 Zq9xKm2LpQw8RtYuVn4B77)"]}
+    prompt, picks = build_prompt(report, tmp_path / "p", {"Zq9xKm2LpQw8RtYuVn4B77"}, lessons)
+    assert picks and "판정 기준: CWE-78 명령어 삽입" in prompt
+    assert "사람이 남긴 판단: 이 모양의 인자는 셸을 거치지 않으므로 오탐이다" in prompt
+    assert "Zq9xKm2LpQw8RtYuVn4B77" not in prompt  # 판단 이력의 비밀값도 가린다
+    assert "코드가 이와 다르면 코드를 따르라" in prompt
+
+
+def test_prompt_lists_the_engine_flow_when_the_finding_has_one():
+    from iron_laws.core.models import EvidenceStep
+    from iron_laws.core.triage import flow_lines
+
+    violation = _violation(5)
+    violation.evidence = [EvidenceStep(role="source", file_path="a.py", line=2, note="request.args"), EvidenceStep(role="sink", file_path="a.py", line=5)]
+    assert flow_lines(violation) == "입력 a.py:2(request.args) → 싱크 a.py:5"
+    assert flow_lines(_violation(5)) == ""
+
+
+def test_unreadable_judgement_history_does_not_stop_the_review(tmp_path: Path):
+    from iron_laws.core.triage import precedent_notes
+
+    (tmp_path / ".iron-laws-approvals.jsonl").write_text("{broken\n", encoding="utf-8")
+    assert precedent_notes(tmp_path, {"IL-504"}, {"IL-504": ["교훈"]}) == {"IL-504": ["교훈"]}
+
+
+def test_approval_reasons_are_offered_for_the_same_rule(tmp_path: Path):
+    from iron_laws.core.approvals import ApprovalStore, Record
+    from iron_laws.core.triage import precedent_notes
+
+    store_path = tmp_path / ".iron-laws-approvals.jsonl"
+    store = ApprovalStore(store_path)
+    from iron_laws.core.approvals import ApprovedFinding
+
+    finding = ApprovedFinding(rule_id="IL-504", rule_version=1, path="a.py", fingerprint="f", loose="l", severity="HIGH", line=3)
+    record = Record(seq=1, kind="approve", id="A-1", created="2026-11-10T00:00:00Z", finding=finding, reason="입력은 내부 배치가 만든 고정 목록이다")
+    record.hash = record.compute_hash()
+    store.records.append(record)
+    store_path.write_text(record.model_dump_json() + "\n", encoding="utf-8")
+    notes = precedent_notes(tmp_path, {"IL-504", "IL-501"})
+    assert notes["IL-504"] == ["승인 사유: 입력은 내부 배치가 만든 고정 목록이다"] and notes["IL-501"] == []

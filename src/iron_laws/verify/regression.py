@@ -1,5 +1,5 @@
 """
-오철칙 결함을 구별하는 최소 회귀시험 (Python의 명령 실행·경로 접근·SQL 조립 세 계열)
+오철칙 결함을 구별하는 최소 회귀시험 (Python의 명령 실행·경로 접근·SQL 조립·서버 측 요청 위조(SSRF)·HTML 출력(XSS) 다섯 계열)
 - 지적의 입력 유입·전파·싱크 근거에서 시험 후보(명세)를 제안한다. 제안은 검증 근거가 아니며, 사람이 입력·기대 결과·가짜 sink를
   확인해 `confirmed: true`로 바꾼 명세만 신뢰된 harness가 실행한다.
 - 검증 순서: 수정 전 원본에서 결함 때문에 실패 → 수정 후 후보에서 통과하고 정상 대조군 유지 → 보안 수정을 되돌린 유효한 mutant에서 다시 실패
@@ -36,13 +36,15 @@ HARNESS_DIR = "_iron_laws_harness"
 RESULT_PREFIX = "IRON_LAWS_RESULT "
 MAX_MUTANTS = 8
 REPEATS = 3
-RegressionFamily = Literal["command", "path", "sql"]
+RegressionFamily = Literal["command", "path", "sql", "ssrf", "xss"]
 
-FAMILY_OF_RULE: dict[str, RegressionFamily] = {"IL-504": "command", "IL-502": "path", "IL-513": "path", "IL-501": "sql"}
+FAMILY_OF_RULE: dict[str, RegressionFamily] = {"IL-504": "command", "IL-502": "path", "IL-513": "path", "IL-501": "sql", "IL-506": "ssrf", "IL-505": "xss"}
 PAYLOADS = {
     "command": ("x; touch IRON_LAWS_PWNED", "readme.txt"),
     "path": ("../../etc/passwd", "report.txt"),
     "sql": ("' OR '1'='1", "alice"),
+    "ssrf": ("http://169.254.169.254/latest/meta-data/", "https://example.com/resource"),
+    "xss": ("<script>IL_XSS(1)</script>", "alice"),
 }
 # 수정이 시험의 입력 하나만 막는지 보려고 같은 결함을 건드리는 다른 입력을 함께 시험한다(명세에 적혀 사람이 확인한다).
 VARIANT_PAYLOADS = {
@@ -54,6 +56,12 @@ VARIANT_PAYLOADS = {
              "....//....//....//....//....//....//etc/passwd", "%2e%2e%2f%2e%2e%2f%2e%2e%2f%2e%2e%2f%2e%2e%2f%2e%2e%2fetc%2fpasswd"),
     # 대소문자·주석 공백은 키워드 차단 목록으로 막은 수정을 가려낸다
     "sql": ("1 OR 1=1", "\" OR \"1\"=\"1", "'; DROP TABLE t--", "' UNION SELECT NULL--", "1 oR 1=1", "1/**/OR/**/1=1"),
+    # 루프백·내부망·메타데이터 주소의 여러 표기(축약·10진·16진·IPv6·사용자 정보 속임)는 문자열 비교로 막은 수정을 가려낸다
+    "ssrf": ("http://127.0.0.1:8080/admin", "http://localhost/admin", "http://[::1]/admin", "http://2130706433/", "http://0x7f.0.0.1/", "http://127.1/",
+             "http://0/", "http://10.0.0.5/", "http://192.168.0.1/", "http://allowed.example.com@169.254.169.254/"),
+    # 대소문자·중첩 태그는 `<script>`만 지우는 수정, 따옴표 탈출은 본문만 이스케이프한 수정, javascript: 는 속성 값만 보는 수정을 가려낸다
+    "xss": ("<img src=x onerror=IL_XSS(1)>", "\"><svg onload=IL_XSS(1)>", "<ScRiPt>IL_XSS(1)</ScRiPt>", "<scr<script>ipt>IL_XSS(1)</scr</script>ipt>",
+            "'><iframe srcdoc=IL_XSS(1)>", "javascript:IL_XSS(1)"),
 }
 CURSOR_NAMES = {"cur", "cursor", "c"}
 CONNECTION_NAMES = {"conn", "connection", "db", "database", "con"}
@@ -89,6 +97,7 @@ class ExpectSpec(BaseModel):
 
     base: str = Field(default="", description="path 계열: 접근해도 되는 폴더. 비우면 임시 기준 폴더")
     summary: str = Field(default="", description="사람이 읽는 기대 결과")
+    allowed_hosts: list[str] = Field(default_factory=list, description="ssrf 계열: 요청해도 되는 호스트. 비우면 내부망·루프백·메타데이터 주소만 결함으로 본다")
     benign_behavior: Literal["report", "require"] = Field(
         default="report", description="정상 입력에서 원본과 수정본의 위험 호출 기록(명령·경로·SQL)이 다르면 report는 표시만, require는 실패로 본다"
     )
@@ -118,6 +127,8 @@ FAKE_SINKS = {
     "command": ["os.system", "os.popen", "subprocess.run", "subprocess.call", "subprocess.check_call", "subprocess.check_output", "subprocess.getoutput", "subprocess.Popen"],
     "path": ["builtins.open", "io.open", "pathlib.Path.open/read_text/read_bytes/write_text/write_bytes", "os.remove/unlink/listdir/makedirs/mkdir/rmdir/stat"],
     "sql": ["sqlite3.connect", "주입된 커서·연결 객체(execute/executemany/executescript 기록)"],
+    "ssrf": ["requests.get/post/put/patch/delete/head/options/request·Session", "httpx.get/…/request·Client", "urllib.request.urlopen", "socket.gethostbyname·getaddrinfo(이름 풀이 대역)"],
+    "xss": ["flask.Response·make_response·render_template_string(템플릿 원문)", "함수의 반환 문자열", "markupsafe(없으면 대역)"],
 }
 
 
@@ -167,7 +178,7 @@ def _literal_base(call_text: str) -> str:
 def propose_spec(root: Path, violation: Violation) -> Proposal:
     family = FAMILY_OF_RULE.get(violation.rule_id)
     if family is None:
-        return Proposal(None, f"{violation.rule_id}는 회귀시험을 지원하는 계열(명령 실행·경로 접근·SQL 조립)이 아니다")
+        return Proposal(None, f"{violation.rule_id}는 회귀시험을 지원하는 계열(명령 실행·경로 접근·SQL 조립·SSRF·XSS)이 아니다")
     rel = violation.file_path.as_posix()
     if not rel.endswith(".py"):
         return Proposal(None, "Python 파일만 지원한다")
@@ -180,7 +191,7 @@ def propose_spec(root: Path, violation: Violation) -> Proposal:
     line_start = None
     node = None
     for n in src.nodes:
-        if n.start_point[0] + 1 == violation.line_number and n.type in ("call", "expression_statement"):
+        if n.start_point[0] + 1 == violation.line_number and n.type in ("call", "expression_statement", "return_statement"):
             node = n
             break
     if node is None:
@@ -238,6 +249,12 @@ def propose_spec(root: Path, violation: Violation) -> Proposal:
     if family == "path":
         base = _literal_base(src.text_of(node))
         notes.append(f"접근해도 되는 폴더(expect.base)를 {'`' + base + '`' if base else '임시 기준 폴더'}로 가정한다. 맞는지 확인하십시오.")
+    if family == "ssrf":
+        notes.append("실제 네트워크에는 접속하지 않는다. requests·httpx·urllib 호출은 요청 URL만 기록하고, 이름 풀이는 IP 문자열·localhost 외에는 공개 주소 하나로 돌려주는 대역이다.")
+        notes.append("요청해도 되는 호스트가 정해져 있으면 expect.allowed_hosts에 적고, 정상 대조군 입력(input.benign)을 그 호스트의 주소로 바꾸십시오.")
+    if family == "xss":
+        notes.append("HTML 출력은 함수 반환값과 flask.Response·make_response·render_template_string 호출에서 읽는다. Jinja 템플릿 파일(render_template)의 자동 이스케이프는 시험하지 않는다.")
+        notes.append("입력이 다른 문맥(JavaScript 문자열, URL 쿼리)에 들어가는 코드는 이 시험이 결함을 재현하지 못할 수 있다. 그 경우 원본에서 재현되지 않아 근거로 쓰이지 않는다.")
     if family == "command":
         notes.append("실제 셸은 실행하지 않는다. os.system·subprocess 호출은 기록만 하며, 셸이 해석하는 문자열에 입력이 그대로 들어가면 결함으로 본다.")
     for name in params:
@@ -247,6 +264,8 @@ def propose_spec(root: Path, violation: Violation) -> Proposal:
         "command": "입력이 셸이 해석하는 명령 문자열에 그대로 들어가면 안 된다(인자 배열로 넘기거나 입력을 검증해야 한다).",
         "path": "접근한 경로가 허용 폴더 밖으로 나가면 안 된다(정규화 뒤 허용 폴더 안인지 확인해야 한다).",
         "sql": "입력이 SQL 문자열에 들어가면 안 된다(파라미터 바인딩을 써야 한다).",
+        "ssrf": "입력이 내부망·루프백·메타데이터 주소로 향하는 요청이 되면 안 된다(허용 호스트 목록으로 검사하고 이름 풀이 뒤 주소도 확인해야 한다).",
+        "xss": "입력이 HTML 출력에서 태그·실행 가능한 속성·script 내용이 되면 안 된다(출력 문맥에 맞게 이스케이프해야 한다).",
     }[family]
     spec = RegressionSpec(
         family=family,
@@ -506,7 +525,7 @@ def _check(result: CheckState, reason: str = "", executed: bool = True, **eviden
     return CheckResult(id="regression_test", title="결함을 구별하는 회귀시험(원본 실패·후보 통과·mutant 재실패)", result=result, reason=reason, required=True, executed=executed, evidence=evidence)
 
 
-BEHAVIOR_KEYS = ("api", "command", "interpreted", "path", "mode", "sql", "params")
+BEHAVIOR_KEYS = ("api", "command", "interpreted", "path", "mode", "sql", "params", "method", "url", "html")
 
 
 def benign_behavior(original: list[dict[str, Any]], candidate: list[dict[str, Any]]) -> dict[str, Any]:

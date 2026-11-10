@@ -1,0 +1,26 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          { "type": "command", "command": "iron-laws hook codex --fail-on HIGH", "statusMessage": "오철칙 지침 불러오는 중" }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "apply_patch|Edit|Write",
+        "hooks": [
+          { "type": "command", "command": "iron-laws hook codex --fail-on HIGH", "timeout": 60, "statusMessage": "오철칙 점검 중" }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          { "type": "command", "command": "iron-laws hook codex --fail-on HIGH", "timeout": 120, "statusMessage": "오철칙 마무리 점검 중" }
+        ]
+      }
+    ]
+  }
+}

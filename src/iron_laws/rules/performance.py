@@ -107,9 +107,113 @@ def _small_literal_variable(src: SourceFile, node: Node, name: str) -> bool:
     return m is not None and m.group(1).count(",") + 1 <= SMALL_LITERAL
 
 
-def _small_constant(src: SourceFile, iterable: Node | None) -> bool:
+LITERAL_COLLECTION_TYPES = {"list", "tuple", "set", "dictionary"}
+COLLECTION_CALLS = {"frozenset", "tuple", "set", "list", "dict"}
+VIEW_METHODS = {"items", "values", "keys"}
+PASS_THROUGH_CALLS = {"enumerate", "reversed", "sorted", "list", "tuple", "set"}
+
+
+def _call_name(src: SourceFile, node: Node) -> str:
+    function = node.child_by_field_name("function")
+    return src.text_of(function) if function is not None else ""
+
+
+def _strip_views(src: SourceFile, node: Node) -> Node:
+    """`d.items()`, `enumerate(x)`처럼 원소 수를 바꾸지 않는 호출을 벗겨 안쪽 컬렉션을 돌려준다."""
+    while node.type == "call":
+        function = node.child_by_field_name("function")
+        arguments = node.child_by_field_name("arguments")
+        if function is None or arguments is None:
+            break
+        if function.type == "attribute" and function.child_by_field_name("attribute") is not None and src.text_of(function.child_by_field_name("attribute")) in VIEW_METHODS and not arguments.named_children:
+            inner = function.child_by_field_name("object")
+            if inner is None:
+                break
+            node = _unwrap(inner)
+        elif function.type == "identifier" and src.text_of(function) in PASS_THROUGH_CALLS and len(arguments.named_children) == 1:
+            node = _unwrap(arguments.named_children[0])
+        else:
+            break
+    return node
+
+
+def _literal_collection(src: SourceFile, node: Node) -> bool:
+    """소스에 적힌 리터럴 컬렉션인가(`frozenset((...))` 같은 감싼 형태 포함)"""
+    node = _unwrap(node)
+    if node.type in LITERAL_COLLECTION_TYPES:
+        return True
+    if node.type == "call" and _call_name(src, node) in COLLECTION_CALLS:
+        arguments = node.child_by_field_name("arguments")
+        return arguments is not None and len(arguments.named_children) == 1 and _literal_collection(src, arguments.named_children[0])
+    return False
+
+
+def _assignment_rights(src: SourceFile, scope: Node, matches) -> list[Node] | None:
+    """scope 안에서 matches(left)가 참인 대입의 오른쪽 노드들. 증가 대입이 하나라도 있으면 None(고정 목록이 아님)."""
+    rights: list[Node] = []
+    for node in walk(scope):
+        if node.type == "augmented_assignment" and (left := node.child_by_field_name("left")) is not None and matches(left):
+            return None
+        if node.type == "assignment" and (left := node.child_by_field_name("left")) is not None and matches(left):
+            right = node.child_by_field_name("right")
+            if right is None:
+                continue  # `name: type` 선언만 있는 줄
+            rights.append(right)
+    return rights
+
+
+def _fixed_collection(src: SourceFile, node: Node, iterable: Node) -> bool:
+    """반복 대상이 소스에 리터럴로 적힌 고정 목록인가: 모듈 상수, 한 번만 리터럴로 대입한 지역 변수, 클래스에 리터럴로 정의한 속성(`self.patterns`).
+    값이 코드로 정해지므로 입력 데이터가 늘어도 이 반복의 횟수는 늘지 않는다. 한 곳이라도 리터럴이 아닌 값을 대입하면 인정하지 않는다."""
+    if src.lang is not Lang.PYTHON:
+        return False
+    target = _strip_views(src, _unwrap(iterable))
+    if target.type == "attribute":
+        base, attribute = target.child_by_field_name("object"), target.child_by_field_name("attribute")
+        if base is None or attribute is None or src.text_of(base) not in ("self", "cls"):
+            return False
+        owner = node.parent
+        while owner is not None and owner.type != "class_definition":
+            owner = owner.parent
+        if owner is None:
+            return False
+        name = src.text_of(attribute)
+
+        def is_member(left: Node) -> bool:
+            if left.type == "identifier":
+                return src.text_of(left) == name
+            if left.type == "attribute":
+                obj, attr = left.child_by_field_name("object"), left.child_by_field_name("attribute")
+                return obj is not None and attr is not None and src.text_of(obj) in ("self", "cls") and src.text_of(attr) == name
+            return False
+
+        rights = _assignment_rights(src, owner, is_member)
+        return bool(rights) and all(_literal_collection(src, r) for r in rights)
+    if target.type != "identifier":
+        return False
+    name = src.text_of(target)
+    scope = _function_of(node)
+    if scope is not None:
+        parameters = scope.child_by_field_name("parameters")
+        if parameters is not None and name in _names(src, parameters):
+            return False
+        rights = _assignment_rights(src, scope, lambda left: left.type == "identifier" and src.text_of(left) == name)
+        if rights:
+            return all(_literal_collection(src, r) for r in rights)
+        if rights is None:
+            return False
+    root = src.root
+    if root is None:
+        return False
+    rights = _assignment_rights(src, root, lambda left: left.type == "identifier" and src.text_of(left) == name)
+    return bool(rights) and all(_literal_collection(src, r) for r in rights)
+
+
+def _small_constant(src: SourceFile, iterable: Node | None, loop: Node | None = None) -> bool:
     if iterable is None:
         return False
+    if loop is not None and _fixed_collection(src, loop, iterable):
+        return True
     iterable = _unwrap(iterable)
     if iterable.type in ("identifier", "attribute", "member_expression") and any(re.fullmatch(r"_*[A-Z][A-Z0-9_]{2,}", part) for part in src.text_of(iterable).split(".")):
         return True  # 모듈 상수 목록(OUTCOMES, VALID_TYPES 등)은 고정 크기 열거로 본다
@@ -173,7 +277,7 @@ def _loop_info(src: SourceFile, loop: Node) -> LoopInfo | None:
     if iterable is None:
         return None
     kind = _range_kind(src, iterable)
-    sized = not _small_constant(src, iterable) and kind != "grid"
+    sized = not _small_constant(src, iterable, loop) and kind != "grid"
     return LoopInfo(_names(src, target), _names(src, iterable), sized)
 
 
@@ -204,6 +308,7 @@ def _derived_names(src: SourceFile, outer: Node, inner: Node, names: set[str]) -
 
 
 class NestedLoopRule(PerfRule):
+    version = 2
     rule_id = "PERF-102"
     name = "중첩 반복(O(n²) 이상)과 반복 안의 리스트 찾기 탐지"
     severity = Severity.LOW
@@ -278,7 +383,7 @@ class NestedLoopRule(PerfRule):
         for i, clause in enumerate(clauses):
             target, iterable = _loop_parts(src, clause)
             kind = _range_kind(src, iterable)
-            sized = not _small_constant(src, iterable) and kind != "grid"
+            sized = not _small_constant(src, iterable, loop) and kind != "grid"
             if i > 0 and sized and not (_names(src, iterable) & outer_names):
                 line = clause.start_point[0] + 1
                 if line not in reported:

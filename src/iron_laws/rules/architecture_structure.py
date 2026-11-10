@@ -1,5 +1,6 @@
 """architecture structure 규칙."""
 import re
+import sys
 import zlib
 from collections import defaultdict
 from pathlib import PurePosixPath
@@ -27,6 +28,31 @@ from iron_laws.rules.architecture_common import (
     external_imports,
     infer_layer,
 )
+
+
+def path_matches(path: str, pattern: str) -> bool:
+    """프로젝트 루트 기준 glob. `*`는 한 폴더 안, `**`는 하위 폴더 전체. 패턴이 폴더로 끝나면 그 아래 전체."""
+    if pattern.endswith("/"):
+        pattern += "**"
+    expression = ""
+    i = 0
+    while i < len(pattern):
+        if pattern.startswith("**/", i):
+            expression += "(?:.*/)?"
+            i += 3
+        elif pattern.startswith("**", i):
+            expression += ".*"
+            i += 2
+        elif pattern[i] == "*":
+            expression += "[^/]*"
+            i += 1
+        elif pattern[i] == "?":
+            expression += "[^/]"
+            i += 1
+        else:
+            expression += re.escape(pattern[i])
+            i += 1
+    return re.fullmatch(expression, path) is not None
 
 
 class SizeAndComplexityRule(ArchRule):
@@ -136,6 +162,7 @@ class LayeringRule(ArchRule):
 
 
 class CircularDependencyRule(ArchRule):
+    version = 2
     rule_id = "ARC-203"
     name = "모듈 간 순환 의존 탐지"
     severity = Severity.MEDIUM
@@ -177,7 +204,7 @@ class CircularDependencyRule(ArchRule):
         for path, src in files.items():
             text = src.code_text
             if src.lang is Lang.PYTHON:
-                for m in self.py_import.finditer(text):
+                for m in self.py_import.finditer(src.code_text_without_strings):
                     line = text.count("\n", 0, m.start()) + 1
                     for target in self._py_targets(path, m, py_modules):
                         if target != path:
@@ -232,7 +259,11 @@ class CircularDependencyRule(ArchRule):
     def _module_variants(module: str, py_modules: dict[str, str]) -> list[str]:
         if not module:
             return []
-        hits = [k for k in py_modules if k == module or k.endswith("." + module)]
+        if module in py_modules:
+            return [module]
+        if module.split(".", 1)[0] in sys.stdlib_module_names:
+            return []
+        hits = [k for k in py_modules if k.endswith("." + module)]
         return hits[:1] if hits else []
 
     @staticmethod
@@ -490,12 +521,15 @@ class LayerDirectionRule(ArchRule):
     rule_id = "ARC-207"
     name = "계층 위반 및 의존 방향 위반 탐지"
     severity = Severity.MEDIUM
-    version = 2  # 폴더 이름으로 계층을 추정하는 대상을 늘렸다. 판정 의미가 달라졌다
+    version = 3  # 설정의 architecture 계약이 있으면 폴더 이름 추정 대신 계약으로 판정한다
     plain = "화면·요청 처리 → 업무 규칙 → 데이터 접근 순서로만 호출해야 고칠 곳과 보안 검사 위치가 분명해집니다. 아래 계층이 위 계층을 부르거나, 컨트롤러가 DB 드라이버를 직접 쓰면 한 곳을 고칠 때 다른 곳이 깨지고 권한 검사가 빠지는 곳이 생깁니다."
     how_to_fix = "의존은 항상 위에서 아래(컨트롤러 → 서비스 → 저장소)로만 흐르게 하세요. 저장소·서비스가 컨트롤러나 웹 프레임워크 타입을 import 하면 필요한 값만 인자로 받도록 바꾸고, 컨트롤러가 DB를 직접 쓰는 코드는 서비스·저장소로 옮기세요."
 
     def check_project(self, project: ProjectContext) -> list[Violation]:
         files = {f.path.as_posix(): f for f in project.source_files()}
+        contract = project.config.architecture
+        if contract.active:
+            return self._check_contract(project, files, contract)
         layers = {p: infer_layer(f) for p, f in files.items()}
         known = {layer for layer in layers.values() if layer}
         if len(known) < 2:
@@ -530,3 +564,44 @@ class LayerDirectionRule(ArchRule):
 
     def _edge(self, src: SourceFile, line: int, message: str, severity: Severity) -> Violation:
         return self.at_line(src, line, message, severity=severity, confidence=Confidence.REVIEW)
+
+    def _check_contract(self, project: ProjectContext, files: dict[str, SourceFile], contract) -> list[Violation]:
+        """`.iron-laws.yml`의 architecture 계약으로 판정한다. 폴더 이름 추정은 쓰지 않는다."""
+        layer_of: dict[str, int] = {}
+        for path in files:
+            for index, layer in enumerate(contract.layers):
+                if any(path_matches(path, pattern) for pattern in layer.paths):
+                    layer_of[path] = index
+                    break
+        found: list[Violation] = []
+        graph, edge_line = CircularDependencyRule()._build_graph(project)
+        for source, targets in sorted(graph.items()):
+            for target in sorted(targets):
+                where = (files[source], edge_line.get((source, target), 1))
+                la, lb = layer_of.get(source), layer_of.get(target)
+                if la is not None and lb is not None and la > lb:
+                    found.append(self._edge(*where, f"계약의 {contract.layers[la].name} 계층이 위 계층인 {contract.layers[lb].name} 계층({target})에 의존합니다 (의존 방향 위반).", Severity.MEDIUM))
+                elif contract.strict and la is not None and lb is None:
+                    found.append(self._edge(*where, f"계약의 {contract.layers[la].name} 계층이 어느 계층에도 속하지 않는 파일({target})에 의존합니다. 계층에 넣거나 계약에서 허용하십시오.", Severity.LOW))
+                for rule in contract.forbidden:
+                    if path_matches(source, rule.source) and path_matches(target, rule.target):
+                        why = f" 사유: {rule.reason}" if rule.reason else ""
+                        found.append(self._edge(*where, f"계약이 금지한 import입니다: {rule.source} → {rule.target} ({target}).{why}", Severity.MEDIUM))
+                for group in contract.independent:
+                    own = next((i for i, pattern in enumerate(group) if path_matches(source, pattern)), None)
+                    other = next((i for i, pattern in enumerate(group) if path_matches(target, pattern)), None)
+                    if own is not None and other is not None and own != other:
+                        found.append(self._edge(*where, f"계약상 서로 독립인 모듈 묶음 사이의 import입니다: {group[own]} → {group[other]} ({target}).", Severity.MEDIUM))
+        for path, src in files.items():
+            index = layer_of.get(path)
+            kind = contract.layers[index].kind if index is not None else None
+            if kind is None:
+                continue
+            for spec, line in external_imports(src):
+                if MAPPING_ONLY_RE.search(spec):
+                    continue
+                if kind == "presentation" and DB_IMPORT_RE.search(spec):
+                    found.append(self._edge(src, line, f"표현 계층({contract.layers[index].name})이 DB 라이브러리 {spec}를 직접 import 합니다.", Severity.MEDIUM))
+                elif kind in ("data", "service") and WEB_IMPORT_RE.search(spec):
+                    found.append(self._edge(src, line, f"{contract.layers[index].name} 계층이 웹 프레임워크 {spec}에 의존합니다. 요청·응답 타입은 표현 계층에만 두십시오.", Severity.MEDIUM))
+        return found

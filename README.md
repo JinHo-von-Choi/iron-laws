@@ -8,7 +8,7 @@
 대기업·공공기관 SI 감리에서 자주 지적되는 항목을 AI 시대에 맞게 점검합니다
 
 [![CI](https://github.com/JinHo-von-Choi/iron-laws/actions/workflows/ci.yml/badge.svg)](https://github.com/JinHo-von-Choi/iron-laws/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![License: AGPL v3 / Commercial](https://img.shields.io/badge/License-AGPL%20v3%20%7C%20Commercial-blue.svg)](#라이선스)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 
 </div>
@@ -181,12 +181,37 @@ test_presets:
 
 ### 훅으로 자동 점검하기
 
-| 대상 | 설정 | 동작 |
+`iron-laws hook <에이전트>`는 에이전트가 보내는 훅 JSON의 `hook_event_name`을 읽어 세 시점을 처리합니다. 설정 예시 파일은 세 시점에 같은 명령을 연결합니다.
+
+| 시점 | 하는 일 |
+|---|---|
+| 세션 시작 | 프로젝트 언어에 해당하는 HIGH 이상 규칙을 지침으로 에이전트에게 넘깁니다(`guidelines export`와 같은 내용) |
+| 편집 직후 | 바뀐 파일을 점검하고, 기준 이상 지적이 있으면 지적과 고치는 방법을 에이전트에게 돌려줍니다 |
+| 종료 직전 | 세션에서 편집한 파일을 다시 점검해, 지적이 남아 있으면 에이전트가 끝내지 못하게 합니다. 앞선 훅 응답으로 이어진 종료에서는 다시 막지 않습니다 |
+
+| 대상 | 설정 | 돌려주는 방식 |
 |---|---|---|
-| Claude Code | [docs/ci/claude-code-settings.json](docs/ci/claude-code-settings.json)의 `hooks`를 `.claude/settings.json`에 넣습니다 | 에이전트가 파일을 고칠 때마다 `iron-laws hook claude-code`가 그 파일을 점검하고, HIGH 이상 지적이 있으면 지적과 고치는 방법을 에이전트에게 돌려줍니다(종료코드 2). Claude Code 2.1.296에서 시험했습니다. |
-| pre-commit | [docs/ci/pre-commit-config.yaml](docs/ci/pre-commit-config.yaml) | 커밋 전에 `iron-laws check .`를 돌리고 HIGH 이상 지적이 있으면 커밋을 막습니다. pre-commit 4.3.0에서 시험했습니다. |
-| GitHub Actions | [docs/ci/github-actions.yml](docs/ci/github-actions.yml) | SARIF를 Code Scanning에 올리고 HIGH 이상이면 실패합니다. |
-| GitLab CI | [docs/ci/gitlab-ci.yml](docs/ci/gitlab-ci.yml) | merge request의 Code Quality 위젯에 지적을 표시합니다. |
+| Claude Code | [docs/ci/claude-code-settings.json](docs/ci/claude-code-settings.json)의 `hooks`를 `.claude/settings.json`에 넣습니다 | 편집·종료는 종료코드 2와 표준 오류, 시작은 표준 출력 글. Claude Code 2.1.296에서 편집 훅을 시험했습니다 |
+| Codex CLI | [docs/ci/codex-hooks.json](docs/ci/codex-hooks.json)을 `.codex/hooks.json`에 둡니다 | 편집·종료는 종료코드 2와 표준 오류, 시작은 표준 출력 글. `apply_patch`의 패치 본문에서 바뀐 파일을 읽습니다 |
+| Cursor | [docs/ci/cursor-hooks.json](docs/ci/cursor-hooks.json)을 `.cursor/hooks.json`에 둡니다 | `afterFileEdit`는 응답을 전달할 수 없어 편집한 파일만 기록하고, `stop`이 `followup_message`로, `sessionStart`가 `additional_context`로 알립니다 |
+| pre-commit | [docs/ci/pre-commit-config.yaml](docs/ci/pre-commit-config.yaml) | 커밋 전에 `iron-laws check .`를 돌리고 HIGH 이상 지적이 있으면 커밋을 막습니다. pre-commit 4.3.0에서 시험했습니다 |
+| GitHub Actions | [docs/ci/github-actions.yml](docs/ci/github-actions.yml) | SARIF를 Code Scanning에 올리고 HIGH 이상이면 실패합니다 |
+| GitLab CI | [docs/ci/gitlab-ci.yml](docs/ci/gitlab-ci.yml) | merge request의 Code Quality 위젯에 지적을 표시합니다 |
+
+**정책·지침 파일 보호:** 에이전트가 `.iron-laws.yml`, 승인·기준선 기록, `CLAUDE.md`, `AGENTS.md`, `.cursorrules`, `.claude/settings.json`, `.codex/*`, `.mcp.json`을 고치면 훅이 그 사실을 알립니다(Cursor는 종료 시점에 알립니다). 설정 파일은 마지막 커밋과 비교해 `fail_on` 상향, 점검 제외 경로·끈 규칙 추가, `limits` 상향, 보호 경로 제거를 적습니다. 보호 대상은 `policies.protected_paths`로 더하고 `policies.protected_paths_exclude`로 기본 목록에서 뺍니다. 이 두 설정은 마지막 커밋의 내용을 쓰므로 에이전트가 같은 세션에서 고쳐서 보호를 풀 수 없고, 설정 파일과 승인·기준선 기록은 뺄 수 없습니다. 사람이 터미널에서 직접 고치는 편집은 훅을 거치지 않으므로 알리지 않습니다.
+
+Codex·Cursor의 입력·응답 형식은 각 도구의 공식 훅 문서를 따라 구현했고, 고정 입력 샘플로 시험했습니다. 실제 Codex·Cursor 프로그램에서 실행해 확인하지는 않았습니다. 편집한 파일 목록은 사용자 임시 폴더에 세션별로 기록하며 프로젝트 폴더에는 아무것도 쓰지 않습니다.
+
+### Claude Code 플러그인으로 한 번에 설치
+
+저장소 루트가 Claude Code 플러그인입니다. 위 세 시점의 훅과 MCP 서버(`iron-laws mcp --root <프로젝트>`)를 한 번에 켭니다. `iron-laws` 명령이 PATH에 있어야 하고, MCP 서버는 `pip install 'iron-laws[mcp]'`가 필요합니다.
+
+```bash
+claude plugin marketplace add JinHo-von-Choi/iron-laws
+/plugin install iron-laws --marketplace JinHo-von-Choi/iron-laws
+```
+
+설치 확인은 훅 명령에 시험 입력을 넣어 봅니다: `echo '{"hook_event_name":"SessionStart","cwd":"."}' | iron-laws hook claude-code`가 프로젝트 언어의 지침을 출력하면 됩니다. `claude plugin validate .`로 매니페스트를 검사했고, 실제 설치와 훅 실행은 이 환경에서 확인하지 않았습니다. 테스트 명령(`test_presets`)이 필요한 `verify_patch`는 서버 설정 파일을 프로젝트 밖에 두고 `iron-laws mcp --server-config`로 직접 띄우십시오.
 
 ### 지침 파일(CLAUDE.md·AGENTS.md)과 함께 쓰기
 
@@ -270,7 +295,11 @@ iron-laws sbom . --format spdx -o sbom.spdx.json --timestamp 2026-10-12T00:00:00
 AI가 지어낸 패키지 이름은 나중에 누군가 같은 이름으로 악성 패키지를 올리면 그대로 설치됩니다. 레지스트리의 전체 이름 목록을 받아 오프라인 색인으로 만들어 두면 `check`·`audit`가 `package.json`, `requirements*.txt`, `pyproject.toml`과 잠금 파일(직접·간접 의존 모두)의 이름을 색인과 맞춥니다.
 
 ```bash
-# PyPI 전체 이름 목록(PEP 691 JSON)을 받아 색인으로 바꿉니다
+# 레지스트리의 전체 이름 목록을 받아 색인으로 만듭니다(이 명령만 네트워크를 씁니다)
+iron-laws index fetch --ecosystem pypi --out pkg-index     # 이름 약 90만 개, 수십 MB
+iron-laws index fetch --ecosystem npm  --out pkg-index     # 이름 수백만 개, 수백 MB
+
+# 직접 받아 둔 목록(JSON 배열, PEP 691 JSON, 줄마다 이름)으로 만들 수도 있습니다
 curl -H "Accept: application/vnd.pypi.simple.v1+json" -o pypi.json https://pypi.org/simple/
 iron-laws index build --ecosystem pypi --source pypi.json --out pkg-index \
   --source-name "pypi.org/simple" --collected-at 2026-10-01T00:00:00Z --complete
@@ -280,6 +309,8 @@ iron-laws audit . --package-index pkg-index
 
 - 색인에 없는 이름은 `확인 필요`(MEDIUM), 인기 패키지와 한 글자 다른 이름은 `확인 필요`(HIGH)로 알립니다. 둘 다 해당하면 한 지적으로 합칩니다.
 - 목록에 최초 게시일이 있으면 색인을 받은 시각 기준 90일 안에 처음 올라온 패키지도 알립니다. 실행 날짜가 아니라 색인 시각이 기준이라 같은 색인이면 결과가 같습니다.
+- `index fetch`는 목록이 끝까지 오지 않았으면(응답 형식 오류, npm의 `total_rows`에 못 미치는 행 수) 색인을 만들지 않습니다. npm 목록은 `replicate.npmjs.com`의 `_all_docs` 응답이며 최초 게시일은 담기지 않습니다.
+- 색인의 수집 시각이 `policies.package_index_max_age_days`(기본 30일)보다 오래되면 `check`·`audit`가 표준 오류로 갱신을 권합니다. 보고서의 판정에는 영향이 없고 `0`이면 알리지 않습니다.
 - `--complete`를 붙이지 않은 색인(일부 목록)이거나 프로젝트가 쓰는 에코시스템의 색인이 없으면 "없는 이름"은 판정하지 않고 진단으로 알립니다. 색인 파일이 manifest.json의 sha256과 다르면 쓰지 않습니다.
 - `workspace:`·`file:`·Git·URL 의존과 설정 `policies.private_packages`(예: `['@acme/*']`)에 맞는 사내 패키지는 공개 색인과 맞추지 않습니다.
 - 코드의 import 이름도 맞춥니다. JavaScript·TypeScript는 npm 색인으로 맞추고, Python은 모듈 이름→배포 이름 색인(`--ecosystem pypi-modules`, 한 줄에 `모듈 배포이름`)이 있을 때만 판정합니다. 표준 라이브러리, Node 내장 모듈, 프로젝트 안의 모듈은 제외합니다.
@@ -289,6 +320,23 @@ iron-laws audit . --package-index pkg-index
 파일 단위 지적과 별개로 프로젝트 전체의 구조 상태를 `양호`, `주의`, `붕괴`, `판정 불가`로 보여 주고, 먼저 풀 문제와 단계별 개선안을 냅니다. 판단 근거는 서로 물고 도는 모듈 묶음(순환 의존)의 크기, 많은 곳이 불러 쓰면서 자신도 많은 곳을 부르는 모듈(허브), 큰 함수·큰 파일의 비율, 계층 위반과 중복 함수 수, 테스트 모듈의 비율, 최근 커밋에서 자주 바뀌면서 큰 파일(변경 집중), 두 모듈 이상에 같은 모양으로 정의된 정규식(중복 정규식)입니다.
 
 계층 추정은 폴더 이름으로도 판단합니다. `core`·`domain`은 서비스 계층, `reporters`·`cli`·`api`는 표현 계층, `repository`·`entities`는 데이터 접근 계층으로 봅니다. 계층 이름이 겹치는 프로젝트에서는 이 지표가 근거 없이 나오므로 다른 지표와 함께 읽으십시오.
+
+폴더 이름 추정이 맞지 않는 프로젝트는 `.iron-laws.yml`에 구조 계약을 적습니다. 계약이 있으면 폴더 이름 추정 대신 계약으로 의존 방향(ARC-207)을 판정하고, `architecture` 진단의 계층 위반 지표에도 같은 계약이 쓰입니다. 계약이 없으면 지금과 같습니다.
+
+```yaml
+architecture:
+  layers:                       # 위에서 아래 순서. 위 계층은 아래 계층을 import할 수 있고 반대는 안 됩니다
+    - {name: handlers, paths: ["app/handlers/**"], kind: presentation}   # kind를 주면 DB 드라이버·웹 프레임워크 import도 점검
+    - {name: logic,    paths: ["app/logic/**"],    kind: service}
+    - {name: store,    paths: ["app/store/**"],    kind: data}
+  forbidden:                    # 금지할 import(출발 → 도착)
+    - {from: "app/domain/**", to: "app/infra/**", reason: "도메인은 인프라를 몰라야 한다"}
+  independent:                  # 한 묶음 안의 서로 다른 패턴끼리 import 금지
+    - ["app/plugins/a/**", "app/plugins/b/**"]
+  strict: false                 # true면 계층에 속한 파일이 어느 계층에도 속하지 않는 파일을 import하는 것도 지적
+```
+
+패턴은 프로젝트 루트 기준 glob입니다(`*`는 한 폴더 안, `**`는 하위 폴더 전체). 파일이 여러 계층 패턴에 맞으면 먼저 적은 계층에 속합니다.
 
 ```bash
 iron-laws architecture .                          # 진단과 단계별 개선안
@@ -304,7 +352,7 @@ iron-laws architecture . --compare before.json    # 이전 진단과 지표 비�
 ## 편집기·검토 보조
 
 - **LSP 서버** `iron-laws lsp`: 편집기에 연결하면 파일을 열거나 고칠 때마다 점검해 진단으로 보여 줍니다. 저장하지 않은 내용도 점검하며, 파일 한 개 단위로 봅니다.
-- **LLM 검토 의견** `check`·`audit --triage-model "<명령>"`: '확인 필요' 지적을 지정한 LLM 명령에 보내고, 돌아온 의견(`likely_true`·`likely_false`·`unsure`)을 보고서의 `review_opinion`에만 담습니다. 판정·심각도·통과 여부는 바꾸지 않습니다. 보내는 코드는 비밀값을 가린 조각입니다. `likely_false`에는 근거(상수·정제 함수·실행되지 않는 분기·외부 입력 아님, 줄, 이름)를 요구하고, 그 근거를 코드와 엔진의 입력 경로로 대조해 `check`에 `corroborated`(확인)·`unsupported`(확인 못 함)·`contradicted`(엔진 근거와 모순)를 남깁니다.
+- **LLM 검토 의견** `check`·`audit --triage-model "<명령>"`: '확인 필요' 지적을 지정한 LLM 명령에 보내고, 돌아온 의견(`likely_true`·`likely_false`·`unsure`)을 보고서의 `review_opinion`에만 담습니다. 판정·심각도·통과 여부는 바꾸지 않습니다. 보내는 코드는 비밀값을 가린 조각이며, 지적마다 결함 종류별 판정 기준(위험인 경우와 오탐인 경우), 엔진이 확인한 입력 유입 → 전파 → 싱크 위치, 같은 규칙에 사람이 남긴 판단(승인 기록의 사유, 교훈 기록)을 함께 보냅니다. `likely_false`에는 근거(상수·정제 함수·실행되지 않는 분기·외부 입력 아님, 줄, 이름)를 요구하고, 그 근거를 코드와 엔진의 입력 경로로 대조해 `check`에 `corroborated`(확인)·`unsupported`(확인 못 함)·`contradicted`(엔진 근거와 모순)를 남깁니다.
 - **AI 습관 추이** `iron-laws habits`: 점검할 때마다 다섯 습관(하드코딩·구조 붕괴·삼킨 예외·중복 함수·타입 회피)의 1천 줄당 지적 수를 `.iron-laws-habits.jsonl`에 기록하고 처음·직전·최근 값을 보여 줍니다. 코드와 경로는 기록하지 않습니다.
 
 ## 감리 대응 보고서
@@ -385,6 +433,8 @@ excludes: [".git", "node_modules", "dist"]
 disabled_rules: ["ARC-206"]
 policies:
   ledger_include_spec_points: false   # 켜면 사용자 명세의 싱크를 근거 장부에도 반영
+  # protected_paths: ["deploy/*.yml"]         # 에이전트 훅이 편집을 알릴 경로를 더함
+  # protected_paths_exclude: ["CLAUDE.md"]    # 기본 보호 경로에서 뺌
 limits:
   max_function_lines: 80
   max_file_lines: 600
@@ -480,7 +530,12 @@ GitLab에서는 `audit --format gitlab-codequality`로 merge request의 Code Qua
 
 ## 라이선스
 
-[MIT License](LICENSE) — Copyright (c) 2026 Jinho Von Choi (최진호)
+오철칙은 이중 라이선스입니다.
+
+- **오픈소스:** [GNU AGPL v3](LICENSE). 수정한 버전을 네트워크 서비스로 제공하면 그 소스코드를 같은 조건으로 공개해야 합니다.
+- **상용:** AGPL 조건을 따를 수 없으면 [상용 라이선스](LICENSE-COMMERCIAL.md)를 받으십시오.
+
+Copyright (c) 2026 Jinho Von Choi (최진호)
 
 ---
 

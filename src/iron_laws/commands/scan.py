@@ -38,6 +38,7 @@ from iron_laws.commands.common import (
     _write_or_print,
     app,
     err,
+    triage_lessons,
 )
 from iron_laws.commands.pilot import _pilot_call, _pilot_store
 from iron_laws.core.approvals import (
@@ -91,7 +92,7 @@ def check_command(
         from iron_laws.core.triage import TriageError, apply_triage
 
         try:
-            attached = apply_triage(report, path, triage_model, getattr(scanner, "_secrets", set()))
+            attached = apply_triage(report, path, triage_model, getattr(scanner, "_secrets", set()), lessons=triage_lessons(report))
             err.print(f"[dim]LLM 검토 의견 {attached}건을 붙였습니다(판정은 바꾸지 않았습니다).[/dim]")
         except TriageError as e:
             err.print(f"[yellow]{escape(str(e))} 검토 의견 없이 계속합니다.[/yellow]")
@@ -150,7 +151,7 @@ def audit_command(
         from iron_laws.core.triage import TriageError, apply_triage
 
         try:
-            attached = apply_triage(report, path, triage_model, getattr(scanner, "_secrets", set()))
+            attached = apply_triage(report, path, triage_model, getattr(scanner, "_secrets", set()), lessons=triage_lessons(report))
             err.print(f"[dim]LLM 검토 의견 {attached}건을 붙였습니다(판정은 바꾸지 않았습니다).[/dim]")
         except TriageError as e:
             err.print(f"[yellow]{escape(str(e))} 검토 의견 없이 계속합니다.[/yellow]")

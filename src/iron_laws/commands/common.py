@@ -169,6 +169,14 @@ def experience_lessons(rule_id: str = "", families: set[str] | None = None) -> l
     return lessons
 
 
+def triage_lessons(report) -> dict[str, list[str]]:
+    """검토 의견 요청에 붙일 교훈: '확인 필요' 지적의 규칙마다 남겨 둔 활성 교훈(최대 3개)"""
+    from iron_laws.core.models import Confidence
+
+    rule_ids = sorted({v.rule_id for v in report.violations if v.confidence is Confidence.REVIEW})
+    return {rule_id: experience_lessons(rule_id)[:3] for rule_id in rule_ids}
+
+
 class ReportFormat(StrEnum):
     CONSOLE = "console"
     MARKDOWN = "markdown"
@@ -291,11 +299,31 @@ def _build_scanner(
             if not (package_index / "manifest.json").is_file():
                 raise ConfigError(f"패키지 색인 폴더에 manifest.json이 없습니다: {package_index}")
             scanner.config.policies.package_index = str(package_index)  # 명령행 옵션이 설정 파일보다 우선한다
+        _warn_stale_index(scanner)
         return scanner
     except ConfigError as e:
         label = "입력 오류" if isinstance(e, InputPathError) else "설정 오류"
         err.print(f"[bold red]{label}: {escape(str(e))}[/bold red]")
         raise typer.Exit(2) from e
+
+
+def _warn_stale_index(scanner: AuditScanner) -> None:
+    """색인 수집 시각이 오래되었으면 표준 오류로 알린다. 보고서에는 쓰지 않는다(같은 입력이면 같은 보고서를 유지하려고 실행 날짜를 판정에 쓰지 않는다)."""
+    from datetime import date
+
+    from iron_laws.deps.package_index import PackageIndexError, load_index
+
+    location, limit_days = scanner.config.policies.package_index, scanner.config.policies.package_index_max_age_days
+    if not location or limit_days == 0:
+        return
+    try:
+        index = load_index(location)
+    except PackageIndexError:  # iron-laws: ignore[IL-301] 색인을 읽지 못한 사유는 점검 진단(package_index)이 알린다
+        return
+    for name, eco in sorted(index.ecosystems.items()):
+        age = (date.today() - eco.collected_at).days
+        if age > limit_days:
+            err.print(f"[yellow]패키지 색인({name})이 {age}일 전에 수집되었습니다. 새로 올라온 패키지를 놓칠 수 있으니 `iron-laws index fetch`로 갱신하십시오.[/yellow]")
 
 
 def _check_completion(report: AuditReport, allow_empty: bool) -> None:

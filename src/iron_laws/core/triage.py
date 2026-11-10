@@ -44,17 +44,92 @@ def _window(root: Path, rel: str, line: int, secrets: set[str]) -> str:
     return mask_secrets(redact_text(body, secrets))
 
 
-def build_prompt(report: AuditReport, root: Path, secrets: set[str]) -> tuple[str, list]:
+CRITERIA: dict[int, str] = {
+    89: "SQL 삽입: 값이 SQL 문자열에 들어가면 위험이다. 파라미터 바인딩(`?`, `%s`, 이름 있는 바인딩)으로 넘기거나, 값이 상수·열거형·허용 목록 검사를 거친 값이면 오탐이다. 테이블·열 이름은 바인딩할 수 없으니 허용 목록 검사 여부를 본다.",
+    78: "명령어 삽입: 셸이 해석하는 문자열(`shell=True`, `os.system`, `exec`)에 값이 들어가면 위험이다. 인자 배열로 넘기고 셸을 쓰지 않거나, 값이 상수·허용 목록 검사를 거친 값이면 오탐이다.",
+    77: "명령어 삽입: 셸이 해석하는 문자열에 값이 들어가면 위험이다. 인자 배열로 넘기고 셸을 쓰지 않거나, 값이 상수·허용 목록 검사를 거친 값이면 오탐이다.",
+    22: "경로 조작: 값이 파일 경로를 정하면 위험이다. 정규화(`realpath`·`resolve`) 뒤 허용 폴더 안인지 확인하거나, 값이 상수·허용 목록 검사를 거친 값이면 오탐이다.",
+    79: "XSS: 값이 HTML 출력에 이스케이프 없이 들어가면 위험이다. 템플릿 자동 이스케이프, `html.escape`·`escape`, 텍스트 노드로만 넣는 DOM API(`textContent`)를 쓰면 오탐이다.",
+    918: "SSRF: 값이 서버가 보내는 요청의 주소가 되면 위험이다. 허용 호스트 목록으로 검사하거나 이름 풀이 뒤 내부 주소를 막으면 오탐이다. 값이 URL의 경로·쿼리 일부이고 호스트가 고정이면 오탐이다.",
+    94: "코드 삽입: 값이 `eval`·`exec`·동적 코드 평가에 들어가면 위험이다. 값이 상수이거나 `ast.literal_eval` 같은 안전한 해석기를 쓰면 오탐이다.",
+    95: "코드 삽입: 값이 `eval`·`exec`·동적 코드 평가에 들어가면 위험이다. 값이 상수이거나 `ast.literal_eval` 같은 안전한 해석기를 쓰면 오탐이다.",
+    90: "LDAP 삽입: 값이 LDAP 필터·DN 문자열에 들어가면 위험이다. LDAP 이스케이프 함수를 거치거나 값이 상수이면 오탐이다. 정규식 검색(`re.search`)처럼 LDAP과 무관한 호출이면 오탐이다.",
+    502: "역직렬화: 신뢰할 수 없는 바이트를 `pickle`·`yaml.load`·`ObjectInputStream`으로 읽으면 위험이다. `yaml.safe_load`, 서명 검증된 데이터, 자기 프로세스가 만든 데이터이면 오탐이다.",
+}
+
+
+def _cwes(violation: Violation) -> list[int]:
+    found: list[int] = []
+    for step in violation.standards:
+        found += [int(n) for n in re.findall(r"^CWE-(\d+)$", step.item_id)]
+    gov = violation.gov_standard
+    if gov is not None:
+        found += [int(n) for n in re.findall(r"CWE-(\d+)", f"{gov.clause_id} {gov.description}")]
+    return list(dict.fromkeys(found))
+
+
+def criteria_for(violation: Violation) -> str:
+    """지적의 CWE에 맞는 판정 기준. 기준이 없는 규칙은 빈 글이다."""
+    for cwe in _cwes(violation):
+        if cwe in CRITERIA:
+            return f"CWE-{cwe} " + CRITERIA[cwe]
+    return ""
+
+
+def flow_lines(violation: Violation) -> str:
+    """엔진이 확인한 입력 유입 → 전파 → 싱크 위치. 코드 원문은 담지 않는다."""
+    if not violation.evidence:
+        return ""
+    labels = {"source": "입력", "propagation": "전파", "sink": "싱크"}
+    steps = [f"{labels.get(s.role, s.role)} {s.file_path}:{s.line}" + (f"({s.note})" if s.note else "") for s in violation.evidence[:8]]
+    return " → ".join(steps)
+
+
+def precedent_notes(root: Path, rule_ids: set[str], lessons: dict[str, list[str]] | None = None) -> dict[str, list[str]]:
+    """같은 규칙에 대해 사람이 남긴 판단: 승인 기록의 사유와 교훈 기록의 교훈. 읽지 못하면 빈 결과이며 검토는 계속한다."""
+    notes: dict[str, list[str]] = {rule_id: list((lessons or {}).get(rule_id, []))[:3] for rule_id in rule_ids}
+    try:
+        from iron_laws.core.approvals import DEFAULT_APPROVALS_FILE, ApprovalStore
+
+        base = root if root.is_dir() else root.parent
+        path = base / DEFAULT_APPROVALS_FILE
+        if path.is_file():
+            store = ApprovalStore(path)
+            revoked = {r.target for r in store.records if r.kind in ("revoke", "forget") and r.target}
+            for record in store.records:
+                if record.kind != "approve" or record.id in revoked or record.finding is None or not record.reason.strip():
+                    continue
+                bucket = notes.get(record.finding.rule_id)
+                reason = f"승인 사유: {record.reason.strip()[:200]}"
+                if bucket is not None and reason not in bucket and len(bucket) < 5:
+                    bucket.append(reason)
+    except Exception:  # noqa: BLE001  # iron-laws: ignore[IL-304] 판단 이력을 읽지 못해도 검토 의견은 이력 없이 만든다
+        return {rule_id: list((lessons or {}).get(rule_id, []))[:3] for rule_id in rule_ids}
+    return notes
+
+
+def build_prompt(report: AuditReport, root: Path, secrets: set[str], lessons: dict[str, list[str]] | None = None) -> tuple[str, list]:
     picks = [v for v in report.violations if v.confidence is Confidence.REVIEW][:MAX_FINDINGS]
     parts = [
         "다음은 정적 분석 도구가 '확인 필요'로 남긴 지적이다. 각 지적이 실제 위험일 가능성을 코드만 보고 판단하라. "
         "JSON 배열만 출력하라: [{\"index\": 번호, \"verdict\": \"likely_true\"|\"likely_false\"|\"unsure\", \"reason\": \"한두 문장\", \"basis\": {...}}]. "
         "likely_false에는 basis를 반드시 넣어라: {\"kind\": \"constant\"(값이 상수다)|\"sanitized_by\"(정제 함수를 거친다)|\"unreachable\"(실행되지 않는 분기다)|\"not_external\"(외부 입력이 아니다), "
         "\"line\": 근거가 있는 줄 번호, \"name\": 변수 또는 정제 함수 이름}. 근거를 댈 수 없으면 unsure로 답하라. 확실하지 않으면 unsure로 답하라.\n"
+        "각 지적에 '판정 기준'(그 결함 종류에서 위험인 경우와 오탐인 경우)과 '엔진이 확인한 흐름'(입력이 들어와 위험 호출에 닿기까지의 위치), "
+        "사람이 같은 규칙에 남긴 판단이 있으면 함께 준다. 이 정보는 참고이며, 코드가 이와 다르면 코드를 따르라. 판단 이력에 있는 사례와 코드 모양이 다르면 그 이력은 쓰지 마라.\n"
     ]
     base = root if root.is_dir() else root.parent
+    history = precedent_notes(root, {v.rule_id for v in picks}, lessons)
     for i, v in enumerate(picks):
-        parts.append(f"## {i}. {v.rule_id} {v.rule_name} — {v.file_path.as_posix()}:{v.line_number}\n지적: {v.message}\n```\n{_window(base, v.file_path.as_posix(), v.line_number, secrets)}\n```\n")
+        extra = []
+        if criteria := criteria_for(v):
+            extra.append(f"판정 기준: {criteria}")
+        if flow := flow_lines(v):
+            extra.append(f"엔진이 확인한 흐름: {flow}")
+        for note in history.get(v.rule_id, []):
+            extra.append(f"사람이 남긴 판단: {mask_secrets(redact_text(note, secrets))}")
+        detail = "".join(f"{line}\n" for line in extra)
+        parts.append(f"## {i}. {v.rule_id} {v.rule_name} — {v.file_path.as_posix()}:{v.line_number}\n지적: {v.message}\n{detail}```\n{_window(base, v.file_path.as_posix(), v.line_number, secrets)}\n```\n")
     return "\n".join(parts), picks
 
 
@@ -117,9 +192,9 @@ def check_basis(lines: list[str], violation: Violation, basis: dict | None) -> d
     return {"status": "unsupported", "why": "엔진도 외부 입력 유입을 확인하지 못했다. 입력이 아닌지는 사람이 확인해야 한다"}
 
 
-def apply_triage(report: AuditReport, root: Path, command: str, secrets: set[str] | None = None, timeout: int = 600) -> int:
+def apply_triage(report: AuditReport, root: Path, command: str, secrets: set[str] | None = None, timeout: int = 600, lessons: dict[str, list[str]] | None = None) -> int:
     """의견을 붙인 지적 수. 명령을 실행하지 못하면 TriageError(지적과 판정은 그대로다)."""
-    prompt, picks = build_prompt(report, root, secrets or set())
+    prompt, picks = build_prompt(report, root, secrets or set(), lessons)
     if not picks:
         return 0
     try:

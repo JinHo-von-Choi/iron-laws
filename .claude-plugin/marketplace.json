@@ -1,0 +1,12 @@
+{
+  "name": "iron-laws",
+  "description": "오철칙 플러그인",
+  "owner": { "name": "최진호" },
+  "plugins": [
+    {
+      "name": "iron-laws",
+      "source": "./",
+      "description": "편집 직후·종료 직전 점검 훅과 MCP 서버(check, explain, fix_prompt, verify_patch, deps). `iron-laws` 명령이 PATH에 있어야 합니다."
+    }
+  ]
+}

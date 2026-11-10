@@ -5,6 +5,7 @@
 """
 
 from pathlib import Path
+from typing import Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -147,6 +148,11 @@ class Policies(BaseModel):
         default=None,
         description="오프라인 패키지 색인 폴더(iron-laws index build로 만든 것). 있으면 레지스트리에 없는 이름·최근 게시 패키지를 점검한다",
     )
+    package_index_max_age_days: int = Field(
+        default=30,
+        ge=0,
+        description="패키지 색인의 수집 시각이 이 일수보다 오래되면 명령 실행 때 경고한다(0이면 경고하지 않는다). 보고서의 판정에는 영향이 없다",
+    )
     custom_spec: str | None = Field(
         default=None,
         description="사용자 명세 파일(소스·싱크·정제 함수). 모든 항목의 양성·음성 예제가 기대대로 판정될 때만 불러온다",
@@ -159,6 +165,49 @@ class Policies(BaseModel):
         default_factory=list,
         description="사설 레지스트리 패키지 이름 패턴(glob). 예: ['@acme/*', 'acme-*']. 공개 색인 점검에서 뺀다",
     )
+    protected_paths: list[str] = Field(
+        default_factory=list,
+        description="에이전트 훅이 편집을 알릴 보호 경로 패턴(glob)을 기본 목록에 더한다. 예: ['deploy/*.yml']",
+    )
+    protected_paths_exclude: list[str] = Field(
+        default_factory=list,
+        description="기본 보호 경로에서 뺄 패턴. 설정 파일과 승인·기준선 기록은 뺄 수 없다",
+    )
+
+
+class LayerContract(BaseModel):
+    """계층 하나: 이름과 그 계층에 속한 파일 패턴(glob, 프로젝트 루트 기준)"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(..., min_length=1)
+    paths: list[str] = Field(..., min_length=1, description="이 계층에 속한 파일 패턴. `**`는 하위 폴더 전체")
+    kind: Literal["presentation", "service", "data"] | None = Field(
+        default=None, description="DB 라이브러리·웹 프레임워크 import 점검에서 이 계층을 어느 역할로 볼지. 생략하면 그 점검을 하지 않는다"
+    )
+
+
+class ForbiddenImport(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    source: str = Field(..., alias="from", description="import하는 쪽 파일 패턴")
+    target: str = Field(..., alias="to", description="import당하는 쪽 파일 패턴")
+    reason: str = ""
+
+
+class ArchitectureContract(BaseModel):
+    """구조 계약. 있으면 폴더 이름으로 계층을 추정하는 대신 이 계약으로 의존 방향을 판정한다."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    layers: list[LayerContract] = Field(default_factory=list, description="위에서 아래 순서. 위 계층은 아래 계층을 import할 수 있고 반대는 안 된다")
+    forbidden: list[ForbiddenImport] = Field(default_factory=list, description="금지할 import(출발 → 도착)")
+    independent: list[list[str]] = Field(default_factory=list, description="서로 import하면 안 되는 파일 패턴 묶음. 한 묶음 안의 서로 다른 패턴끼리 금지")
+    strict: bool = Field(default=False, description="true면 계층에 속한 파일이 계층에 속하지 않은 프로젝트 파일을 import하는 것도 지적")
+
+    @property
+    def active(self) -> bool:
+        return bool(self.layers or self.forbidden or self.independent)
 
 
 class ConfigError(Exception):
@@ -179,6 +228,7 @@ class IronLawsConfig(BaseModel):
     include_extensions: list[str] = Field(default_factory=lambda: list(DEFAULT_EXTENSIONS))
     limits: Limits = Field(default_factory=Limits)
     policies: Policies = Field(default_factory=Policies)
+    architecture: ArchitectureContract = Field(default_factory=ArchitectureContract)
     respect_gitignore: bool = Field(
         default=False,
         description="true면 .gitignore에 걸리는 파일과 폴더를 점검하지 않는다 (기본은 점검)",

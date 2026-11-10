@@ -5,6 +5,23 @@
 
 ## [Unreleased]
 
+## [1.12.0] - 2026-11-10
+
+### Added
+- `iron-laws hook`이 Codex CLI와 Cursor를 지원하고 세 시점(세션 시작·편집 직후·종료 직전)을 처리한다. 종료 직전에는 세션에서 편집한 파일을 다시 점검해 지적이 남으면 에이전트가 끝내지 못하게 하고, 세션 시작에는 프로젝트 언어에 해당하는 규칙을 지침으로 넘긴다. `--event`로 입력에 시점이 없을 때 지정한다.
+- 에이전트 훅이 정책·지침 파일(`.iron-laws.yml`, 승인·기준선 기록, `CLAUDE.md`, `AGENTS.md`, `.cursorrules`, `.claude/settings.json`, `.codex/*`, `.mcp.json`) 편집을 알린다. 설정 파일은 마지막 커밋과 비교해 차단 기준·점검 제외·끈 규칙·상한 완화를 적는다. `policies.protected_paths`·`policies.protected_paths_exclude`로 목록을 바꾸며, 이 값은 마지막 커밋의 내용을 쓴다.
+- 회귀시험이 서버 측 요청 위조(`ssrf`, IL-506)와 HTML 출력(`xss`, IL-505) 계열을 지원한다. `requests`·`httpx`·`urllib` 요청과 flask 응답 출력을 기록 장치로 관찰하고, 계열마다 우회 변형 입력(내부 주소의 여러 표기, 대소문자·중첩 태그·이벤트 속성 등)으로 일부 입력만 막는 수정을 가려낸다. 명세에 `expect.allowed_hosts`를 추가했다.
+- `.iron-laws.yml`의 `architecture`에 구조 계약(`layers`, `forbidden`, `independent`, `strict`)을 추가한다. 계약이 있으면 폴더 이름으로 계층을 추정하는 대신 계약으로 의존 방향(ARC-207)을 판정하고 `architecture` 진단의 계층 위반 지표에도 반영한다. 계약이 없으면 판정이 같다. ARC-207의 판 번호를 3으로 올린다.
+- `benchmarks/cweval.py`: CWEval의 취약·안전 참조 구현으로 같은 CWE의 지적과 오탐을 재고, 결과를 `docs/benchmark_results/cweval.json`과 `docs/ACCURACY.md` §6.5에 남긴다.
+- `--triage-model` 요청에 CWE별 판정 기준, 엔진이 확인한 흐름 위치, 같은 규칙의 승인 사유·교훈을 더한다. 판단 이력을 읽지 못해도 검토는 이력 없이 이어지고, 판정·심각도·통과 여부는 바뀌지 않는다.
+- `iron-laws index fetch --ecosystem pypi|npm --out <폴더>`: 레지스트리의 전체 이름 목록을 내려받아 오프라인 색인으로 만든다. 목록이 끝까지 오지 않았으면 색인을 만들지 않는다. 네트워크를 쓰는 명령은 이것뿐이다.
+- `policies.package_index_max_age_days`(기본 30): 색인 수집 시각이 이 일수보다 오래되면 `check`·`audit`가 표준 오류로 알린다. 보고서에는 쓰지 않는다.
+- Claude Code 플러그인 묶음(`.claude-plugin/`, `hooks/hooks.json`, `.mcp.json`): 세션 시작·편집 직후·종료 직전 훅과 MCP 서버를 한 번에 설치한다.
+
+### Changed
+- 라이선스를 MIT에서 GNU AGPL v3와 상용 라이선스의 이중 라이선스로 바꾼다.
+- ARC-203(모듈 순환 의존)이 문자열 리터럴 안의 `import`와, 표준 라이브러리 이름이 프로젝트 모듈 이름의 끝과 같은 경우의 import를 순환 간선으로 세지 않는다. 판 번호를 2로 올린다.
+
 ## [1.11.2] - 2026-10-27
 
 ### Changed

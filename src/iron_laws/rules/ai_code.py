@@ -96,7 +96,7 @@ from iron_laws.rules.ai_code_configuration import (
 from iron_laws.rules.ai_code_configuration import (
     SecurityHardeningAdviceRule as SecurityHardeningAdviceRule,
 )
-from iron_laws.rules.ai_code_configuration import (
+from iron_laws.rules.ai_code_supply_chain import (
     SupplyChainRule as SupplyChainRule,
 )
 

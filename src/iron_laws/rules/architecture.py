@@ -100,6 +100,9 @@ from iron_laws.rules.architecture_common import (
 from iron_laws.rules.architecture_common import (
     infer_layer as infer_layer,
 )
+from iron_laws.rules.architecture_duplicates import (
+    DuplicateHelperRule as DuplicateHelperRule,
+)
 from iron_laws.rules.architecture_practices import (
     AttributeKeyRule as AttributeKeyRule,
 )
@@ -120,9 +123,6 @@ from iron_laws.rules.architecture_practices import (
 )
 from iron_laws.rules.architecture_structure import (
     CircularDependencyRule as CircularDependencyRule,
-)
-from iron_laws.rules.architecture_structure import (
-    DuplicateHelperRule as DuplicateHelperRule,
 )
 from iron_laws.rules.architecture_structure import (
     LayerDirectionRule as LayerDirectionRule,

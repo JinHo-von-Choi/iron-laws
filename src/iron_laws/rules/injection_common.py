@@ -119,10 +119,10 @@ class SinkRule(BaseRule):
     def _character_check(src: SourceFile, cond: Node) -> str | None:
         """`x.isalnum()`·`x.isdigit()` 같은 문자 종류 검사나 `re.fullmatch(r'[A-Za-z0-9_-]+', x)` 검사이면 검사한 변수 이름.
         이런 검사를 통과한 값에는 따옴표·공백·셸 메타문자·경로 구분자가 없다."""
-        if cond.type != "call":
+        if cond.type != "call":  # iron-laws: ignore[IL-307] None은 문자 종류 검사가 아니라는 판정 결과다
             return None
         function, args = cond.child_by_field_name("function"), cond.child_by_field_name("arguments")
-        if function is None or args is None:
+        if function is None or args is None:  # iron-laws: ignore[IL-307] None은 문자 종류 검사가 아니라는 판정 결과다
             return None
         if function.type == "attribute":
             target, attribute = function.child_by_field_name("object"), function.child_by_field_name("attribute")

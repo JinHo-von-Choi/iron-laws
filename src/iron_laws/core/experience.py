@@ -12,12 +12,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field
 
 from iron_laws.core.config import ConfigError
+from iron_laws.core.hash_chain import GENESIS, chain_problems, load_records
 
 EXPERIENCE_SCHEMA = 1
-GENESIS = "0" * 24
 CREATED_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 DEFAULT_EXPERIENCE_FILE = ".iron-laws-experience.jsonl"
 
@@ -110,31 +110,11 @@ class ExperienceStore:
             self._load()
 
     def _load(self) -> None:
-        try:
-            lines = self.path.read_text(encoding="utf-8").splitlines()
-        except (OSError, UnicodeDecodeError) as e:
-            raise ConfigError(f"교훈 기록을 읽을 수 없습니다: {self.path} ({e})") from e
-        for number, raw in enumerate(lines, start=1):
-            if not raw.strip():
-                continue
-            try:
-                self.records.append(ExperienceRecord(**json.loads(raw)))
-            except (json.JSONDecodeError, ValidationError, TypeError) as e:
-                raise ConfigError(f"교훈 기록 {number}번째 줄을 읽을 수 없습니다: {e}") from e
+        self.records = load_records(self.path, ExperienceRecord, "교훈 기록")
 
     def verify_chain(self) -> list[str]:
         """각 줄의 해시와 앞 줄 연결을 확인한다. 문제가 있으면 사유 목록을 돌려준다."""
-        problems: list[str] = []
-        previous = GENESIS
-        for index, record in enumerate(self.records):
-            if record.seq != index + 1:
-                problems.append(f"{index + 1}번째 기록의 순번이 맞지 않는다(seq={record.seq})")
-            if record.prev != previous:
-                problems.append(f"{index + 1}번째 기록이 앞 기록과 이어지지 않는다(삭제·재배열 의심)")
-            if record.compute_hash() != record.hash:
-                problems.append(f"{index + 1}번째 기록의 내용 해시가 맞지 않는다(내용 변경 의심)")
-            previous = record.hash
-        return problems
+        return chain_problems(self.records)
 
     def append(self, record: ExperienceRecord) -> ExperienceRecord:
         problems = self.verify_chain()

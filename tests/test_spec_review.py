@@ -13,6 +13,7 @@ from typer.testing import CliRunner
 
 from iron_laws.cli import app
 from iron_laws.core.custom_spec import example_results
+from iron_laws.core.scanner import scan_examples
 from iron_laws.core.spec_review import review_spec
 
 runner = CliRunner()
@@ -277,7 +278,7 @@ def test_대조는_계열이_없는_명세_항목을_한계로_밝힌다(tmp_pat
 def test_예제_검증은_항목마다_격리한다(tmp_path: Path):
     spec = _write_spec(tmp_path / "spec.yml", TWO_SINKS_SPEC)
 
-    results = example_results(spec)
+    results = example_results(spec, scan_examples)
 
     by_name = {(name, form): ok for name, form, ok, _why in results}
     assert by_name[("sinks.wrapper-a", "positive")] is True
@@ -299,7 +300,7 @@ def test_예제_검증은_항목당_한_번_점검한다(tmp_path: Path, monkeyp
     monkeypatch.setattr(scanner_module.AuditScanner, "scan", counted)
     spec = _write_spec(tmp_path / "spec.yml", TWO_SINKS_SPEC)
 
-    example_results(spec)
+    example_results(spec, scan_examples)
 
     assert len(calls) == 2
 

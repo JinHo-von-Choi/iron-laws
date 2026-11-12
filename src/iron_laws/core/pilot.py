@@ -31,7 +31,7 @@ SAMPLE = {"teams_min": 3, "teams_max": 5, "per_team_min": 20, "total_min": 60, "
 class PilotStore:
     path: Path
 
-    def records(self) -> list[dict[str, Any]]:
+    def records(self) -> list[dict[str, Any]]:  # iron-laws: ignore[ARC-208] 외부 JSON(보고서·기록 파일·프로토콜 메시지)을 읽고 쓰는 경계라 dict를 그대로 다룬다
         if not self.path.is_file():
             return []
         rows = []
@@ -204,25 +204,9 @@ def summarize(store: PilotStore) -> dict[str, Any]:
         }
     per_team = {t: {"assigned": sum(1 for r in assigns if r["team"] == t), "reviewed": sum(1 for r in reviews if r["team"] == t), "dropouts": sum(1 for r in dropouts if r["team"] == t)} for t in teams}
     setup = list(setup_by_team.values())  # 팀별 설치 시간의 합. 기록을 나눠 적어도 합쳐서 본다
-    reasons: list[str] = []
-    if not (SAMPLE["teams_min"] <= len(teams) <= SAMPLE["teams_max"]):
-        reasons.append(f"팀 수 {len(teams)}(목표 {SAMPLE['teams_min']}~{SAMPLE['teams_max']})")
-    short = [t for t, v in per_team.items() if v["reviewed"] < SAMPLE["per_team_min"]]
-    if short or not teams:
-        reasons.append(f"팀별 검토 {SAMPLE['per_team_min']}건 미만: {', '.join(short) or '기록 없음'}")
-    if not (SAMPLE["total_min"] <= len(reviews) <= SAMPLE["total_max"]):
-        reasons.append(f"전체 검토 {len(reviews)}건(목표 {SAMPLE['total_min']}~{SAMPLE['total_max']})")
-    if any(len([r for r in reviews if r["arm"] == a]) == 0 for a in ARMS):
-        reasons.append("한 조건의 검토 기록이 없다")
+    reasons = _sample_shortfalls(teams, per_team, reviews)
     sufficient = not reasons
-    base, bundle = arms["baseline"]["total_minutes"], arms["bundle"]["total_minutes"]
-    comparison: dict[str, Any] = {"basis": "total_minutes", "median_reduction": None, "p75_change": None, "review_only": {"median_reduction": None, "p75_change": None}}
-    if base["n"] and bundle["n"] and base["median"]:
-        comparison["median_reduction"] = round(1 - bundle["median"] / base["median"], 3)
-        comparison["p75_change"] = round(bundle["p75"] - base["p75"], 2)
-    rbase, rbundle = arms["baseline"]["review_minutes"], arms["bundle"]["review_minutes"]
-    if rbase["n"] and rbundle["n"] and rbase["median"]:
-        comparison["review_only"] = {"median_reduction": round(1 - rbundle["median"] / rbase["median"], 3), "p75_change": round(rbundle["p75"] - rbase["p75"], 2)}
+    comparison = _compare_arms(arms)
     base_rate, bundle_rate = arms["baseline"]["risk_accepted_rate"]["rate"], arms["bundle"]["risk_accepted_rate"]["rate"]
     checks = {
         "setup_within_30_minutes": (max(setup) <= TARGETS["setup_minutes"]) if setup else None,
@@ -231,20 +215,7 @@ def summarize(store: PilotStore) -> dict[str, Any]:
         "no_risk_increase": arms["bundle"]["flagged_risks"] == 0 and (bundle_rate is None or base_rate is None or bundle_rate <= base_rate),
     }
     pending = sum(len(v) for v in risk_view["investigating"].values())
-    if risk_view["confirmed"]["bundle"]:
-        automation = "manual_review_only"
-    elif risk_view["investigating"]["bundle"]:
-        automation = "pending_investigation"
-    else:
-        automation = "allowed"
-    if pending:
-        verdict = "investigation_pending"  # 조사가 끝나기 전에는 성과에 포함하지 않는다
-    elif not sufficient:
-        verdict = "insufficient_sample"
-    elif all(v for v in checks.values() if v is not None) and all(v is not None for v in checks.values()):
-        verdict = "targets_met"
-    else:
-        verdict = "targets_not_met"
+    automation, verdict = _verdict(risk_view, pending, sufficient, checks)
     return {
         "teams": per_team,
         "arms": arms,
@@ -262,3 +233,50 @@ def summarize(store: PilotStore) -> dict[str, Any]:
             "작은 표본의 오류 0건은 일반 오류율 0을 뜻하지 않습니다.",
         ],
     }
+
+
+def _sample_shortfalls(teams: list[str], per_team: dict[str, dict[str, int]], reviews: list[dict[str, Any]]) -> list[str]:
+    """표본이 목표(SAMPLE)에 못 미치는 이유. 비어 있으면 판정할 수 있는 표본이다."""
+    reasons: list[str] = []
+    if not (SAMPLE["teams_min"] <= len(teams) <= SAMPLE["teams_max"]):
+        reasons.append(f"팀 수 {len(teams)}(목표 {SAMPLE['teams_min']}~{SAMPLE['teams_max']})")
+    short = [t for t, v in per_team.items() if v["reviewed"] < SAMPLE["per_team_min"]]
+    if short or not teams:
+        reasons.append(f"팀별 검토 {SAMPLE['per_team_min']}건 미만: {', '.join(short) or '기록 없음'}")
+    if not (SAMPLE["total_min"] <= len(reviews) <= SAMPLE["total_max"]):
+        reasons.append(f"전체 검토 {len(reviews)}건(목표 {SAMPLE['total_min']}~{SAMPLE['total_max']})")
+    if any(len([r for r in reviews if r["arm"] == a]) == 0 for a in ARMS):
+        reasons.append("한 조건의 검토 기록이 없다")
+    return reasons
+
+
+def _compare_arms(arms: dict[str, Any]) -> dict[str, Any]:
+    """bundle 조건이 baseline보다 총 능동 시간(주 지표)과 순수 검토 시간(보조 지표)을 얼마나 줄였는지"""
+    base, bundle = arms["baseline"]["total_minutes"], arms["bundle"]["total_minutes"]
+    comparison: dict[str, Any] = {"basis": "total_minutes", "median_reduction": None, "p75_change": None, "review_only": {"median_reduction": None, "p75_change": None}}
+    if base["n"] and bundle["n"] and base["median"]:
+        comparison["median_reduction"] = round(1 - bundle["median"] / base["median"], 3)
+        comparison["p75_change"] = round(bundle["p75"] - base["p75"], 2)
+    rbase, rbundle = arms["baseline"]["review_minutes"], arms["bundle"]["review_minutes"]
+    if rbase["n"] and rbundle["n"] and rbase["median"]:
+        comparison["review_only"] = {"median_reduction": round(1 - rbundle["median"] / rbase["median"], 3), "p75_change": round(rbundle["p75"] - rbase["p75"], 2)}
+    return comparison
+
+
+def _verdict(risk_view: dict[str, Any], pending: int, sufficient: bool, checks: dict[str, bool | None]) -> tuple[str, str]:
+    """(자동 경로 허용 상태, 종합 판정). 조사 중인 사건이 있으면 성과 판정을 미룬다."""
+    if risk_view["confirmed"]["bundle"]:
+        automation = "manual_review_only"
+    elif risk_view["investigating"]["bundle"]:
+        automation = "pending_investigation"
+    else:
+        automation = "allowed"
+    if pending:
+        verdict = "investigation_pending"  # 조사가 끝나기 전에는 성과에 포함하지 않는다
+    elif not sufficient:
+        verdict = "insufficient_sample"
+    elif all(v for v in checks.values() if v is not None) and all(v is not None for v in checks.values()):
+        verdict = "targets_met"
+    else:
+        verdict = "targets_not_met"
+    return automation, verdict

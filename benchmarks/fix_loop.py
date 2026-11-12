@@ -30,7 +30,7 @@ from pathlib import Path
 from iron_laws.verify.engine import VerifyOptions, verify_patch
 from iron_laws.verify.receipt import Receipt
 
-OUTCOMES = ("bypass", "tests_failed", "undeterminable", "static_not_resolved", "behavior_not_removed", "resolved_with_new_debt", "new_findings", "check_failed", "resolved")
+OUTCOMES = ("bypass", "tests_failed", "undeterminable", "static_not_resolved", "behavior_not_removed", "resolved_with_new_debt", "new_findings", "check_failed", "resolved")  # iron-laws: ignore[ARC-205] 패치 검증 결과 분류값이다
 
 
 def classify(receipt: Receipt) -> dict:
@@ -40,7 +40,7 @@ def classify(receipt: Receipt) -> dict:
     new_debt = bool((receipt.debt_delta or {}).get("fix_adjacent_new"))
     if receipt.bypass_changes:
         outcome = "bypass"
-    elif checks.get("existing_tests") == "fail":
+    elif checks.get("existing_tests") == "fail":  # iron-laws: ignore[ARC-205] 패치 검증 단계 이름이다
         outcome = "tests_failed"
     elif receipt.verdict.overall == "undeterminable" and static != "fail":
         outcome = "undeterminable"

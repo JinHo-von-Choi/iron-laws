@@ -13,6 +13,7 @@ from iron_laws.commands.common import (
     ConfigOpt,
     ContractOpt,
     PathArg,
+    ScanRequest,
     _build_scanner,
     approvals_app,
     console,
@@ -60,7 +61,7 @@ def approvals_add_command(
     from iron_laws.verify.receipt import Receipt
 
     approvals_store = _store(store)
-    scanner = _build_scanner(path, config, False, None, None, None, contract, None, None, True)
+    scanner = _build_scanner(ScanRequest(path, config=config, contract=contract, collect_dependencies=True))
     report = scanner.scan()
     if report.summary.scan_status != "complete":
         err.print("[bold red]점검이 끝까지 이루어지지 않아 승인을 기록하지 않습니다(불완전한 분석 위에 승인을 쌓지 않습니다).[/bold red]")
@@ -114,13 +115,13 @@ def approvals_status_command(
     현재 코드에서 각 승인이 아직 유효한지 확인합니다. 종료코드: 0 모두 유효, 1 다시 검토할 승인이 있음, 2 점검 불가.
     """
     approvals_store = _store(store)
-    scanner = _build_scanner(path, config, False, None, None, None, contract, None, store or Path(DEFAULT_APPROVALS_FILE))
+    scanner = _build_scanner(ScanRequest(path, config=config, contract=contract, approvals=store or Path(DEFAULT_APPROVALS_FILE)))
     report = scanner.scan()
     if report.summary.scan_status != "complete":
         err.print("[bold red]점검이 끝까지 이루어지지 않아 승인 유효성을 판단할 수 없습니다.[/bold red]")
         raise typer.Exit(2)
     rows = scanner.approval_rows
-    label = {"valid": "유효", "needs_review": "재검토 필요", "revoked": "철회됨", "resolved": "해소됨", "unobserved": "미확인", "invalid": "검증 실패"}
+    label = {"valid": "유효", "needs_review": "재검토 필요", "revoked": "철회됨", "resolved": "해소됨", "unobserved": "미확인", "invalid": "검증 실패"}  # iron-laws: ignore[ARC-205] 승인 상태값이다
     if json_output:
         payload = [{"id": r.approval.id, "status": r.status, "reasons": r.reasons, "finding": r.approval.record.finding.model_dump() if r.approval.record.finding else None} for r in rows]
         sys.stdout.write(json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
@@ -268,7 +269,7 @@ def approvals_queue_command(
     """
     검토 대기열: 사람이 판단해야 하는 항목(승인 전제가 바뀐 승인, 승인 없는 '확인 필요' 지적)을 심각도 순으로 보여 줍니다.
     """
-    scanner = _build_scanner(path, config, False, None, None, None, contract, None, store or Path(DEFAULT_APPROVALS_FILE))
+    scanner = _build_scanner(ScanRequest(path, config=config, contract=contract, approvals=store or Path(DEFAULT_APPROVALS_FILE)))
     report = scanner.scan()
     if report.summary.scan_status != "complete":
         err.print("[bold red]점검이 끝까지 이루어지지 않아 대기열이 불완전할 수 있습니다.[/bold red]")

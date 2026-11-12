@@ -130,7 +130,7 @@ def experiment_4() -> dict:
         scanner = AuditScanner(project, approvals=ApprovalStore(store), changed_files={f"{n}.py" for n in TOOLS}, changed_since="HEAD")
         report = scanner.scan()
         bundle = build_bundle(report, scanner.approval_rows, changed_files=scanner.changed_files, command="", approvals_path=None)
-        for decision in bundle.approvals:
+        for decision in bundle.approvals:  # iron-laws: ignore[PERF-102] 바깥 반복은 고정된 실험 조건 목록이고 안쪽은 그 조건의 승인 판단이다
             path = decision.location.split(":")[0]
             invalidated = decision.decision == "invalidate"
             wrongly_kept += truth[path] and not invalidated

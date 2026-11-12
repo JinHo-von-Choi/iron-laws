@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from tree_sitter import Node
 
 from iron_laws.engine.languages import C_FAMILY, JS_FAMILY, Lang
+from iron_laws.engine.python_bindings import canonical_callee
 from iron_laws.engine.source import SourceFile
 
 FUNCTION_TYPES: dict[Lang, set[str]] = {
@@ -242,9 +243,7 @@ def iter_calls(src: SourceFile) -> Iterator[Call]:
 
 def _collect_calls(src: SourceFile) -> list[Call]:
     types = CALL_TYPES.get(src.lang, set()) if src.lang else set()
-    canonical = None
-    if src.lang is Lang.PYTHON:
-        from iron_laws.engine.python_bindings import canonical_callee as canonical
+    canonical = canonical_callee if src.lang is Lang.PYTHON else None
     calls = []
     for node in src.nodes:
         if node.type in types:

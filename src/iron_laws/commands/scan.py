@@ -28,6 +28,7 @@ from iron_laws.commands.common import (
     PathArg,
     ReportFormat,
     RequireSignedOpt,
+    ScanRequest,
     SearchParentsOpt,
     TriageOpt,
     _build_scanner,
@@ -83,7 +84,7 @@ def check_command(
     """
     프로젝트의 보안 약점과 품질 결함을 신속 진단합니다. (CI/CD 적합)
     """
-    scanner = _build_scanner(path, config, search_parents, baseline, changed_since, respect_gitignore, contract, contract_mode, approvals, gates=_gates(max_unknown, max_unverified), package_index=package_index, max_wall_seconds=max_wall_seconds, allowed_signers=allowed_signers, require_signed_approvals=require_signed_approvals, build_manifest=build_manifest, require_full_coverage=require_full_coverage)
+    scanner = _build_scanner(ScanRequest(path, config=config, search_parents=search_parents, baseline=baseline, changed_since=changed_since, respect_gitignore=respect_gitignore, contract=contract, contract_mode=contract_mode, approvals=approvals, gates=_gates(max_unknown, max_unverified), package_index=package_index, max_wall_seconds=max_wall_seconds, allowed_signers=allowed_signers, require_signed_approvals=require_signed_approvals, build_manifest=build_manifest, require_full_coverage=require_full_coverage))
     if fail_on is not None:
         scanner.config.fail_on = fail_on
         scanner.fail_on_source = "명령행 옵션"
@@ -145,7 +146,7 @@ def audit_command(
     """
     점검을 수행하고 보고서를 발행합니다. markdown 보고서에는 행안부 구현단계 49개 항목별 점검 현황이 포함됩니다.
     """
-    scanner = _build_scanner(path, config, search_parents, baseline, changed_since, respect_gitignore, contract, contract_mode, approvals, gates=_gates(max_unknown, max_unverified), package_index=package_index, max_wall_seconds=max_wall_seconds, allowed_signers=allowed_signers, require_signed_approvals=require_signed_approvals, build_manifest=build_manifest, require_full_coverage=require_full_coverage)
+    scanner = _build_scanner(ScanRequest(path, config=config, search_parents=search_parents, baseline=baseline, changed_since=changed_since, respect_gitignore=respect_gitignore, contract=contract, contract_mode=contract_mode, approvals=approvals, gates=_gates(max_unknown, max_unverified), package_index=package_index, max_wall_seconds=max_wall_seconds, allowed_signers=allowed_signers, require_signed_approvals=require_signed_approvals, build_manifest=build_manifest, require_full_coverage=require_full_coverage))
     report = _timed_scan(scanner, metrics, "audit")
     if triage_model:
         from iron_laws.core.triage import TriageError, apply_triage
@@ -182,7 +183,7 @@ def fix_prompt_command(
     """
     점검 결과를 코딩 AI에게 그대로 붙여넣을 수정 지시문으로 만듭니다. 지시문 생성이 목적이라 지적이 있어도 종료코드는 0입니다.
     """
-    scanner = _build_scanner(path, config, search_parents, baseline, changed_since, respect_gitignore, contract, contract_mode, approvals)
+    scanner = _build_scanner(ScanRequest(path, config=config, search_parents=search_parents, baseline=baseline, changed_since=changed_since, respect_gitignore=respect_gitignore, contract=contract, contract_mode=contract_mode, approvals=approvals))
     report = scanner.scan()
     if report.summary.scan_status == "empty":
         _check_completion(report, False)
@@ -215,7 +216,7 @@ def review_bundle_command(
         err.print("[bold red]--format은 markdown 또는 json이어야 합니다.[/bold red]")
         raise typer.Exit(2)
     store_path = approvals or Path(DEFAULT_APPROVALS_FILE)
-    scanner = _build_scanner(path, config, False, None, changed_since, None, contract, None, store_path, True, allowed_signers=allowed_signers, require_signed_approvals=require_signed_approvals)
+    scanner = _build_scanner(ScanRequest(path, config=config, changed_since=changed_since, contract=contract, approvals=store_path, collect_dependencies=True, allowed_signers=allowed_signers, require_signed_approvals=require_signed_approvals))
     report = _timed_scan(scanner, metrics, "review-bundle")
     if report.summary.scan_status != "complete":
         err.print("[bold red]점검이 끝까지 이루어지지 않아 검토 묶음이 불완전합니다(미확인을 유지로 보지 않습니다).[/bold red]")

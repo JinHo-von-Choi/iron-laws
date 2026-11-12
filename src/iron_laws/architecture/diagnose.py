@@ -47,7 +47,7 @@ def _limit(spec: tuple[int, float], n: int) -> int:
     return max(spec[0], int(spec[1] * n + 0.999))
 
 
-def evaluate(m: Metrics) -> dict[str, Any]:
+def evaluate(m: Metrics) -> dict[str, Any]:  # iron-laws: ignore[ARC-208] 외부 JSON(보고서·기록 파일·프로토콜 메시지)을 읽고 쓰는 경계라 dict를 그대로 다룬다
     n = max(m.files, 1)
     t = THRESHOLDS
     indicators: dict[str, dict[str, Any]] = {}
@@ -59,18 +59,8 @@ def evaluate(m: Metrics) -> dict[str, Any]:
     state = "ok" if m.files_in_cycles == 0 else "bad" if ratio > t["cycles"]["bad_ratio"] or m.largest_cycle >= t["cycles"]["bad_size"] else "warn"
     put("cycles", state, f"순환 {len(m.cycles)}묶음, 파일 {m.files_in_cycles}개({ratio:.0%}), 가장 큰 묶음 {m.largest_cycle}개", "서로를 불러 쓰는 모듈 묶음입니다. 한쪽을 고치면 다른 쪽이 깨집니다.", m.cycles[0] if m.cycles else [])
 
-    g = t["god_module"]
-    warn_in, bad_in, warn_out = _limit(g["warn_fan_in"], n), _limit(g["bad_fan_in"], n), _limit(g["warn_fan_out"], n)
-    # 많이 불리기만 하는 모듈(자료형·상수)은 안정적이라 문제가 아니다. 많이 불리면서 동시에 많이 부르는 중심 모듈(허브)을 본다.
-    bad_hubs = [h for h in m.hubs if h.fan_in >= bad_in and h.fan_out >= g["hub_min_out_bad"]]
-    warn_hubs = [h for h in m.hubs if h.fan_in >= warn_in and h.fan_out >= g["hub_min_out_warn"]]
-    out_n = m.top_fan_out[0].fan_out if m.top_fan_out else 0
-    state = "bad" if bad_hubs else "warn" if warn_hubs or out_n >= warn_out else "ok"
-    hub = (bad_hubs or warn_hubs or m.hubs[:1])
-    value = f"중심 모듈 {hub[0].path}: {hub[0].fan_in}곳에서 불리고 {hub[0].fan_out}곳을 호출" if hub else "중심 모듈 없음"
-    if out_n >= warn_out and not (bad_hubs or warn_hubs):
-        value = f"가장 많이 부르는 모듈 {m.top_fan_out[0].path}: {out_n}곳을 호출"
-    put("god_module", state, value, "한 모듈이 너무 많은 곳과 얽혀 있으면 그 모듈을 고칠 때 전체가 흔들립니다.", [h.path for h in (bad_hubs or warn_hubs or m.hubs[:1])] or [s.path for s in m.top_fan_out[:1]])
+    state, value, files = _hub_indicator(m, n)
+    put("god_module", state, value, "한 모듈이 너무 많은 곳과 얽혀 있으면 그 모듈을 고칠 때 전체가 흔들립니다.", files)
 
     lf = len(m.large_functions) / max(m.functions, 1)
     state = "ok" if lf <= t["large_functions"]["warn_ratio"] else "bad" if lf > t["large_functions"]["bad_ratio"] else "warn"
@@ -112,15 +102,7 @@ def evaluate(m: Metrics) -> dict[str, Any]:
     )
 
     bad = [k for k, v in indicators.items() if v["state"] == "bad"]
-    warn = [k for k, v in indicators.items() if v["state"] == "warn"]
-    if m.files < MIN_FILES:
-        band, reason = "판정 불가", f"소스 파일이 {m.files}개로 {MIN_FILES}개 미만이라 구간을 판정하지 않습니다. 지표만 참고하세요."
-    elif len(bad) >= 3 or ("cycles" in bad and ({"layering", "god_module"} & set(bad))):
-        band, reason = "붕괴", f"'붕괴' 지표 {len(bad)}개: " + ", ".join(INDICATOR_NAME[k] for k in bad)
-    elif bad or len(warn) >= 3 or {"cycles", "god_module", "layering"} & set(warn):
-        band, reason = "주의", "붕괴 지표: " + (", ".join(INDICATOR_NAME[k] for k in bad) or "없음") + f" / 주의 지표 {len(warn)}개(" + ", ".join(INDICATOR_NAME[k] for k in warn) + ")"
-    else:
-        band, reason = "양호", "붕괴·다수 주의 지표가 없습니다."
+    band, reason = _band(m, indicators)
     steps = _steps(m, indicators, bad_states=set(bad))
     return {
         "schema": SCHEMA,
@@ -135,6 +117,37 @@ def evaluate(m: Metrics) -> dict[str, Any]:
         "notes": m.notes[:10],
         "limits": "지표는 구조의 한 단면입니다. 설계가 좋은지 나쁜지, 유지보수 비용이 얼마인지는 알려 주지 않습니다. 시험 유무는 파일 이름과 가져오기로 추정한 값입니다.",
     }
+
+
+def _hub_indicator(m: Metrics, n: int) -> tuple[str, str, list[str]]:
+    """(상태, 값, 대상 파일). 많이 불리면서 동시에 많이 부르는 중심 모듈(허브)과 너무 많이 부르는 모듈을 본다."""
+    g = THRESHOLDS["god_module"]
+    warn_in, bad_in, warn_out = _limit(g["warn_fan_in"], n), _limit(g["bad_fan_in"], n), _limit(g["warn_fan_out"], n)
+    # 많이 불리기만 하는 모듈(자료형·상수)은 안정적이라 문제가 아니다. 많이 불리면서 동시에 많이 부르는 중심 모듈(허브)을 본다.
+    bad_hubs = [h for h in m.hubs if h.fan_in >= bad_in and h.fan_out >= g["hub_min_out_bad"]]
+    warn_hubs = [h for h in m.hubs if h.fan_in >= warn_in and h.fan_out >= g["hub_min_out_warn"]]
+    out_n = m.top_fan_out[0].fan_out if m.top_fan_out else 0
+    state = "bad" if bad_hubs else "warn" if warn_hubs or out_n >= warn_out else "ok"
+    hub = (bad_hubs or warn_hubs or m.hubs[:1])
+    value = f"중심 모듈 {hub[0].path}: {hub[0].fan_in}곳에서 불리고 {hub[0].fan_out}곳을 호출" if hub else "중심 모듈 없음"
+    if out_n >= warn_out and not (bad_hubs or warn_hubs):
+        value = f"가장 많이 부르는 모듈 {m.top_fan_out[0].path}: {out_n}곳을 호출"
+    return state, value, [h.path for h in (bad_hubs or warn_hubs or m.hubs[:1])] or [s.path for s in m.top_fan_out[:1]]
+
+
+def _band(m: Metrics, indicators: dict[str, dict[str, Any]]) -> tuple[str, str]:
+    """지표 상태로 정한 구간(판정 불가·붕괴·주의·양호)과 그 이유"""
+    bad = [k for k, v in indicators.items() if v["state"] == "bad"]
+    warn = [k for k, v in indicators.items() if v["state"] == "warn"]
+    if m.files < MIN_FILES:
+        band, reason = "판정 불가", f"소스 파일이 {m.files}개로 {MIN_FILES}개 미만이라 구간을 판정하지 않습니다. 지표만 참고하세요."
+    elif len(bad) >= 3 or ("cycles" in bad and ({"layering", "god_module"} & set(bad))):
+        band, reason = "붕괴", f"'붕괴' 지표 {len(bad)}개: " + ", ".join(INDICATOR_NAME[k] for k in bad)
+    elif bad or len(warn) >= 3 or {"cycles", "god_module", "layering"} & set(warn):
+        band, reason = "주의", "붕괴 지표: " + (", ".join(INDICATOR_NAME[k] for k in bad) or "없음") + f" / 주의 지표 {len(warn)}개(" + ", ".join(INDICATOR_NAME[k] for k in warn) + ")"
+    else:
+        band, reason = "양호", "붕괴·다수 주의 지표가 없습니다."
+    return band, reason
 
 
 def _steps(m: Metrics, ind: dict[str, dict[str, Any]], bad_states: set[str]) -> list[dict[str, Any]]:

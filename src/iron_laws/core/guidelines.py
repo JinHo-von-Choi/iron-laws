@@ -154,13 +154,14 @@ PRONOUN_START = re.compile(r"^(?:\*\*)?(?:it|this|they|these|that)\b|^(?:이것|
 def _directive_topics(line: str) -> list[str]:
     """지시어가 있는 문장 안의 주제만 센다. 설명 문장에만 나온 낱말(jwt, innerHTML)을 지시로 보지 않는다.
     지시 문장이 대명사(It·This 등)로 시작하면 바로 앞 문장의 주제를 이어받는다."""
-    found: list[str] = []
+    seen: dict[str, None] = {}  # 처음 나온 순서를 지키며 같은 주제를 한 번만 담는다
     previous = ""
     for sentence in SENTENCE_SPLIT.split(line):
         if DIRECTIVE_RE.search(sentence):
             scope = f"{previous} {sentence}" if PRONOUN_START.search(sentence.strip()) else sentence
-            found += [name for name, pattern, _ in TOPICS if pattern.search(scope) and name not in found]
+            seen.update((name, None) for name, pattern, _ in TOPICS if pattern.search(scope))
         previous = sentence
+    found = list(seen)
     shadowed = {general for name in found for general in NARROWER.get(name, ())}
     return [name for name in found if name not in shadowed]
 
@@ -180,7 +181,8 @@ def extract_directives(text: str) -> list[Directive]:
         if not explicit and not DIRECTIVE_RE.search(line):
             continue
         topics = [] if explicit else _directive_topics(line)
-        rules = explicit or sorted({rule for name, pattern, ids in TOPICS if name in topics for rule in ids})
+        topic_set = set(topics)
+        rules = explicit or sorted({rule for name, pattern, ids in TOPICS if name in topic_set for rule in ids})
         found.append(Directive(number, re.sub(r"^[-*+]\s+|^\d+[.)]\s+", "", line), rules, topics))
     return found
 

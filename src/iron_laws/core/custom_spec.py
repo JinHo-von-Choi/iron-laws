@@ -19,17 +19,21 @@
 import hashlib
 import re
 import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
 from pydantic import BaseModel, Field, ValidationError
 
-from iron_laws.core.config import ConfigError
+from iron_laws.core.config import ConfigError, IronLawsConfig, Policies
+from iron_laws.core.models import AuditReport
 
 FAMILY_RULE = {"command": "IL-504", "sql": "IL-501", "path": "IL-502", "code": "IL-503"}
 LANG_EXT = {"python": ".py", "javascript": ".js", "typescript": ".ts", "java": ".java", "csharp": ".cs", "go": ".go", "php": ".php"}
 _VALIDATING = False
+# 예제 폴더를 주어진 설정으로 점검하는 함수. 점검기(scanner.py)가 넘겨 준다. 명세 모듈이 점검기를 직접 가져오면 순환 의존이 생긴다.
+ScanFn = Callable[[Path, IronLawsConfig], AuditReport]
 
 
 class SpecEntry(BaseModel):
@@ -104,19 +108,16 @@ def _single_entry_spec(entry: SpecEntry, kind: str) -> CustomSpec:
     return spec
 
 
-def example_results(path: Path) -> list[tuple[str, str, bool, str]]:
+def example_results(path: Path, scan: ScanFn) -> list[tuple[str, str, bool, str]]:
     """(항목, positive|negative, 맞았는지, 설명). 항목 하나만 명세에 넣어 예제마다 해당 계열 규칙의 확정 지적 여부를 본다.
     양성·음성 예제를 같은 폴더에 두고 한 번에 점검하되, 항목 하나가 다른 항목의 예제에 영향을 주지 않게 한다."""
     loaded = read_spec(path)
-    return [result for kind in ("sources", "sinks", "sanitizers") for entry in getattr(loaded.spec, kind) for result in entry_results(kind, entry)]
+    return [result for kind in ("sources", "sinks", "sanitizers") for entry in getattr(loaded.spec, kind) for result in entry_results(kind, entry, scan)]
 
 
-def entry_results(kind: str, entry: SpecEntry) -> list[tuple[str, str, bool, str]]:
+def entry_results(kind: str, entry: SpecEntry, scan: ScanFn) -> list[tuple[str, str, bool, str]]:
     """항목 하나의 양성·음성 예제 판정. 다른 항목 없이 이 항목만 명세에 넣고 점검한다."""
     global _VALIDATING
-    from iron_laws.core.config import IronLawsConfig, Policies
-    from iron_laws.core.scanner import AuditScanner
-
     _check_entry(kind, entry)
     rule_id = FAMILY_RULE[entry.family]
     extension = LANG_EXT[entry.languages[0]]
@@ -134,7 +135,7 @@ def entry_results(kind: str, entry: SpecEntry) -> list[tuple[str, str, bool, str
             for form in ("positive", "negative"):
                 (code_dir / f"{form}{extension}").write_text(getattr(entry, form), encoding="utf-8")
             config = IronLawsConfig(policies=Policies(custom_spec=str(spec_file)), enabled_rules=[rule_id])
-            report = AuditScanner(code_dir, config).scan()
+            report = scan(code_dir, config)
             flagged = {v.file_path.as_posix() for v in report.violations if v.rule_id == rule_id and v.confidence.value == "CONFIRMED"}
     finally:
         _VALIDATING = False
@@ -146,12 +147,12 @@ def entry_results(kind: str, entry: SpecEntry) -> list[tuple[str, str, bool, str
     return results
 
 
-def load_validated(path: Path) -> LoadedSpec:
+def load_validated(path: Path, scan: ScanFn) -> LoadedSpec:
     loaded = read_spec(path)
     cached = _CACHE.get(str(path))
     if cached is not None and cached.digest == loaded.digest:
         return cached
-    failures = [r for r in example_results(path) if not r[2]]
+    failures = [r for r in example_results(path, scan) if not r[2]]
     if failures:
         detail = "; ".join(f"{name} {form}: {why}" for name, form, _ok, why in failures[:5])
         raise ConfigError(f"명세 예제가 기대와 맞지 않아 명세를 불러오지 않았습니다: {detail}")
@@ -159,8 +160,9 @@ def load_validated(path: Path) -> LoadedSpec:
     return loaded
 
 
-def apply_custom_spec(rules: list, location: str | None) -> None:
-    """활성 규칙과 오염 엔진에 명세를 적용한다. 명세가 없으면 이전 점검이 남긴 적용을 지운다."""
+def apply_custom_spec(rules: list, location: str | None, scan: ScanFn | None = None) -> None:
+    """활성 규칙과 오염 엔진에 명세를 적용한다. 명세가 없으면 이전 점검이 남긴 적용을 지운다.
+    명세의 예제를 확인하려면 scan이 있어야 한다. 없으면 확인하지 않은 명세를 쓰지 않고 오류로 끝낸다."""
     from iron_laws.engine.languages import Lang
     from iron_laws.engine.taint import Ctx, set_custom_spec
     from iron_laws.rules.sinks import Sink
@@ -170,7 +172,12 @@ def apply_custom_spec(rules: list, location: str | None) -> None:
         set_custom_spec({}, {}, "")
         _CURRENT = None
         return
-    loaded = read_spec(Path(location)) if _VALIDATING else load_validated(Path(location))
+    if _VALIDATING:
+        loaded = read_spec(Path(location))
+    elif scan is None:
+        raise ConfigError("사용자 명세의 예제를 확인할 점검 함수가 없어 명세를 불러오지 않았습니다(get_active_rules에 scan을 넘기십시오)")
+    else:
+        loaded = load_validated(Path(location), scan)
     spec = loaded.spec
     lang_of = {"python": Lang.PYTHON, "javascript": Lang.JAVASCRIPT, "typescript": Lang.TYPESCRIPT, "java": Lang.JAVA, "csharp": Lang.CSHARP, "go": Lang.GO, "php": Lang.PHP}
 

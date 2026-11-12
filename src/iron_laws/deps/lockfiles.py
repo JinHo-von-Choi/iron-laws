@@ -13,10 +13,11 @@ import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from iron_laws.deps.graph import build_graph
+from iron_laws.deps.manifests import REQ_LINE, pyproject_direct
 from iron_laws.deps.versions import normalize_name
 
 LOCK_FILE_NAMES = ("uv.lock", "poetry.lock", "package-lock.json", "pnpm-lock.yaml")
-REQ_LINE = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)\s*(?:\[[^\]]*\])?\s*==\s*([A-Za-z0-9.!+_-]+)")
 
 
 @dataclass
@@ -70,26 +71,6 @@ def parse_uv_lock(path: Path) -> LockInfo:
     return LockInfo(path.as_posix(), "uv.lock", "PyPI", [p for p in packages.values() if p.version], {"versions": True, "direct_transitive": True, "graph": True})
 
 
-def _pyproject_direct(path: Path) -> set[str]:
-    names: set[str] = set()
-    if not path.is_file():
-        return names
-    data = tomllib.loads(path.read_text(encoding="utf-8"))
-    for req in (data.get("project") or {}).get("dependencies") or []:
-        m = re.match(r"\s*([A-Za-z0-9][A-Za-z0-9._-]*)", str(req))
-        if m:
-            names.add(normalize_name("PyPI", m.group(1)))
-    poetry = ((data.get("tool") or {}).get("poetry") or {})
-    for section in ("dependencies", "dev-dependencies"):
-        for name in (poetry.get(section) or {}):
-            if name.lower() != "python":
-                names.add(normalize_name("PyPI", name))
-    for group in (poetry.get("group") or {}).values():
-        for name in (group.get("dependencies") or {}):
-            names.add(normalize_name("PyPI", name))
-    return names
-
-
 def parse_poetry_lock(path: Path) -> LockInfo:
     data = tomllib.loads(path.read_text(encoding="utf-8"))
     packages: dict[str, Package] = {}
@@ -99,7 +80,7 @@ def parse_poetry_lock(path: Path) -> LockInfo:
         packages[name] = Package("PyPI", name, str(item.get("version") or ""), source_file=path.name)
         edges[name] = {normalize_name("PyPI", d) for d in (item.get("dependencies") or {})}
     _mark_parents(packages, edges)
-    root = _pyproject_direct(path.parent / "pyproject.toml")
+    root = pyproject_direct(path.parent / "pyproject.toml")
     has_root = bool(root)
     for pkg in packages.values():
         pkg.direct = (pkg.name in root) if has_root else None
@@ -119,8 +100,6 @@ def parse_requirements(path: Path) -> LockInfo:
 
 def _from_graph(path: Path, kind: str, caps: dict[str, bool], notes: list[str] | None = None) -> LockInfo:
     """버전 단위 그래프(graph.py)로 패키지 목록과 부모(이 패키지를 의존으로 가진 패키지 이름)를 만든다. 같은 이름의 여러 버전은 각각 둔다."""
-    from iron_laws.deps.graph import build_graph
-
     graph = build_graph(path)
     parents: dict[str, set[str]] = {}
     for parent, children in graph.edges.items():

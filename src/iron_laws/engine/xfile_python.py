@@ -8,6 +8,7 @@ import 문을 따라 다른 파일의 최상위 함수를 찾는다. 모듈 이�
 from pathlib import PurePosixPath
 
 from iron_laws.engine.languages import Lang
+from iron_laws.engine.resolve_result import ResolveResult
 from iron_laws.engine.source import SourceFile
 
 
@@ -38,8 +39,6 @@ def _lookup(index, name: str, from_path: str) -> tuple[str | None, bool]:
 
 
 def resolve(index, src: SourceFile, callee: str, argc: int):
-    from iron_laws.engine.xfile import ResolveResult
-
     table = imports(src)
     parts = callee.split(".")
     module_name: str | None = None

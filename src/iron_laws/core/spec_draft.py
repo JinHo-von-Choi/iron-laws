@@ -133,6 +133,7 @@ def check_llm_entries(draft: dict) -> dict[str, int]:
     - 정제 함수는 지적을 지우는 유일한 통로라 예제가 맞아도 positive·negative를 비워 둔다. 사람이 제안 예제를 확인해 옮겨야 불러온다."""
     from iron_laws.core.config import ConfigError
     from iron_laws.core.custom_spec import SpecEntry, entry_results
+    from iron_laws.core.scanner import scan_examples
 
     counts = {"passed": 0, "rejected": 0, "needs_review": 0}
     rejected = draft.setdefault("rejected", [])
@@ -145,7 +146,7 @@ def check_llm_entries(draft: dict) -> dict[str, int]:
             positive, negative = entry.get("proposed_positive", ""), entry.get("proposed_negative", "")
             try:
                 candidate = SpecEntry(**{**{k: v for k, v in entry.items() if not k.startswith("proposed_") and k != "origin"}, "positive": positive, "negative": negative})
-                results = entry_results(kind, candidate)
+                results = entry_results(kind, candidate, scan_examples)
             except (ConfigError, ValueError, TypeError) as e:
                 rejected.append({**entry, "kind": kind, "why": f"예제로 확인할 수 없다: {e}"})
                 counts["rejected"] += 1

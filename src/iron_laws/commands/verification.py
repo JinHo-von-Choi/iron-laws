@@ -3,6 +3,7 @@
 import json
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import typer
 from rich.markup import escape
@@ -10,6 +11,7 @@ from rich.table import Table
 
 from iron_laws.commands.common import (
     ConfigOpt,
+    ScanRequest,
     _build_scanner,
     _write_or_print,
     app,
@@ -19,6 +21,9 @@ from iron_laws.commands.common import (
     regression_app,
 )
 from iron_laws.core.config import ConfigError
+
+if TYPE_CHECKING:
+    from iron_laws.verify.receipt import Receipt
 
 
 @regression_app.command("propose")
@@ -34,9 +39,9 @@ def regression_propose_command(
     첫 지원 범위: Python의 명령 실행(IL-504)·경로 접근(IL-502)·SQL 조립(IL-501), 모듈 수준 함수.
     """
     from iron_laws.verify.engine import resolve_finding
-    from iron_laws.verify.regression import dump_spec, propose_spec
+    from iron_laws.verify.regression_spec import dump_spec, propose_spec
 
-    scanner = _build_scanner(original, config)
+    scanner = _build_scanner(ScanRequest(original, config=config))
     report = scanner.scan()
     try:
         violation = resolve_finding(report, finding)
@@ -66,12 +71,12 @@ def regression_check_command(
     확정된 명세로 원본에서 결함이 재현되는지, 후보에서 통과하는지, 수정을 되돌린 mutant에서 다시 실패하는지를 격리 환경에서 확인합니다.
     종료코드: 0 통과, 1 실패, 2 판정 불가.
     """
-    from iron_laws.verify.engine import regression_only
+    from iron_laws.verify.engine import VerifyOptions, regression_only
     from iron_laws.verify.receipt import STATE_LABEL
     from iron_laws.verify.runner import RunLimits
 
     try:
-        result = regression_only(original, patch, spec, runner, image, RunLimits(timeout_s=timeout))
+        result = regression_only(original, patch, VerifyOptions(runner=runner, image=image, limits=RunLimits(timeout_s=timeout), regression_spec=spec))
     except ConfigError as e:
         err.print(f"[bold red]입력 오류: {escape(str(e))}[/bold red]")
         raise typer.Exit(2) from e
@@ -104,7 +109,7 @@ def verify_patch_command(
     통과는 지정된 검사 계약을 충족했다는 뜻이며 안전성이나 완전한 기능 동등성을 증명하지 않습니다.
     """
     from iron_laws.verify.engine import VerifyOptions, verify_patch
-    from iron_laws.verify.receipt import STATE_LABEL, Receipt
+    from iron_laws.verify.receipt import Receipt
     from iron_laws.verify.replay import replay_receipt
     from iron_laws.verify.runner import RunLimits
 
@@ -134,6 +139,29 @@ def verify_patch_command(
     except ConfigError as e:
         err.print(f"[bold red]입력 오류: {escape(str(e))}[/bold red]")
         raise typer.Exit(2) from e
+    _print_receipt(receipt)
+    if out:
+        out.write_text(receipt.model_dump_json(indent=2) + "\n", encoding="utf-8")
+        err.print(f"[green]검증 기록 저장: {out}[/green]")
+        if sign:
+            from iron_laws.evidence.signing import SigningError, sign_file
+
+            try:
+                sig = sign_file(out, Path(sign.removeprefix("ssh:")))
+            except SigningError as e:
+                err.print(f"[bold red]서명 오류: {escape(str(e))}[/bold red]")
+                raise typer.Exit(2) from e
+            err.print(f"[green]서명 저장: {sig}[/green]")
+    elif sign:
+        err.print("[bold red]--sign은 --out으로 기록 파일을 남길 때만 쓸 수 있습니다.[/bold red]")
+        raise typer.Exit(2)
+    raise typer.Exit({"verified": 0, "failed": 1, "undeterminable": 2}[receipt.verdict.overall])
+
+
+def _print_receipt(receipt: "Receipt") -> None:
+    """검증 항목 표, 우회 변경, 수정이 만든 부채, 작업영역 정리 경고, 종합 판정을 보여 준다."""
+    from iron_laws.verify.receipt import STATE_LABEL
+
     table = Table(title="[패치 검증 결과]", expand=True)
     table.add_column("항목")
     table.add_column("결과", width=12)
@@ -163,22 +191,6 @@ def verify_patch_command(
                 err.print(f"[yellow]{escape(side)} 실행 경고: {escape(note)}[/yellow]")
     console.print(f"[bold]종합: {receipt.verdict.label}[/bold]  (기록 해시 {receipt.receipt_digest})")
     console.print(f"[dim]{receipt.verdict.caveat}[/dim]")
-    if out:
-        out.write_text(receipt.model_dump_json(indent=2) + "\n", encoding="utf-8")
-        err.print(f"[green]검증 기록 저장: {out}[/green]")
-        if sign:
-            from iron_laws.evidence.signing import SigningError, sign_file
-
-            try:
-                sig = sign_file(out, Path(sign.removeprefix("ssh:")))
-            except SigningError as e:
-                err.print(f"[bold red]서명 오류: {escape(str(e))}[/bold red]")
-                raise typer.Exit(2) from e
-            err.print(f"[green]서명 저장: {sig}[/green]")
-    elif sign:
-        err.print("[bold red]--sign은 --out으로 기록 파일을 남길 때만 쓸 수 있습니다.[/bold red]")
-        raise typer.Exit(2)
-    raise typer.Exit({"verified": 0, "failed": 1, "undeterminable": 2}[receipt.verdict.overall])
 
 
 @evidence_app.command("verify")

@@ -22,7 +22,7 @@ def snapshot(report: AuditReport, code_lines: int, timestamp: str | None = None)
     return {
         "timestamp": timestamp or datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
         "mapping": MAPPING_VERSION,
-        "code_digest": report.execution.code_digest if report.execution else "",
+        "code_digest": report.execution.code_digest if report.execution else "",  # iron-laws: ignore[ARC-205] 보고서 JSON의 필드 이름이다
         "files": report.summary.total_files_scanned,
         "code_lines": code_lines,
         "counts": {h: counts.get(h, 0) for h in HABITS},

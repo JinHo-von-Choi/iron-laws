@@ -204,7 +204,7 @@ class McpServerToolRule(AiAttackRule):
             seeds = frozenset(name for p in fn.params for name in ([param_name(src, p)] if src.lang is Lang.PYTHON else _js_param_names(src, p)) if name and name not in ("self", "ctx", "context"))
             if not seeds:
                 continue
-            for call in iter_calls(src):
+            for call in iter_calls(src):  # iron-laws: ignore[PERF-102] 바깥 반복은 MCP 도구로 등록된 함수만 돈다
                 if not (fn.node.start_byte <= call.node.start_byte and call.node.end_byte <= fn.node.end_byte):
                     continue
                 for rule in rules:

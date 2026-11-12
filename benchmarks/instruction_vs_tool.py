@@ -38,6 +38,7 @@ import time
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from typing import NamedTuple
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -49,7 +50,7 @@ from iron_laws.core.scanner import AuditScanner  # noqa: E402
 from iron_laws.reporters.prompt import generate_fix_prompt  # noqa: E402
 from iron_laws.rules.catalog import ALL_RULES  # noqa: E402
 from iron_laws.verify.engine import resolve_finding  # noqa: E402
-from iron_laws.verify.regression import dump_spec, propose_spec  # noqa: E402
+from iron_laws.verify.regression_spec import dump_spec, propose_spec  # noqa: E402
 
 AI_CMD = "claude -p --tools '' --strict-mcp-config --setting-sources '' --no-session-persistence --model sonnet --output-format json"
 GUIDE_CMD = "claude -p --allowedTools Read Grep Glob --strict-mcp-config --setting-sources '' --no-session-persistence --model sonnet --output-format json"
@@ -121,8 +122,19 @@ def _code(text: str) -> str:
     return blocks[-1] if blocks else ""
 
 
-def _code_task(work: Path, kind: str, name: str, rule: str, vulnerable: str, given: str, payload: str | None = None, benign: str | None = None) -> dict | None:
+class TaskPlan(NamedTuple):
+    kind: str  # fix·feature
+    name: str
+    rule: str
+    vulnerable: str  # 취약한 원본 코드
+    given: str  # 과제로 주는 코드
+    payload: str | None = None  # 회귀 명세의 공격 입력을 바꿀 때
+    benign: str | None = None  # 회귀 명세의 정상 입력을 바꿀 때
+
+
+def _code_task(work: Path, plan: TaskPlan) -> dict | None:
     """취약한 원본과 회귀 명세를 만든다. 오철칙이 원본에서 지적하지 못하면 명세를 만들 수 없어 과제에서 뺀다(그 사실을 남긴다)."""
+    kind, name, rule, vulnerable, given, payload, benign = plan
     project = work / "projects" / name
     project.mkdir(parents=True, exist_ok=True)
     (project / "app.py").write_text(vulnerable, encoding="utf-8")
@@ -148,14 +160,14 @@ def prepare(work: Path, guide_cmd: str, selection: tuple[str, ...]) -> dict:
     tasks, skipped = [], []
     plans = []
     if "fix" in selection:
-        plans += [("fix", n, by_name[n].rule, by_name[n].vulnerable, by_name[n].vulnerable) for n in FIX_CASES]
+        plans += [TaskPlan("fix", n, by_name[n].rule, by_name[n].vulnerable, by_name[n].vulnerable) for n in FIX_CASES]
     if "feature" in selection:
-        plans += [("feature", n, by_name[n].rule, by_name[n].vulnerable, FEATURE_STUBS[n]) for n in FEATURE_STUBS]
+        plans += [TaskPlan("feature", n, by_name[n].rule, by_name[n].vulnerable, FEATURE_STUBS[n]) for n in FEATURE_STUBS]
     if "hard" in selection:
-        plans += [("fix", n, rule, code, code, payload, benign) for n, (rule, code, payload, benign) in HARD_CASES.items()]
+        plans += [TaskPlan("fix", n, rule, code, code, payload, benign) for n, (rule, code, payload, benign) in HARD_CASES.items()]
     for plan in plans:
-        task = _code_task(work, *plan)
-        (tasks.append(task) if task else skipped.append(plan[1]))
+        task = _code_task(work, plan)
+        (tasks.append(task) if task else skipped.append(plan.name))
     for name, (files, _truth, _what, _rules) in DETECT_TASKS.items():
         if name not in selection:
             continue
@@ -257,7 +269,7 @@ def classify_regression(result) -> str:
 
 
 def judge_code(work: Path, rows: list[dict], tasks: dict, runner: str) -> None:
-    from iron_laws.verify.engine import regression_only
+    from iron_laws.verify.engine import VerifyOptions, regression_only
     from iron_laws.verify.runner import RunLimits
 
     image = "iron-laws-verify:py313" if runner == "docker" else None
@@ -270,7 +282,7 @@ def judge_code(work: Path, rows: list[dict], tasks: dict, runner: str) -> None:
         if not row["answer"]:
             row.update(verdict="undetermined", reason="답안에서 코드를 찾지 못했다")
             continue
-        result = regression_only(work / "projects" / row["task"], patch, work / "specs" / f"{row['task']}.yml", runner, image, RunLimits(timeout_s=60))
+        result = regression_only(work / "projects" / row["task"], patch, VerifyOptions(runner=runner, image=image, limits=RunLimits(timeout_s=60), regression_spec=work / "specs" / f"{row['task']}.yml"))
         row.update(verdict=classify_regression(result), reason=result.reason[:300])
 
 

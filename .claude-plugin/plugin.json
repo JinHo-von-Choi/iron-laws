@@ -1,6 +1,6 @@
 {
   "name": "iron-laws",
-  "description": "AI 코딩 에이전트가 고친 파일을 편집 직후와 종료 직전에 점검하고, 세션 시작에 프로젝트 언어의 보안·품질 지침을 넘기는 오철칙 훅과 MCP 서버",
+  "description": "AI 코딩 에이전트가 고친 파일을 편집 직후와 종료 직전에 점검하고, 세션 시작에 프로젝트 언어의 보안·품질 지침을 넘기는 오철칙 훅, MCP 서버, 점검 작업 순서 스킬",
   "author": { "name": "최진호" },
   "homepage": "https://github.com/JinHo-von-Choi/iron-laws",
   "repository": "https://github.com/JinHo-von-Choi/iron-laws",

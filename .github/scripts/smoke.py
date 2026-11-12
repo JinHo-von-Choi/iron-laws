@@ -103,7 +103,7 @@ with tempfile.TemporaryDirectory() as tmp:
     broken_file = Path(tmp) / "broken.json"
     broken_file.write_text(json.dumps(broken), encoding="utf-8")
     expect(run("evidence", "verify", str(broken_file)).returncode == 1, "손상된 보고서는 독립 검증기가 거부함")
-    broken["schema_version"] = "0.9"
+    broken["schema_version"] = "0.9"  # iron-laws: ignore[ARC-205] 보고서 JSON의 필드 이름이라 형식 정의(REPORT_FORMATS.md)와 같은 글자를 쓴다
     broken_file.write_text(json.dumps(broken), encoding="utf-8")
     expect(run("evidence", "verify", str(broken_file)).returncode == 2, "지원하지 않는 버전은 통과가 아니라 판정 불가")
     (project / "app.py").write_text(vulnerable + "\ndef api():\n    return run_tool()\n", encoding="utf-8", newline="\n")

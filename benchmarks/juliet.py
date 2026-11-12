@@ -114,7 +114,7 @@ def measure_cwe(directory: Path, rules: set[str], exts: tuple[str, ...]) -> tupl
         row = cases[key]
         row["has_bad"] |= bool(bad)
         row["has_good"] |= bool(good)
-        row["bad"] |= any(a <= n <= b for n in lines for a, b in bad)
+        row["bad"] |= any(a <= n <= b for n in lines for a, b in bad)  # iron-laws: ignore[PERF-102] bad는 함수 하나의 줄 범위라 한두 개다
         row["good"] |= any(a <= n <= b for n in lines for a, b in good)
     counts: Counter = Counter()
     for row in cases.values():

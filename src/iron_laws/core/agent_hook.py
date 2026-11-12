@@ -329,7 +329,7 @@ def protected_notice(files: list[Path], root: Path) -> str:
     for path in files:
         try:
             rel = path.resolve().relative_to(root.resolve()).as_posix()
-        except ValueError:
+        except ValueError:  # iron-laws: ignore[IL-301] 점검 폴더 밖의 파일은 상대 경로가 없으니 파일 이름만 알린다
             rel = path.name
         lines.append(f"- {rel}")
         lines.extend(f"  {note}" for note in policy_changes(path, root))

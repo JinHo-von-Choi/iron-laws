@@ -14,20 +14,16 @@
 작성일: 2026-10-20
 """
 
-import difflib
 import json
-import re
-import shlex
-import subprocess
 import sys
 from collections import Counter
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from ab_common import generate, manifests  # noqa: E402
 from fix_loop import run as verify_cases  # noqa: E402
 
 from iron_laws.core.review_bundle import build_bundle, render_markdown  # noqa: E402
@@ -35,7 +31,7 @@ from iron_laws.core.scanner import AuditScanner  # noqa: E402
 from iron_laws.mcp_server import TOOL_DESCRIPTIONS  # noqa: E402
 from iron_laws.reporters import prompt as prompt_current  # noqa: E402
 from iron_laws.verify.engine import resolve_finding  # noqa: E402
-from iron_laws.verify.regression import dump_spec, propose_spec  # noqa: E402
+from iron_laws.verify.regression_spec import dump_spec, propose_spec  # noqa: E402
 
 TAIL = "\n\n위 지시에 따라 아래 app.py를 고쳐라. 고친 app.py 전체를 ```python 코드 블록 하나로만 출력하라(설명 없이).\n\n--- app.py\n"
 VARIANTS = ("fix_prompt", "review_bundle", "mcp_guidance", "fix_prompt_review")
@@ -53,7 +49,7 @@ def _mcp_check(report) -> str:
             "severity": v.severity.value,
             "confidence": v.confidence.value,
             "message": v.message,
-            "finding_id": v.finding_id,
+            "finding_id": v.finding_id,  # iron-laws: ignore[ARC-205] 보고서 JSON의 필드 이름이다
         }
         for v in report.violations[:MAX_FINDINGS]
     ]
@@ -114,41 +110,6 @@ def prepare(work: Path) -> list[dict]:
     return cases
 
 
-def generate(work: Path, cases: list[dict], ai_cmd: str, jobs: int) -> None:
-    (work / "raw").mkdir(exist_ok=True)
-    (work / "cwd").mkdir(exist_ok=True)
-
-    def one(name: str, variant: str) -> None:
-        prompt = (work / "prompts" / f"{name}.{variant}.txt").read_text(encoding="utf-8")
-        out = work / "raw" / f"{name}.{variant}.txt"
-        stamp = work / "raw" / f"{name}.{variant}.prompt"
-        if out.is_file() and stamp.is_file() and stamp.read_text(encoding="utf-8") == prompt:
-            return  # 같은 안내물의 응답은 다시 부르지 않는다
-        done = subprocess.run(shlex.split(ai_cmd), input=prompt, capture_output=True, text=True, cwd=work / "cwd", timeout=900)
-        out.write_text(done.stdout, encoding="utf-8")
-        stamp.write_text(prompt, encoding="utf-8")
-
-    with ThreadPoolExecutor(max_workers=jobs) as pool:
-        list(pool.map(lambda job: one(*job), [(c["name"], v) for c in cases for v in VARIANTS]))
-
-
-def manifests(work: Path, cases: list[dict]) -> dict[str, Path]:
-    paths = {}
-    for variant in VARIANTS:
-        rows = []
-        for c in cases:
-            blocks = re.findall(r"```(?:python|py)?\n(.*?)```", (work / "raw" / f"{c['name']}.{variant}.txt").read_text(encoding="utf-8"), re.S)
-            original = (work / "projects" / c["name"] / "app.py").read_text(encoding="utf-8")
-            diff = "".join(difflib.unified_diff(original.splitlines(True), (blocks[-1] if blocks else "").splitlines(True), "a/app.py", "b/app.py"))
-            (work / "patches").mkdir(exist_ok=True)
-            patch = work / "patches" / f"{c['name']}.{variant}.diff"
-            patch.write_text(("diff --git a/app.py b/app.py\n" + diff) if diff else "", encoding="utf-8")
-            rows.append({"id": c["name"], "project": f"projects/{c['name']}", "patch": f"patches/{patch.name}", "finding": f"{c['rule']}@app.py", "regression_spec": f"specs/{c['name']}.yml"})
-        paths[variant] = work / f"manifest.{variant}.json"
-        paths[variant].write_text(json.dumps(rows, indent=1), encoding="utf-8")
-    return paths
-
-
 def summarize(cases: list[dict], results: dict[str, dict]) -> dict:
     rule_of = {c["name"]: c["rule"] for c in cases}
     by_rule = {}
@@ -206,8 +167,8 @@ def main() -> int:
     if "ai-cmd" not in options:
         print(__doc__)
         return 2
-    generate(work, cases, options["ai-cmd"], int(options.get("jobs", "4")))
-    paths = manifests(work, cases)
+    generate(work, cases, options["ai-cmd"], int(options.get("jobs", "4")), VARIANTS)
+    paths = manifests(work, cases, VARIANTS)
     results = {v: verify_cases(paths[v], options.get("runner", "auto")) for v in VARIANTS}
     record = {"ai_cmd": options["ai-cmd"], "runner": options.get("runner", "auto"), **summarize(cases, results)}
     if out is not None:

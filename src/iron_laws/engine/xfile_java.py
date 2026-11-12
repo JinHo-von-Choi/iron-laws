@@ -12,6 +12,7 @@
 import re
 
 from iron_laws.engine.languages import Lang
+from iron_laws.engine.resolve_result import ResolveResult
 from iron_laws.engine.source import SourceFile
 
 CLASS_TYPES = ("class_declaration", "interface_declaration", "enum_declaration", "record_declaration")
@@ -161,10 +162,11 @@ def _instance_methods(index, fqcn: str, method: str, argc: int):
         return None
     target = index.files[paths[0]]
     simple = fqcn.rsplit(".", 1)[-1]
-    bodies = [n.child_by_field_name("body") for n in target.root.named_children if n.type in CLASS_TYPES and target.text_of(n.child_by_field_name("name")) == simple]
+    bodies = {body.id for n in target.root.named_children if n.type in CLASS_TYPES and target.text_of(n.child_by_field_name("name")) == simple
+              if (body := n.child_by_field_name("body")) is not None}
     found = []
     for fn in iter_functions(target):
-        if fn.name != method or len(fn.params) != argc or fn.node.parent not in bodies:
+        if fn.name != method or len(fn.params) != argc or fn.node.parent is None or fn.node.parent.id not in bodies:
             continue
         modifiers = next((n for n in fn.node.named_children if n.type == "modifiers"), None)
         if modifiers is None or "static" not in target.text_of(modifiers).split():
@@ -173,8 +175,6 @@ def _instance_methods(index, fqcn: str, method: str, argc: int):
 
 
 def _resolve_field(index, src: SourceFile, field: str, method: str, argc: int):
-    from iron_laws.engine.xfile import ResolveResult
-
     types = _field_types(src).get(field)
     if not types:
         return ResolveResult([])
@@ -217,8 +217,6 @@ def _resolve_field(index, src: SourceFile, field: str, method: str, argc: int):
 
 def resolve(index, src: SourceFile, callee: str, argc: int):
     from iron_laws.engine.ast_tools import iter_functions
-    from iron_laws.engine.xfile import ResolveResult
-
     if "." not in callee:
         return ResolveResult([])
     owner, method = callee.rsplit(".", 1)

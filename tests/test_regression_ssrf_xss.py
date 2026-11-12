@@ -11,7 +11,7 @@ import pytest
 
 from iron_laws.core.scanner import AuditScanner
 from iron_laws.verify.engine import resolve_finding
-from iron_laws.verify.regression import RegressionSpec, propose_spec
+from iron_laws.verify.regression_spec import RegressionSpec, propose_spec
 from tests.test_stage4_regression import ORIGINAL_MEMO, check, write_project  # noqa: F401
 
 SSRF_VULNERABLE = "import requests\nfrom flask import request\n\n\ndef fetch():\n    url = request.args['url']\n    return requests.get(url).text\n"

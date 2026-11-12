@@ -17,6 +17,7 @@ from tree_sitter import Node
 from iron_laws.engine.ast_tools import enclosing_function
 from iron_laws.engine.languages import Lang
 from iron_laws.engine.source import SourceFile
+from iron_laws.engine.taint.nodes import CASE_TYPES, SWITCH_TYPES, ternary_parts
 
 UNKNOWN = object()
 LANGS = frozenset({Lang.JAVA, Lang.JAVASCRIPT, Lang.TYPESCRIPT, Lang.PYTHON})
@@ -40,7 +41,7 @@ def _literal(src: SourceFile, node: Node):
     if node.type in _INT_TYPES:
         try:
             return int(text.rstrip("lL").replace("_", ""), 0)
-        except ValueError:
+        except ValueError:  # iron-laws: ignore[IL-301] 정수로 읽히지 않는 리터럴은 값을 모르는 것으로 둔다(UNKNOWN이면 모든 갈래를 따라간다)
             return UNKNOWN
     if node.type == "character_literal" and len(text) == 3:
         return text[1]
@@ -332,8 +333,6 @@ def switch_case_index(src: SourceFile, selector: Node | None, cases: list[Node])
 
 
 def _cases_of(switch: Node) -> list[Node]:
-    from iron_laws.engine.taint.nodes import CASE_TYPES, SWITCH_TYPES
-
     cases: list[Node] = []
     stack = list(reversed(switch.children))
     while stack:
@@ -361,9 +360,7 @@ def in_dead_branch(src: SourceFile, node: Node) -> bool:
                 if any(d.id == child.id for d in dead) and not any(lv.id == child.id for lv in live):
                     return True
         elif parent.type in ("ternary_expression", "conditional_expression"):
-            from iron_laws.engine.taint.paths import _ternary_parts
-
-            parts = _ternary_parts(parent)
+            parts = ternary_parts(parent)
             known = condition_value(src, parts[0]) if parts is not None else None
             if known is not None and (parts[2] if known else parts[1]).id == child.id:
                 return True
@@ -383,83 +380,6 @@ def in_dead_branch(src: SourceFile, node: Node) -> bool:
     return False
 
 
-def is_closed_value(src: SourceFile, node: Node | None, depth: int = 0) -> bool:
-    """값이 코드만으로 정해지는 상수 문자열·숫자인지. 실행되지 않는 갈래의 정의는 보지 않는다. 모르면 False"""
-    from iron_laws.engine.taint.definitions import reaching_definitions
-
-    if node is None or src.lang not in LANGS or depth > MAX_DEPTH:
-        return False
-    if _literal(src, node) is not UNKNOWN or const_value(src, node) is not UNKNOWN:
-        return True
-    if node.type in _PAREN:
-        inner = [c for c in node.named_children if "comment" not in c.type]
-        return len(inner) == 1 and is_closed_value(src, inner[0], depth + 1)
-    if node.type in ("binary_expression", "binary_operator") and _operator(src, node) == "+":
-        operands = [c for c in node.named_children if "comment" not in c.type]
-        return len(operands) == 2 and all(is_closed_value(src, c, depth + 1) for c in operands)
-    if node.type in ("ternary_expression", "conditional_expression"):
-        from iron_laws.engine.taint.paths import _ternary_parts
-
-        parts = _ternary_parts(node)
-        known = condition_value(src, parts[0]) if parts is not None else None
-        return known is not None and is_closed_value(src, parts[1] if known else parts[2], depth + 1)
-    if node.type == "method_invocation":
-        return list_get_is_literal(src, node) or _helper_returns_closed(src, node, depth)
-    if node.type == "string" and src.lang is Lang.PYTHON:
-        # f-문자열: 보간한 식이 모두 닫힌 값이면 닫혀 있다
-        parts = [c for c in node.named_children if c.type == "interpolation"]
-        return bool(parts) and all(
-            any(is_closed_value(src, e, depth + 1) for e in p.named_children if e.type not in ("format_specifier", "type_conversion"))
-            for p in parts
-        )
-    if node.type == "subscript" and src.lang is Lang.PYTHON:
-        return python_container_get_is_literal(src, node)
-    if node.type == "call" and src.lang is Lang.PYTHON:
-        return python_container_get_is_literal(src, node)
-    if node.type == "cast_expression":
-        return is_closed_value(src, node.child_by_field_name("value"), depth + 1)
-    if node.type == "identifier":
-        scope = enclosing_function(node, src.lang)
-        if scope is None:
-            return False
-        name = src.text_of(node)
-        params = scope.child_by_field_name("parameters")
-        if params is not None and re.search(rf"\b{re.escape(name)}\b", src.text_of(params)):
-            return False
-        defs = [d for d in reaching_definitions(src, scope, name, node.start_byte) if d.end_byte <= node.start_byte and not in_dead_branch(src, d)]
-        return bool(defs) and all(is_closed_value(src, d, depth + 1) for d in defs)
-    return False
-
-
-def _helper_returns_closed(src: SourceFile, call: Node, depth: int) -> bool:
-    """같은 파일에 이름·인자 수가 같은 메서드가 하나뿐이고 그 메서드의 모든 반환값이 상수이면 True"""
-    name = call.child_by_field_name("name")
-    args = call.child_by_field_name("arguments")
-    if src.lang is not Lang.JAVA or name is None or args is None:
-        return False
-    method, count = src.text_of(name), len([a for a in args.named_children if "comment" not in a.type])
-    candidates = []
-    for n in src.nodes:
-        if n.type == "method_declaration" and src.text_of(n.child_by_field_name("name") or n) == method:
-            params = n.child_by_field_name("parameters")
-            if params is not None and len([p for p in params.named_children if p.type in ("formal_parameter", "spread_parameter")]) == count:
-                candidates.append(n)
-    if len(candidates) != 1 or candidates[0].child_by_field_name("body") is None:
-        return False
-    returns = []
-    stack = [candidates[0].child_by_field_name("body")]
-    while stack:
-        n = stack.pop()
-        if n.type in ("lambda_expression", "class_body", "method_declaration"):
-            continue
-        if n.type == "return_statement":
-            returns.append(n)
-            continue
-        stack.extend(n.children)
-    values = [r.named_children[0] for r in returns if r.named_children]
-    return bool(values) and len(values) == len(returns) and all(is_closed_value(src, v, depth + 1) for v in values)
-
-
 def python_container_get_is_literal(src: SourceFile, read: Node) -> bool:
     """Python 지역 컨테이너에서 상수 위치·키로 꺼낸 값이 리터럴이면 True.
     dict(`{}` + 상수 키 첨자 대입), list(`[]` + append·insert·pop·clear), configparser(`ConfigParser()` + add_section·set)를
@@ -467,20 +387,10 @@ def python_container_get_is_literal(src: SourceFile, read: Node) -> bool:
     scope = enclosing_function(read, src.lang)
     if scope is None:
         return False
-    if read.type == "subscript":
-        target, key_nodes = read.child_by_field_name("value"), [read.child_by_field_name("subscript")]
-    else:
-        function = read.child_by_field_name("function")
-        args = read.child_by_field_name("arguments")
-        if function is None or function.type != "attribute" or src.text_of(function.child_by_field_name("attribute")) != "get" or args is None:
-            return False
-        target, key_nodes = function.child_by_field_name("object"), [a for a in args.named_children if "comment" not in a.type]
-    if target is None or target.type != "identifier" or not key_nodes or any(k is None for k in key_nodes):
+    found = _container_read(src, read)
+    if found is None:
         return False
-    key = tuple(const_value(src, k) for k in key_nodes)
-    if any(k is UNKNOWN for k in key):
-        return False
-    name = src.text_of(target)
+    name, key = found
     block = _statement_of(read).parent
     uses = []
     stack = [scope]
@@ -541,3 +451,21 @@ def python_container_get_is_literal(src: SourceFile, read: Node) -> bool:
         index = key[0] if len(key) == 1 else UNKNOWN
         return isinstance(index, int) and not isinstance(index, bool) and -len(items) <= index < len(items) and _literal(src, items[index]) is not UNKNOWN
     return kind in ("dict", "config") and key in entries and _literal(src, entries[key]) is not UNKNOWN
+
+
+def _container_read(src: SourceFile, read: Node) -> tuple[str, tuple] | None:
+    """`이름[상수]`나 `이름.get(상수, ...)` 읽기에서 (컨테이너 이름, 상수 키). 이 모양이 아니거나 키가 상수가 아니면 None"""
+    if read.type == "subscript":
+        target, key_nodes = read.child_by_field_name("value"), [read.child_by_field_name("subscript")]
+    else:
+        function = read.child_by_field_name("function")
+        args = read.child_by_field_name("arguments")
+        if function is None or function.type != "attribute" or src.text_of(function.child_by_field_name("attribute")) != "get" or args is None:
+            return None
+        target, key_nodes = function.child_by_field_name("object"), [a for a in args.named_children if "comment" not in a.type]
+    if target is None or target.type != "identifier" or not key_nodes or any(k is None for k in key_nodes):
+        return None
+    key = tuple(const_value(src, k) for k in key_nodes)
+    if any(k is UNKNOWN for k in key):
+        return None
+    return src.text_of(target), key

@@ -8,6 +8,7 @@
 작성자: 최진호
 작성일: 2026-10-05
 """
+# iron-laws: ignore-file[ARC-201] 점검 엔진과 따로 읽고 감사할 수 있도록 표준 라이브러리만 쓰는 한 파일로 둔다(EVIDENCE_VERIFICATION.md)
 
 import hashlib
 import json
@@ -162,7 +163,7 @@ def _parse_date(value: Any) -> date | None:  # iron-laws: ignore[TYP-302] 보고
         return None
 
 
-def finding_id_of(violation: dict[str, Any]) -> str:
+def finding_id_of(violation: dict[str, Any]) -> str:  # iron-laws: ignore[ARC-208] 외부 JSON(보고서·기록 파일·프로토콜 메시지)을 읽고 쓰는 경계라 dict를 그대로 다룬다
     """보고서의 지적 필드에서 finding_id를 다시 계산한다(생산자의 계산 함수를 부르지 않는다)."""
     key = f"{violation.get('rule_id')}|{violation.get('file_path')}|{violation.get('line_number')}|{violation.get('column', 1)}|{violation.get('fingerprint')}"
     return "F-" + hashlib.sha256(key.encode()).hexdigest()[:12]

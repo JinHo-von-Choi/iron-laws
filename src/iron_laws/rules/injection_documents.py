@@ -11,7 +11,7 @@ from iron_laws.engine.ast_tools import (
 )
 from iron_laws.engine.languages import JS_FAMILY, Lang
 from iron_laws.engine.project import ProjectContext
-from iron_laws.engine.python_bindings import is_regex_call
+from iron_laws.engine.python_call_kinds import is_regex_call
 from iron_laws.engine.source import SourceFile
 from iron_laws.engine.taint import (
     Ctx,

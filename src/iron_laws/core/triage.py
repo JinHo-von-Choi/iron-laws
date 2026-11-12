@@ -103,7 +103,7 @@ def precedent_notes(root: Path, rule_ids: set[str], lessons: dict[str, list[str]
                 reason = f"승인 사유: {record.reason.strip()[:200]}"
                 if bucket is not None and reason not in bucket and len(bucket) < 5:
                     bucket.append(reason)
-    except Exception:  # noqa: BLE001  # iron-laws: ignore[IL-304] 판단 이력을 읽지 못해도 검토 의견은 이력 없이 만든다
+    except Exception:  # noqa: BLE001  # iron-laws: ignore[IL-301,IL-304] 판단 이력을 읽지 못해도 검토 의견은 이력 없이 만든다
         return {rule_id: list((lessons or {}).get(rule_id, []))[:3] for rule_id in rule_ids}
     return notes
 

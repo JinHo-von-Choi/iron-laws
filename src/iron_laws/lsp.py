@@ -18,7 +18,7 @@ from urllib.parse import unquote, urlparse
 LSP_SEVERITY = {"CRITICAL": 1, "HIGH": 1, "MEDIUM": 2, "LOW": 3}
 
 
-def _read_message(stream: BinaryIO) -> dict[str, Any] | None:
+def _read_message(stream: BinaryIO) -> dict[str, Any] | None:  # iron-laws: ignore[ARC-208] 외부 JSON(보고서·기록 파일·프로토콜 메시지)을 읽고 쓰는 경계라 dict를 그대로 다룬다
     length = None
     while True:
         line = stream.readline()

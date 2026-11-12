@@ -13,7 +13,7 @@ import re
 import urllib.request
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Protocol, Self
 
 PYPI_URL = "https://pypi.org/simple/"
 NPM_URL = "https://replicate.npmjs.com/_all_docs"
@@ -28,10 +28,20 @@ class FetchError(Exception):
     """목록을 끝까지 받지 못했거나 응답 형식이 맞지 않을 때"""
 
 
-Opener = Callable[[urllib.request.Request, float], Any]
+class Response(Protocol):
+    """opener가 돌려주는 응답: with 문으로 열고 나눠 읽는다(urllib의 HTTPResponse와 같은 모양)."""
+
+    def read(self, amt: int, /) -> bytes: ...
+
+    def __enter__(self) -> Self: ...
+
+    def __exit__(self, *exc: object) -> None: ...
 
 
-def _open(request: urllib.request.Request, timeout: float) -> Any:
+Opener = Callable[[urllib.request.Request, float], Response]
+
+
+def _open(request: urllib.request.Request, timeout: float) -> Response:
     return urllib.request.urlopen(request, timeout=timeout)  # noqa: S310  # URL은 위 두 상수만 쓴다
 
 
@@ -66,7 +76,7 @@ def _fetch_npm(destination: Path, opener: Opener, timeout: float, minimum: int) 
                 continue
             try:
                 name = json.loads('"' + row.group(1) + '"')
-            except ValueError:
+            except ValueError:  # iron-laws: ignore[IL-301] JSON 문자열로 풀리지 않는 줄은 패키지 이름이 아니다
                 continue
             if name.startswith("_design/"):
                 continue

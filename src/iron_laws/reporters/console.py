@@ -9,7 +9,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from iron_laws.core.models import AuditReport, BaselineStatus, Confidence, Severity
+from iron_laws.core.models import AuditReport, BaselineStatus, Confidence, Severity, Violation
 
 console = Console()
 
@@ -107,7 +107,46 @@ def print_console_report(report: AuditReport, limit: int = DEFAULT_LIMIT) -> Non
     title_text = Text("오철칙 (五鐵則) SW 개발보안 점검 리포트", style="bold white on blue", justify="center")
     console.print(Panel(title_text, subtitle=f"문서번호: {report.document_id} | 점검 주체: {report.auditor}"))
     console.print()
+    _print_summary(report)
+    _first_steps(report)
+    _print_scan_notes(report)
+    _print_diagnostics(report)
+    _print_ledger(report)
+    if report.summary.suppressed_count:
+        console.print(f"[dim]사유와 함께 억제된 지적 {report.summary.suppressed_count}건은 제외되었습니다.[/dim]")
+    console.print()
 
+    if not report.violations:
+        console.print(
+            Panel(
+                "[bold green]탑재된 규칙 범위에서 위반 사항이 없습니다.[/bold green] 탑재되지 않은 보안약점 항목은 점검되지 않았습니다."
+            )
+        )
+        return
+
+    visible = report.violations
+    if report.summary.new_count is not None:
+        visible = [v for v in report.violations if v.baseline_status in (BaselineStatus.NEW, BaselineStatus.REVIEW)]
+        if not visible:
+            console.print(Panel("[bold green]기준선에 없던 새 지적이 없습니다.[/bold green]"))
+            return
+    ordered = sorted(
+        visible,
+        key=lambda v: (SEVERITY_ORDER[v.severity], str(v.file_path), v.line_number),
+    )
+    shown = ordered if limit <= 0 else ordered[:limit]
+    console.print("[bold red]● 지적사항 목록 (심각도 순)[/bold red]")
+    for idx, v in enumerate(shown, start=1):
+        _print_finding(idx, v)
+    if len(ordered) > len(shown):
+        console.print(
+            f"[yellow]나머지 {len(ordered) - len(shown)}건은 생략했습니다. 전체는 --limit 0 또는 --format markdown/json/sarif 로 확인하세요.[/yellow]"
+        )
+    console.print("[dim]AI 코딩 도구에 붙여넣을 수정 지시문은 `iron-laws fix-prompt` 로 만들 수 있습니다.[/dim]")
+
+
+def _print_summary(report: AuditReport) -> None:
+    """점검 통계와 등급, 합격 여부 표"""
     s = report.summary
     summary_table = Table(title="[점검 통계 및 등급 판정]", expand=True)
     summary_table.add_column("스캔 파일 수", justify="center")
@@ -140,7 +179,11 @@ def print_console_report(report: AuditReport, limit: int = DEFAULT_LIMIT) -> Non
         result_text,
     )
     console.print(summary_table)
-    _first_steps(report)
+
+
+def _print_scan_notes(report: AuditReport) -> None:
+    """설정 출처, 신뢰 지표, 범위 제한, 기준선 대비 수치"""
+    s = report.summary
     meta = report.metadata
     if meta.get("config_source"):
         console.print(Text(f"설정: {meta['config_source']} (fail_on={meta.get('config', {}).get('fail_on', '?')}, 출처: {meta.get('fail_on_source', '기본값')})", style="dim"))
@@ -157,60 +200,32 @@ def print_console_report(report: AuditReport, limit: int = DEFAULT_LIMIT) -> Non
         console.print(
             Text(f"기준선 대비: 신규·재검토 {s.new_count}건 · 기존(승인) {s.existing_count}건 · 해소 {s.resolved_count}건 · 미확인 {s.unobserved_count}건", style="bold")
         )
-    _print_diagnostics(report)
-    _print_ledger(report)
-    if s.suppressed_count:
-        console.print(f"[dim]사유와 함께 억제된 지적 {s.suppressed_count}건은 제외되었습니다.[/dim]")
-    console.print()
 
-    if not report.violations:
-        console.print(
-            Panel(
-                "[bold green]탑재된 규칙 범위에서 위반 사항이 없습니다.[/bold green] 탑재되지 않은 보안약점 항목은 점검되지 않았습니다."
-            )
-        )
-        return
 
-    visible = report.violations
-    if s.new_count is not None:
-        visible = [v for v in report.violations if v.baseline_status in (BaselineStatus.NEW, BaselineStatus.REVIEW)]
-        if not visible:
-            console.print(Panel("[bold green]기준선에 없던 새 지적이 없습니다.[/bold green]"))
-            return
-    ordered = sorted(
-        visible,
-        key=lambda v: (SEVERITY_ORDER[v.severity], str(v.file_path), v.line_number),
+def _print_finding(index: int, v: Violation) -> None:
+    """지적 하나를 표로 보여 준다. 소스 코드와 경로는 데이터라 Rich 마크업으로 해석되지 않도록 Text로 넘긴다."""
+    color = SEVERITY_COLORS.get(v.severity, "white")
+    grid = Table(box=None, show_header=False, expand=True)
+    grid.add_column("key", style="bold white", width=14)
+    grid.add_column("val")
+    label = "확인 필요" if v.confidence is Confidence.REVIEW else "확정"
+    if v.baseline_status is BaselineStatus.REVIEW:
+        label += " · 규칙 의미 변경으로 재검토"
+    grid.add_row(
+        "지적 항목", Text(f"[{v.rule_id}] {v.rule_name} ({v.severity.value} · {label})", style=color)
     )
-    shown = ordered if limit <= 0 else ordered[:limit]
-    console.print("[bold red]● 지적사항 목록 (심각도 순)[/bold red]")
-    for idx, v in enumerate(shown, start=1):
-        color = SEVERITY_COLORS.get(v.severity, "white")
-        grid = Table(box=None, show_header=False, expand=True)
-        grid.add_column("key", style="bold white", width=14)
-        grid.add_column("val")
-        label = "확인 필요" if v.confidence is Confidence.REVIEW else "확정"
-        if v.baseline_status is BaselineStatus.REVIEW:
-            label += " · 규칙 의미 변경으로 재검토"
-        grid.add_row(
-            "지적 항목", Text(f"[{v.rule_id}] {v.rule_name} ({v.severity.value} · {label})", style=color)
-        )
-        grid.add_row("위치", Text(f"{v.file_path}:{v.line_number}"))
-        grid.add_row(
-            "적용 기준",
-            Text(f"{v.gov_standard.standard_name} ({v.gov_standard.clause_id})" if v.gov_standard else BASIS_NONE),
-        )
-        # 소스 코드와 경로는 데이터다. Rich 마크업으로 해석되지 않도록 Text로 넘긴다
-        grid.add_row("코드", Text(v.snippet, style="dim red"))
-        grid.add_row("진단", Text(v.message))
-        if v.evidence:
-            grid.add_row("판단 근거", Text(" → ".join(f"{_ROLE.get(e.role, e.role)} {e.file_path}:{e.line}" for e in v.evidence)))
-        if v.plain:
-            grid.add_row("왜 문제인가", Text(v.plain))
-        if v.how_to_fix:
-            grid.add_row("고치는 방법", Text(v.how_to_fix, style="green"))
-        console.print(Panel(grid, title=f"지적 #{idx}", border_style=color.split()[-1]))
-    if len(ordered) > len(shown):
-        console.print(
-            f"[yellow]나머지 {len(ordered) - len(shown)}건은 생략했습니다. 전체는 --limit 0 또는 --format markdown/json/sarif 로 확인하세요.[/yellow]"
-        )
-    console.print("[dim]AI 코딩 도구에 붙여넣을 수정 지시문은 `iron-laws fix-prompt` 로 만들 수 있습니다.[/dim]")
+    grid.add_row("위치", Text(f"{v.file_path}:{v.line_number}"))
+    grid.add_row(
+        "적용 기준",
+        Text(f"{v.gov_standard.standard_name} ({v.gov_standard.clause_id})" if v.gov_standard else BASIS_NONE),
+    )
+    # 소스 코드와 경로는 데이터다. Rich 마크업으로 해석되지 않도록 Text로 넘긴다
+    grid.add_row("코드", Text(v.snippet, style="dim red"))
+    grid.add_row("진단", Text(v.message))
+    if v.evidence:
+        grid.add_row("판단 근거", Text(" → ".join(f"{_ROLE.get(e.role, e.role)} {e.file_path}:{e.line}" for e in v.evidence)))
+    if v.plain:
+        grid.add_row("왜 문제인가", Text(v.plain))
+    if v.how_to_fix:
+        grid.add_row("고치는 방법", Text(v.how_to_fix, style="green"))
+    console.print(Panel(grid, title=f"지적 #{index}", border_style=color.split()[-1]))

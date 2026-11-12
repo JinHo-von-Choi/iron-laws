@@ -32,7 +32,7 @@ from iron_laws.engine.source import SourceFile
 from iron_laws.engine.taint import (
     resolve_any,
 )
-from iron_laws.engine.taint.constants import is_closed_value
+from iron_laws.engine.taint.closed import is_closed_value
 from iron_laws.rules.injection import (
     CommandInjectionRule,
     PathTraversalRule,
@@ -119,7 +119,7 @@ def _findings_of(src: SourceFile, call: Call, rule_id: str, ctx: _Context) -> tu
     for col, ids in entries:
         if col == column:
             continue
-        for other in _calls_on_line(src, call.line):
+        for other in _calls_on_line(src, call.line):  # iron-laws: ignore[PERF-102] 같은 줄의 호출만 도는 반복이라 크기가 몇 개를 넘지 않는다
             if other.node.start_point[1] + 1 == col and _nested(call.node, other.node):
                 linked.extend(ids)
                 columns.append(col)
@@ -246,29 +246,14 @@ class LedgerInputs:
     suppressed_lines: set[tuple[str, int, str]]
     changed_files: set[str] | None
     digests: dict[str, str]
-    policy_changed: bool
-    lookup_budget: int
+    policy_changed: bool = False
+    lookup_budget: int = 2000
     rules: list | None = None
 
 
-def build_ledger(
-    sources: list[SourceFile],
-    skipped: list[dict[str, str]],
-    contract: Contract,
-    contract_source: str,
-    config: IronLawsConfig,
-    findings: dict[tuple[str, str, int, int], list[str]],
-    suppressed_lines: set[tuple[str, int, str]],
-    changed_files: set[str] | None,
-    digests: dict[str, str],
-    policy_changed: bool = False,
-    lookup_budget: int = 2000,
-    rules: list | None = None,
-) -> CoverageLedger:
+def build_ledger(inputs: LedgerInputs) -> CoverageLedger:
     """계약이 요구한 보안 관심 지점의 분석 근거 장부를 만든다. xfile 색인이 설정된 상태에서 호출한다.
-    rules를 주면 그 인스턴스를 그대로 쓴다. 사용자 명세가 싱크를 더한 규칙 인스턴스라 장부가 그 싱크를 안다."""
-    inputs = LedgerInputs(sources, skipped, contract, contract_source, config, findings, suppressed_lines,
-                          changed_files, digests, policy_changed, lookup_budget, rules)
+    inputs.rules를 주면 그 인스턴스를 그대로 쓴다. 사용자 명세가 싱크를 더한 규칙 인스턴스라 장부가 그 싱크를 안다."""
     ctx = _prepare_context(inputs)
     files, points = _collect_points(inputs, ctx)
     return _assemble_ledger(inputs, files, points)
@@ -325,20 +310,14 @@ def _collect_points(inputs: LedgerInputs, ctx: _Context) -> tuple[list[LedgerFil
     for src in sorted(sources, key=lambda s: s.path.as_posix()):
         path = src.path.as_posix()
         changed = changed_files is None or path in changed_files
-        if src.lang is None:
-            files.append(LedgerFile(path=path, classification="out_of_scope", reason=f"점검 계약 범위 밖의 파일 종류({src.kind})", changed=changed))
-            continue
-        language = src.lang.value
-        if language not in contract.languages:
-            files.append(LedgerFile(path=path, classification="unsupported_language", reason=f"계약이 {language}를 지원하지 않는다", changed=changed))
-            continue
-        if src.is_test and not contract.include_tests:
-            files.append(LedgerFile(path=path, classification="out_of_scope", reason="시험 코드", changed=changed))
+        outside = _outside_contract(src, path, changed, contract)
+        if outside is not None:
+            files.append(outside)
             continue
         excluded = any(fnmatch.fnmatch(path, pat) or fnmatch.fnmatch(src.path.name, pat) for pat in contract.exclude_paths)
         file_points = 0
         for call in iter_calls(src):
-            for family, rule in ctx.rules.items():
+            for family, rule in ctx.rules.items():  # iron-laws: ignore[PERF-102] ctx.rules는 결함 계열 표(계열당 규칙 하나)라 크기가 고정이다
                 if family not in contract.families:
                     continue
                 modeled = any(src.lang in s.langs and s.callee.search(call.callee) for s in rule.sinks)
@@ -391,15 +370,24 @@ def _collect_points(inputs: LedgerInputs, ctx: _Context) -> tuple[list[LedgerFil
         )
         src.release()
 
-    for item in skipped:
-        path = item.get("path", "")
-        if path.startswith("("):
-            continue
-        files.append(
-            LedgerFile(path=path, classification="unclassified", reason=item.get("reason", ""), changed=changed_files is None or path in changed_files)
-        )
-
+    files.extend(
+        LedgerFile(path=path, classification="unclassified", reason=item.get("reason", ""), changed=changed_files is None or path in changed_files)
+        for item in skipped
+        if not (path := item.get("path", "")).startswith("(")
+    )
     return files, points
+
+
+def _outside_contract(src: SourceFile, path: str, changed: bool, contract: Contract) -> LedgerFile | None:
+    """계약이 다루지 않는 파일(언어 밖·지원하지 않는 언어·시험 코드)이면 그 분류를 돌려준다."""
+    if src.lang is None:
+        return LedgerFile(path=path, classification="out_of_scope", reason=f"점검 계약 범위 밖의 파일 종류({src.kind})", changed=changed)
+    language = src.lang.value
+    if language not in contract.languages:
+        return LedgerFile(path=path, classification="unsupported_language", reason=f"계약이 {language}를 지원하지 않는다", changed=changed)
+    if src.is_test and not contract.include_tests:
+        return LedgerFile(path=path, classification="out_of_scope", reason="시험 코드", changed=changed)
+    return None
 
 
 def _assemble_ledger(inputs: LedgerInputs, files: list[LedgerFile], points: list[InterestPoint]) -> CoverageLedger:

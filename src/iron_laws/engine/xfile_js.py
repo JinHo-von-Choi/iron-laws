@@ -16,6 +16,7 @@ from pathlib import PurePosixPath
 from posixpath import normpath
 
 from iron_laws.engine.languages import JS_FAMILY
+from iron_laws.engine.resolve_result import ResolveResult
 from iron_laws.engine.source import SourceFile
 
 CODE_EXTS = (".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts")
@@ -371,8 +372,6 @@ def _export_targets(index, rel: str, name: str, depth: int, seen: set[tuple[str,
 
 
 def resolve(index, src: SourceFile, callee: str, argc: int):
-    from iron_laws.engine.xfile import ResolveResult
-
     parts = callee.split(".")
     binding = imports(src).get(parts[0])
     if binding is None or len(parts) > 2:

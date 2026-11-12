@@ -357,9 +357,10 @@ def spec_check_command(
     --against로 저장소를 주면 그 저장소에서 명세를 적용하기 전과 후를 비교해 탐지가 줄어드는지 봅니다.
     """
     from iron_laws.core.custom_spec import example_results
+    from iron_laws.core.scanner import scan_examples
 
     try:
-        results = example_results(spec)
+        results = example_results(spec, scan_examples)
     except ConfigError as e:
         err.print(f"[bold red]명세 오류: {escape(str(e))}[/bold red]")
         raise typer.Exit(2) from e

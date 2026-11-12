@@ -5,12 +5,13 @@ from collections import Counter
 
 from iron_laws.core.approvals import (
     ApprovalPolicy,
+    ScanScope,
     evaluate_approvals,
 )
 from iron_laws.core.baseline import make_fingerprint
 from iron_laws.core.contract import contract_digest
 from iron_laws.core.dependencies import build_callers_index, dependency_snapshot
-from iron_laws.core.ledger import FAMILY_RULES
+from iron_laws.core.ledger import FAMILY_RULES, LedgerInputs
 from iron_laws.core.masking import mask_secrets
 from iron_laws.core.models import (
     Diagnostic,
@@ -54,18 +55,20 @@ class ScanEvidenceBuilder:
             "spec": self._spec_digest(),
         }
         ledger = self._ledger_builder(
-            sources,
-            self._skipped,
-            self.contract,
-            self.contract_source,
-            self.config,
-            findings,
-            set(self._suppressed_lines),
-            self.changed_files,
-            digests,
-            policy_changed=self._contract_changed(),
-            lookup_budget=self.config.limits.max_cross_file_lookups,
-            rules=self.rules if self.config.policies.ledger_include_spec_points else None,
+            LedgerInputs(
+                sources=sources,
+                skipped=self._skipped,
+                contract=self.contract,
+                contract_source=self.contract_source,
+                config=self.config,
+                findings=findings,
+                suppressed_lines=set(self._suppressed_lines),
+                changed_files=self.changed_files,
+                digests=digests,
+                policy_changed=self._contract_changed(),
+                lookup_budget=self.config.limits.max_cross_file_lookups,
+                rules=self.rules if self.config.policies.ledger_include_spec_points else None,
+            )
         )
         self._note_spec_scope(ledger)
         return ledger
@@ -113,9 +116,7 @@ class ScanEvidenceBuilder:
             violations,
             self._approval_policy(),
             {r.rule_id: r.version for r in self.rules},
-            {s.path.as_posix() for s in sources},
-            set(self._all_paths),
-            changed_files=self.changed_files,
+            ScanScope(scanned={s.path.as_posix() for s in sources}, existing=set(self._all_paths), changed=self.changed_files),
         )
         by_fp = {v.fingerprint: v for v in violations}
         label = {"valid": "approved", "needs_review": "needs_review", "revoked": "revoked", "invalid": "invalid"}

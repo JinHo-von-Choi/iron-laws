@@ -72,7 +72,7 @@ def run_iron_laws(work: Path, cases: list[dict]) -> tuple[dict, dict]:
     for c in cases:
         report = AuditScanner(work / c["dir"]).scan()
         mine = [v for v in report.violations if v.rule_id == c["rule"] and v.file_path.as_posix() == c["main"]]
-        gaps = [p for p in (report.coverage_ledger.points if report.coverage_ledger else []) if p.path == c["main"] and p.state in ("unsupported", "unresolved", "budget_exceeded")]
+        gaps = [p for p in (report.coverage_ledger.points if report.coverage_ledger else []) if p.path == c["main"] and p.state in ("unsupported", "unresolved", "budget_exceeded")]  # iron-laws: ignore[ARC-205] 근거 장부 상태값이다
         if any(v.confidence.value == "CONFIRMED" for v in mine):
             hits[c["dir"]] = "detected"
         elif mine or gaps:

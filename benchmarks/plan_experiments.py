@@ -24,7 +24,7 @@ sys.path.insert(0, str(ROOT))
 
 from iron_laws.core.scanner import AuditScanner, tool_version  # noqa: E402
 from iron_laws.verify.engine import VerifyOptions, verify_patch  # noqa: E402
-from iron_laws.verify.regression import dump_spec  # noqa: E402
+from iron_laws.verify.regression_spec import dump_spec  # noqa: E402
 from tests import test_stage2_contract as s2  # noqa: E402
 from tests import test_stage4_regression as s4  # noqa: E402
 from tests import test_stage5_approvals as s5  # noqa: E402

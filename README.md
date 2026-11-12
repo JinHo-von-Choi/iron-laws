@@ -83,7 +83,7 @@ iron-laws explain IL-501
 
 Claude Code, Codex CLI, Cursor에서 에이전트가 파일을 고칠 때마다, 그리고 작업을 끝내기 전에 자동으로 점검하게 할 수 있습니다. 지적이 남아 있으면 에이전트가 끝내지 못합니다. MCP 서버로 점검을 도구처럼 부르게 할 수도 있습니다.
 
-Claude Code는 플러그인 하나로 둘 다 켭니다.
+Claude Code는 플러그인 하나로 둘 다 켜고, 에이전트가 지적을 분류하고 고치는 순서를 담은 스킬도 함께 설치합니다.
 
 ```bash
 claude plugin marketplace add JinHo-von-Choi/iron-laws

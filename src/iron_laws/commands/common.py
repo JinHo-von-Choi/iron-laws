@@ -7,6 +7,7 @@
 import subprocess
 import sys
 import time
+from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 
@@ -156,7 +157,7 @@ def experience_lessons(rule_id: str = "", families: set[str] | None = None) -> l
         err.print(f"[yellow]교훈 기록을 읽지 못해 교훈을 쓰지 못했습니다: {escape(str(e))}[/yellow]")
         return []
     versions = {r.rule_id: r.version for r in get_active_rules()}
-    lessons: list[str] = []
+    lessons: dict[str, None] = {}  # 처음 나온 순서를 지키며 같은 교훈을 한 번만 담는다
     for item in store.entries(rule_versions=versions):
         if item.state != STATE_ACTIVE:
             continue
@@ -164,9 +165,8 @@ def experience_lessons(rule_id: str = "", families: set[str] | None = None) -> l
             continue
         if families is not None and item.entry.family not in families and item.entry.rule_id not in FAMILY_RULE_IDS:
             continue
-        if item.entry.lesson not in lessons:
-            lessons.append(item.entry.lesson)
-    return lessons
+        lessons.setdefault(item.entry.lesson)
+    return list(lessons)
 
 
 def triage_lessons(report) -> dict[str, list[str]]:
@@ -241,64 +241,70 @@ def _renamed_paths(root: Path, ref: str) -> list[tuple[str, str]]:
     return sorted(pairs)
 
 
-def _build_scanner(
-    path: Path,
-    config: Path | None = None,
-    search_parents: bool = False,
-    baseline: Path | None = None,
-    changed_since: str | None = None,
-    respect_gitignore: bool | None = None,
-    contract: Path | None = None,
-    contract_mode: str | None = None,
-    approvals: Path | None = None,
-    collect_dependencies: bool = False,
-    gates: dict[str, float] | None = None,
-    package_index: Path | None = None,
-    max_wall_seconds: float | None = None,
-    allowed_signers: Path | None = None,
-    require_signed_approvals: bool = False,
-    build_manifest: str | None = None,
-    require_full_coverage: bool = False,
-) -> AuditScanner:
+@dataclass
+class ScanRequest:
+    """명령행에서 받은 점검 입력. 경로로 받은 기준선·계약·승인 기록은 _build_scanner가 읽는다."""
+
+    path: Path
+    config: Path | None = None
+    search_parents: bool = False
+    baseline: Path | None = None
+    changed_since: str | None = None
+    respect_gitignore: bool | None = None
+    contract: Path | None = None
+    contract_mode: str | None = None
+    approvals: Path | None = None
+    collect_dependencies: bool = False
+    gates: dict[str, float] | None = None
+    package_index: Path | None = None
+    max_wall_seconds: float | None = None
+    allowed_signers: Path | None = None
+    require_signed_approvals: bool = False
+    build_manifest: str | None = None
+    require_full_coverage: bool = False
+
+
+def _build_scanner(inputs: ScanRequest) -> AuditScanner:
+    """명령행 입력으로 점검기를 만든다. 설정·입력 오류는 종료코드 2로 끝낸다."""
     try:
         loaded_contract = None
-        if contract is not None:
-            loaded_contract, _digest = load_contract(contract)
-        if contract_mode is not None:
-            if contract_mode not in ("report", "block"):
+        if inputs.contract is not None:
+            loaded_contract, _digest = load_contract(inputs.contract)
+        if inputs.contract_mode is not None:
+            if inputs.contract_mode not in ("report", "block"):
                 raise ConfigError("--contract-mode는 report 또는 block이어야 합니다")
             from iron_laws.core.contract import default_contract
 
             loaded_contract = loaded_contract or default_contract()
-            loaded_contract.mode = "block" if contract_mode == "block" else "report"
-        loaded: Baseline | None = load_baseline(baseline) if baseline else None
-        changed = _changed_files(path, changed_since) if changed_since else None
-        renames = _renamed_paths(path, changed_since) if changed_since else None
+            loaded_contract.mode = "block" if inputs.contract_mode == "block" else "report"
+        loaded: Baseline | None = load_baseline(inputs.baseline) if inputs.baseline else None
+        changed = _changed_files(inputs.path, inputs.changed_since) if inputs.changed_since else None
+        renames = _renamed_paths(inputs.path, inputs.changed_since) if inputs.changed_since else None
         options = ScanOptions(
-            root_path=path,
-            config_path=config,
-            search_parents=search_parents,
+            root_path=inputs.path,
+            config_path=inputs.config,
+            search_parents=inputs.search_parents,
             baseline=loaded,
             changed_files=changed,
-            changed_since=changed_since,
+            changed_since=inputs.changed_since,
             renames=renames,
-            gates=gates,
-            respect_gitignore=respect_gitignore,
+            gates=inputs.gates,
+            respect_gitignore=inputs.respect_gitignore,
             contract=loaded_contract,
-            contract_source=(str(contract) if contract else "기본값") + (f" (모드 {contract_mode}는 명령행)" if contract_mode else ""),
-            contract_path=contract,
-            approvals=ApprovalStore(approvals, allowed_signers, require_signed_approvals) if approvals else None,
-            collect_dependencies=collect_dependencies,
-            build_manifest=build_manifest,
-            require_full_coverage=require_full_coverage,
+            contract_source=(str(inputs.contract) if inputs.contract else "기본값") + (f" (모드 {inputs.contract_mode}는 명령행)" if inputs.contract_mode else ""),
+            contract_path=inputs.contract,
+            approvals=ApprovalStore(inputs.approvals, inputs.allowed_signers, inputs.require_signed_approvals) if inputs.approvals else None,
+            collect_dependencies=inputs.collect_dependencies,
+            build_manifest=inputs.build_manifest,
+            require_full_coverage=inputs.require_full_coverage,
         )
         scanner = AuditScanner.from_options(options)
-        if max_wall_seconds is not None:
-            scanner.config.limits.max_wall_seconds = max_wall_seconds  # 명령행 옵션이 설정 파일보다 우선한다
-        if package_index is not None:
-            if not (package_index / "manifest.json").is_file():
-                raise ConfigError(f"패키지 색인 폴더에 manifest.json이 없습니다: {package_index}")
-            scanner.config.policies.package_index = str(package_index)  # 명령행 옵션이 설정 파일보다 우선한다
+        if inputs.max_wall_seconds is not None:
+            scanner.config.limits.max_wall_seconds = inputs.max_wall_seconds  # 명령행 옵션이 설정 파일보다 우선한다
+        if inputs.package_index is not None:
+            if not (inputs.package_index / "manifest.json").is_file():
+                raise ConfigError(f"패키지 색인 폴더에 manifest.json이 없습니다: {inputs.package_index}")
+            scanner.config.policies.package_index = str(inputs.package_index)  # 명령행 옵션이 설정 파일보다 우선한다
         _warn_stale_index(scanner)
         return scanner
     except ConfigError as e:

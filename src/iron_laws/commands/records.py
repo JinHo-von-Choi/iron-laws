@@ -12,6 +12,7 @@ from iron_laws.commands.common import (
     FEEDBACK_FILE,
     ConfigOpt,
     PathArg,
+    ScanRequest,
     SearchParentsOpt,
     _build_scanner,
     _check_completion,
@@ -41,7 +42,7 @@ def baseline_create_command(
     """
     현재 지적을 기준선으로 기록합니다. 점검이 끝까지 이루어지지 않았거나 파일이 없으면 만들지 않습니다.
     """
-    scanner = _build_scanner(path, config, search_parents)
+    scanner = _build_scanner(ScanRequest(path, config=config, search_parents=search_parents))
     report = scanner.scan()
     if report.summary.scan_status != "complete":
         err.print("[bold red]점검이 완전하지 않아 기준선을 만들지 않습니다. 분석 실패나 빈 점검은 기준선으로 면제할 수 없습니다.[/bold red]")
@@ -70,7 +71,7 @@ def baseline_migrate_command(
     except ConfigError as e:
         err.print(f"[bold red]입력 오류: {escape(str(e))}[/bold red]")
         raise typer.Exit(2) from e
-    scanner = _build_scanner(path, config)
+    scanner = _build_scanner(ScanRequest(path, config=config))
     report = scanner.scan()
     if report.summary.scan_status != "complete":
         err.print("[bold red]점검이 완전하지 않아 기준선을 옮기지 않습니다.[/bold red]")
@@ -93,7 +94,7 @@ def baseline_diff_command(
     """
     기준선과 비교해 신규·기존·해소·재검토 건수를 보여 줍니다.
     """
-    scanner = _build_scanner(path, config, False, baseline)
+    scanner = _build_scanner(ScanRequest(path, config=config, baseline=baseline))
     report = scanner.scan()
     _check_completion(report, False)
     s = report.summary

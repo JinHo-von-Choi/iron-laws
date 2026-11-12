@@ -20,18 +20,18 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field
 
 from iron_laws.core.baseline import Baseline, BaselineEntry, apply_baseline, loose_key, shape_of
 from iron_laws.core.config import ConfigError
 from iron_laws.core.dependencies import Premise, explain_dependencies
+from iron_laws.core.hash_chain import GENESIS, chain_problems, load_records
 from iron_laws.core.models import BaselineStatus, Violation
 
 APPROVALS_SCHEMA = 1
 SIGNED_PAYLOAD_PREFIX = b"iron-laws-approval/1 "
 CHECKPOINT_KIND = "iron-laws-approvals-checkpoint"
 DEFAULT_APPROVALS_FILE = ".iron-laws-approvals.jsonl"
-GENESIS = "0" * 24
 
 
 class ApprovedFinding(BaseModel):
@@ -123,7 +123,7 @@ def parse_expiry(value: str | None) -> tuple[date | None, str | None]:
         return None, f"유효기간 값이 날짜가 아니다({value!r})"
 
 
-def validate_record(record: "Record") -> list[str]:
+def validate_record(record: "Record") -> list[str]:  # iron-laws: ignore[ARC-204] 승인·교훈·파일럿 기록은 필드가 달라 형식 검증을 각자 한다
     """기록 한 줄의 형식·필수 필드 검증. check·status·verify·prune이 같은 규칙을 쓴다."""
     problems: list[str] = []
     try:
@@ -182,31 +182,11 @@ class ApprovalStore:
             self._load()
 
     def _load(self) -> None:
-        try:
-            lines = self.path.read_text(encoding="utf-8").splitlines()
-        except (OSError, UnicodeDecodeError) as e:
-            raise ConfigError(f"승인 기록을 읽을 수 없습니다: {self.path} ({e})") from e
-        for number, raw in enumerate(lines, start=1):
-            if not raw.strip():
-                continue
-            try:
-                self.records.append(Record(**json.loads(raw)))
-            except (json.JSONDecodeError, ValidationError, TypeError) as e:
-                raise ConfigError(f"승인 기록 {number}번째 줄을 읽을 수 없습니다: {e}") from e
+        self.records = load_records(self.path, Record, "승인 기록")
 
     def verify_chain(self) -> list[str]:
         """각 줄의 해시와 앞 줄 연결을 확인한다. 문제가 있으면 사유 목록을 돌려준다."""
-        problems: list[str] = []
-        previous = GENESIS
-        for index, record in enumerate(self.records):
-            if record.seq != index + 1:
-                problems.append(f"{index + 1}번째 기록의 순번이 맞지 않는다(seq={record.seq})")
-            if record.prev != previous:
-                problems.append(f"{index + 1}번째 기록이 앞 기록과 이어지지 않는다(삭제·재배열 의심)")
-            if record.compute_hash() != record.hash:
-                problems.append(f"{index + 1}번째 기록의 내용 해시가 맞지 않는다(내용 변경 의심)")
-            previous = record.hash
-        return problems
+        return chain_problems(self.records)
 
     def signature_problems(self, record: Record) -> list[str]:
         """승인 기록의 서명 문제. 허용 서명자 목록이 없으면 확인하지 않는다."""
@@ -430,15 +410,22 @@ def _premise_reasons(approval: "Approval", violation: Violation, changed_files: 
     return reasons, premises
 
 
+@dataclass
+class ScanScope:
+    """승인을 판단할 때 쓰는 이번 점검의 파일 범위"""
+
+    scanned: set[str]  # 이번에 점검한 파일
+    existing: set[str]  # 디스크에 있는 파일(점검 제외 포함)
+    changed: set[str] | None = None  # 이번 변경에 포함된 파일. None이면 범위를 좁히지 않았다
+
+
 def evaluate_approvals(
     store: ApprovalStore,
     violations: list[Violation],
     policy: ApprovalPolicy,
     current_versions: dict[str, int],
-    scanned_paths: set[str],
-    existing_paths: set[str],
+    scope: ScanScope,
     today: date | None = None,
-    changed_files: set[str] | None = None,
 ) -> list[ApprovalStatusRow]:
     """전체 지적 집합에서 승인과 지적을 일대일로 맺고(복제본은 새 검토 대상), 맺어진 승인의 전제가 유지되는지 본다.
     기록 파일의 무결성이 깨졌거나 승인 기록의 형식이 틀리면 그 승인은 유효한 승인으로 쓰지 않는다(`invalid`)."""
@@ -460,7 +447,7 @@ def evaluate_approvals(
     ]
     scratch = [v.model_copy() for v in violations]
     baseline = Baseline(tool_version=policy.tool_version, entries=entries)
-    outcome = apply_baseline(scratch, baseline, current_versions, scanned_paths, existing_paths)
+    outcome = apply_baseline(scratch, baseline, current_versions, scope.scanned, scope.existing)
     unobserved_fp = {e.fingerprint for e in outcome.unobserved}
     mapping = {fp: (v, status is BaselineStatus.REVIEW) for fp, (v, status) in outcome.matched.items()}
     claimed = {v.fingerprint for v, _review in mapping.values()}
@@ -490,25 +477,45 @@ def evaluate_approvals(
                 unmatched_rows.append((approval, finding))
             continue
         violation, was_review = matched
-        reasons: list[str] = []
-        if expires is not None and expires < today:
-            reasons.append(f"승인 유효기간이 지났다({expires})")
-        if was_review:
-            reasons.append("규칙의 판정 의미(version)가 바뀌었다")
-        old_policy = approval.record.policy or ApprovalPolicy()
-        if old_policy.contract_digest and old_policy.contract_digest != policy.contract_digest:
-            reasons.append("근거 계약이 바뀌었다")
-        if old_policy.config_hash and old_policy.config_hash != policy.config_hash:
-            reasons.append("점검 설정이 바뀌었다")
-        premise_reasons, premises = _premise_reasons(approval, violation, changed_files)
-        reasons.extend(premise_reasons)
-        keep = [f"{p.label}: {p.detail}" for p in premises if p.state == "unchanged" and p.detail]
-        if not reasons:
-            keep.insert(0, "승인한 지적과 같은 지문의 지적이다")
-        rows.append(ApprovalStatusRow(approval, "needs_review" if reasons else "valid", reasons, violation, premises, keep))
+        rows.append(_matched_row(approval, violation, was_review, expires, today, policy, scope.changed))
 
+    rows.extend(_unmatched_rows(unmatched_rows, free, scope.changed))
+    return rows
+
+
+def _matched_row(
+    approval: Approval,
+    violation: Violation,
+    was_review: bool,
+    expires: date | None,
+    today: date,
+    policy: ApprovalPolicy,
+    changed_files: set[str] | None,
+) -> ApprovalStatusRow:
+    """같은 지문의 지적과 맺어진 승인: 유효기간·규칙 의미·계약·설정·전제가 그대로면 유효, 하나라도 바뀌면 재검토"""
+    reasons: list[str] = []
+    if expires is not None and expires < today:
+        reasons.append(f"승인 유효기간이 지났다({expires})")
+    if was_review:
+        reasons.append("규칙의 판정 의미(version)가 바뀌었다")
+    old_policy = approval.record.policy or ApprovalPolicy()
+    if old_policy.contract_digest and old_policy.contract_digest != policy.contract_digest:
+        reasons.append("근거 계약이 바뀌었다")
+    if old_policy.config_hash and old_policy.config_hash != policy.config_hash:
+        reasons.append("점검 설정이 바뀌었다")
+    premise_reasons, premises = _premise_reasons(approval, violation, changed_files)
+    reasons.extend(premise_reasons)
+    keep = [f"{p.label}: {p.detail}" for p in premises if p.state == "unchanged" and p.detail]
+    if not reasons:
+        keep.insert(0, "승인한 지적과 같은 지문의 지적이다")
+    return ApprovalStatusRow(approval, "needs_review" if reasons else "valid", reasons, violation, premises, keep)
+
+
+def _unmatched_rows(unmatched_rows: list[tuple[Approval, ApprovedFinding]], free: list[Violation], changed_files: set[str] | None) -> list[ApprovalStatusRow]:
+    """같은 지문의 지적이 없는 승인: 같은 함수에 같은 규칙 지적이 하나만 남으면 승계해 재검토, 같은 파일에 남으면 재검토, 없으면 해소"""
     # 지적의 코드 모양이 바뀌어 지문이 달라졌지만 같은 규칙·같은 파일·같은 함수에 지적이 하나만 남은 경우는 '해소'가 아니라
     # '승인한 코드가 바뀐 것'이다. 일대일일 때만 맺고, 모호하면 승계하지 않는다.
+    rows: list[ApprovalStatusRow] = []
     for approval, finding in unmatched_rows:
         pool = [v for v in free if v.rule_id == finding.rule_id and v.file_path.as_posix() == finding.path and v.scope_name == finding.scope_name and finding.scope_name]
         competing = [a for a, f in unmatched_rows if f.rule_id == finding.rule_id and f.path == finding.path and f.scope_name == finding.scope_name]

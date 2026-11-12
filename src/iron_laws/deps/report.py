@@ -33,7 +33,7 @@ def snapshot_age_days(db: AdvisoryDb, today: date | None = None) -> int | None:
     return ((today or datetime.now(UTC).date()) - newest).days
 
 
-def build(locks: list[LockInfo], results: list[tuple[list[Finding], list[Undetermined]]], db: AdvisoryDb, today: date | None = None) -> dict[str, Any]:
+def build(locks: list[LockInfo], results: list[tuple[list[Finding], list[Undetermined]]], db: AdvisoryDb, today: date | None = None) -> dict[str, Any]:  # iron-laws: ignore[ARC-208] 외부 JSON(보고서·기록 파일·프로토콜 메시지)을 읽고 쓰는 경계라 dict를 그대로 다룬다
     age = snapshot_age_days(db, today)
     return {
         "schema": SCHEMA,

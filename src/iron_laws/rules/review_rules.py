@@ -531,7 +531,7 @@ class VersionRule(AiRule):
             return []
         found = []
         for src in project.files:
-            for name, minimum in named.items():
+            for name, minimum in named.items():  # iron-laws: ignore[PERF-102] named는 정책에 적은 최소 버전 표라 몇 개다
                 pattern = None
                 if src.path.name == "package.json":
                     pattern = re.compile(rf'"{re.escape(name)}"\s*:\s*"[\^~>=\s]*([\d.]+)')

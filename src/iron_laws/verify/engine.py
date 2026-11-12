@@ -344,7 +344,7 @@ def _verify(original: Path, patch_path: Path, options: VerifyOptions, runner: Ru
 
     receipt_inputs: dict[str, Any] = {"original_tree": original_snapshot.digest, "patch": info.digest, "patch_files": info.files, "patch_bytes": info.size}
     if not applied_ok:
-        return _finish(options, checks, receipt_inputs, {}, None, {}, {}, [], runner, started)
+        return _finish(options, checks, _ReceiptParts(receipt_inputs), runner, started)
 
     # ---- 3. 정책 동결과 우회 변경 ----
     frozen = _freeze_policies(orig_ro, cand_run, original, options, info.files, checks)
@@ -370,10 +370,10 @@ def _verify(original: Path, patch_path: Path, options: VerifyOptions, runner: Ru
 
     # ---- 9. 회귀시험(4단계) ----
     if spec_source is not None:
-        from iron_laws.verify.regression import run_regression_check
+        from iron_laws.verify.regression import RegressionDirs, run_regression_check
 
         checks.append(
-            run_regression_check(spec_source, orig_run, cand_run, work, runner_obj, limits, runner_policy.allowed_commands, patch_path=patch_path, bypass_count=len(bypasses))
+            run_regression_check(spec_source, RegressionDirs(orig_run, cand_run, work), runner_obj, limits, patch_path=patch_path, bypass_count=len(bypasses))
         )
 
     digests = {
@@ -403,7 +403,8 @@ def _verify(original: Path, patch_path: Path, options: VerifyOptions, runner: Ru
         }
         for side, report in (("original", original_report), ("candidate", candidate_report))
     }
-    return _finish(options, checks, receipt_inputs, digests, target_info, findings_summary, coverage_summary, bypasses, runner_obj, started, environment, runs, evidence, debt_delta)
+    parts = _ReceiptParts(receipt_inputs, digests, target_info, findings_summary, coverage_summary, bypasses, environment, evidence, debt_delta)
+    return _finish(options, checks, parts, runner_obj, started)
 
 
 def _digest_policy(policy: RunnerPolicy) -> str:
@@ -458,38 +459,38 @@ def _tests_check(runs: dict[str, RunResult], required: bool) -> CheckResult:
     return result_check
 
 
-def _finish(
-    options: VerifyOptions,
-    checks: list[CheckResult],
-    inputs: dict[str, Any],
-    digests: dict[str, str],
-    target: dict[str, Any] | None,
-    findings: dict[str, Any],
-    coverage: dict[str, Any],
-    bypasses: list[BypassChange],
-    runner: Runner | None,
-    started: float,
-    environment: dict[str, Any] | None = None,
-    runs: dict[str, RunResult] | None = None,
-    evidence: dict[str, Any] | None = None,
-    debt_delta: dict[str, Any] | None = None,
-) -> Receipt:
+@dataclass
+class _ReceiptParts:
+    """검증 기록(Receipt)에 담을 단계별 결과. 중간에 끝나면 앞 단계에서 모은 것만 채운다."""
+
+    inputs: dict[str, Any]
+    digests: dict[str, str] = field(default_factory=dict)
+    target: dict[str, Any] | None = None
+    findings: dict[str, Any] = field(default_factory=dict)
+    coverage: dict[str, Any] = field(default_factory=dict)
+    bypasses: list[BypassChange] = field(default_factory=list)
+    environment: dict[str, Any] | None = None
+    evidence: dict[str, Any] | None = None
+    debt_delta: dict[str, Any] | None = None
+
+
+def _finish(options: VerifyOptions, checks: list[CheckResult], parts: _ReceiptParts, runner: Runner | None, started: float) -> Receipt:
     if not any(c.id == "existing_tests" for c in checks):
         checks.append(_check("existing_tests", "기존 시험(원본과 후보, 격리 실행)", "not_run", "patch 검사 단계에서 중단되어 실행하지 않았다", required=options.require_tests, executed=False))
     verdict = decide(checks)
     receipt = Receipt(
         created=datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
         options=options.to_record(),
-        inputs=inputs,
-        digests=digests,
-        environment=environment or {"scanner_version": tool_version(), "runner_backend": runner.name if runner else "none", "isolation": "none"},
-        target=target,
+        inputs=parts.inputs,
+        digests=parts.digests,
+        environment=parts.environment or {"scanner_version": tool_version(), "runner_backend": runner.name if runner else "none", "isolation": "none"},
+        target=parts.target,
         checks=checks,
-        findings=findings,
-        evidence=evidence or {},
-        debt_delta=debt_delta or {},
-        coverage=coverage,
-        bypass_changes=[b.__dict__ for b in bypasses],
+        findings=parts.findings,
+        evidence=parts.evidence or {},
+        debt_delta=parts.debt_delta or {},
+        coverage=parts.coverage,
+        bypass_changes=[b.__dict__ for b in parts.bypasses],
         verdict=verdict,
     )
     receipt.environment["elapsed_s"] = round(time.monotonic() - started, 2)
@@ -500,15 +501,15 @@ def _finish(
 def regression_only(
     original: Path,
     patch_path: Path,
-    spec_path: Path,
-    runner_pref: str,
-    image: str | None,
-    limits: RunLimits,
+    options: VerifyOptions,
     runner: Runner | None = None,
     original_memo: dict | None = None,
 ) -> CheckResult:
-    """정적 검사 없이 회귀시험 검증(원본 실패·후보 통과·mutant 재실패)만 실행한다."""
-    from iron_laws.verify.regression import run_regression_check
+    """정적 검사 없이 회귀시험 검증(원본 실패·후보 통과·mutant 재실패)만 실행한다.
+    options에서는 회귀시험 명세(regression_spec)와 실행기 선택(runner·image)·실행 상한(limits)만 쓴다. runner를 주면 그 실행기를 쓴다."""
+    if options.regression_spec is None:
+        raise ConfigError("회귀시험만 검증하려면 회귀시험 명세(regression_spec)가 필요합니다")
+    from iron_laws.verify.regression import RegressionDirs, run_regression_check
 
     original = original.resolve()
     work = Path(tempfile.mkdtemp(prefix="iron-laws-regression-"))
@@ -526,9 +527,9 @@ def regression_only(
             result = _check("regression_test", "회귀시험", "fail", f"patch를 적용하지 못했다: {error}")
             return result
         policy, _ = load_runner_policy(orig_run)
-        runner_obj = runner or select_runner(runner_pref, image or policy.image)
+        runner_obj = runner or select_runner(options.runner, options.image or policy.image)
         _restore_trusted_files(original, cand_run, info.files, set(POLICY_FILES))
-        result = run_regression_check(spec_path, orig_run, cand_run, work, runner_obj, limits, policy.allowed_commands, patch_path=patch_path, original_memo=original_memo)
+        result = run_regression_check(options.regression_spec, RegressionDirs(orig_run, cand_run, work), runner_obj, options.limits, patch_path=patch_path, original_memo=original_memo)
         return result
     finally:
         notes = cleanup_workspace(work)

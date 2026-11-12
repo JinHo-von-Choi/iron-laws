@@ -68,7 +68,7 @@ class BaseRule(ABC):
         """프로젝트 전체를 보아야 하는 검사. 기본은 없음"""
         return []
 
-    def violation(
+    def violation(  # iron-laws: ignore[ARC-201] 모든 규칙이 지적을 만드는 공통 API라 선택 메타데이터를 키워드 인자로 받는다
         self,
         file_path: Path,
         line_number: int,

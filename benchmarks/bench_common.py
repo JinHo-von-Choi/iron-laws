@@ -49,7 +49,7 @@ class Scored:
             tpr = tp / (tp + fn) if tp + fn else 0.0
             fpr = fp / (fp + tn) if fp + tn else 0.0
             out[category] = {"TP": tp, "FN": fn, "FP": fp, "TN": tn, "TPR": round(tpr, 4), "FPR": round(fpr, 4)}
-            if k["unanalyzed"]:
+            if k["unanalyzed"]:  # iron-laws: ignore[ARC-205] 근거 장부 상태값이다
                 out[category]["unanalyzed"] = k["unanalyzed"]
             if k["excluded"]:
                 out[category]["excluded"] = k["excluded"]

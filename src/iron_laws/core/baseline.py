@@ -194,6 +194,12 @@ def apply_baseline(
             for v in vs:
                 v.baseline_status = BaselineStatus.NEW
 
+    _settle_leftover_entries(outcome, baseline, consumed, scanned_paths, current_versions)
+    return outcome
+
+
+def _settle_leftover_entries(outcome: BaselineOutcome, baseline: Baseline, consumed: set[str], scanned_paths: set[str], current_versions: dict[str, int]) -> None:
+    """현재 지적과 맺지 못한 기준선 항목을 해소(점검한 파일) 또는 미확인(파일이 없거나 점검하지 못함)으로 나누고, 삭제된 규칙과 미확인 건수를 알린다."""
     for e in baseline.entries:
         if e.fingerprint in consumed:
             continue
@@ -219,7 +225,6 @@ def apply_baseline(
                 message=f"기준선의 지적 {len(outcome.unobserved)}건은 파일이 없거나 점검하지 못해 해소로 보지 않고 미확인으로 남겼습니다.",
             )
         )
-    return outcome
 
 
 @dataclass

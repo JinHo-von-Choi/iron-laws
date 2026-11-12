@@ -195,64 +195,9 @@ def cost_section(report: AuditReport) -> list[str]:
 
 def generate_markdown_report(report: AuditReport, rules: list[BaseRule] | None = None) -> str:
     s = report.summary
-    if s.is_passed and s.unverified_rule_language_pairs:
-        status_str = "통과 (PASS) · 단, 미검증 (규칙, 언어) 조합 포함"
-    elif s.is_passed:
-        status_str = "통과 (PASS)"
-    elif s.gate_exceeded and s.gate_only_failure:
-        status_str = "재검토 필요 (신뢰 지표 상한 초과)"
-    else:
-        status_str = "미통과 (시정조치 필요 / FAIL)"
-
-    md = [f"# {report.title}\n"]
-    md.append(f"- **문서번호**: {report.document_id}")
-    md.append(f"- **점검 대상 경로**: `{report.target_path}`")
-    md.append(f"- **점검 주체**: {report.auditor}")
-    md.append(f"- **점검일자**: {report.audit_date}")
-    md.append(f"- **종합 등급**: **{s.grade}** ({status_str})")
-    if s.evaluated_rule_language_pairs:
-        md.append(f"- **신뢰 지표**: 적용된 (규칙, 언어) {s.evaluated_rule_language_pairs}개 중 미검증 {s.unverified_rule_language_pairs}개 · 분석 unknown 비율 {s.analysis_unknown_rate if s.analysis_unknown_rate is not None else '-'}. 미검증 조합의 `지적 없음`은 통과 근거가 아닙니다.")
-    md.extend(f"- **신뢰 지표 상한 초과**: {item}" for item in s.gate_exceeded)
-    meta = report.metadata
-    md.append(f"- **점검 완료 상태**: {_STATUS_LABEL.get(s.scan_status, s.scan_status)}")
-    if meta.get("tool_version"):
-        md.append(f"- **도구·규칙셋**: 오철칙 {meta['tool_version']} / 규칙 {meta.get('ruleset', {}).get('count', '?')}개 (해시 {meta.get('ruleset', {}).get('hash', '?')})")
-    if meta.get("config_source"):
-        md.append(f"- **설정**: {meta['config_source']} (설정 해시 {meta.get('config_hash', '?')})")
-    md.append("")
-    md.append("---\n")
-
-    md.append("## 1. 점검 요약 통계\n")
-    md.append("| 항목 | 결과 | 비고 |")
-    md.append("|---|---|---|")
-    md.append(f"| 점검 대상 파일 수 | {s.total_files_scanned}개 | 설정의 제외 대상을 뺀 전체 |")
-    md.append(f"| 총 지적 건수 | {s.total_violations}건 | 억제된 지적 {s.suppressed_count}건 별도 |")
-    md.append(f"| 치명적 (Critical) | {s.critical_count}건 | 배포 차단 사유 |")
-    md.append(f"| 고위험 (High) | {s.high_count}건 | 시정조치 필요 |")
-    md.append(f"| 중위험 (Medium) | {s.medium_count}건 | 개선 권고 |")
-    md.append(f"| 저위험 (Low) | {s.low_count}건 | 참고 |")
-    md.append(f"| 최종 판정 | **{status_str}** | 탑재된 규칙 기준 |\n")
-    skipped = report.metadata.get("skipped_files") or []
-    if skipped:
-        md.append(f"> 점검에서 제외된 파일 {len(skipped)}개: " + ", ".join(f"`{x['path']}`({x['reason']})" for x in skipped[:5]) + "\n")
-    problems = [d for d in report.diagnostics if d.severity in ("error", "warning")]
-    if problems:
-        md.append("### 점검 진단\n")
-        for d in problems[:30]:
-            where = f"`{d.file_path}`: " if d.file_path else ""
-            md.append(f"- [{d.severity}] {where}{d.message}")
-        if len(problems) > 30:
-            md.append(f"- … 외 {len(problems) - 30}건")
-        md.append("")
-    scope = report.metadata.get("scope")
-    if scope:
-        md.append(f"> 범위 제한: {scope['ref']} 이후 바뀐 파일 {scope['changed_files']}개의 지적만 표시했습니다. {scope['note']}\n")
-    if s.new_count is not None:
-        md.append(f"> 기준선 대비: 신규·재검토 {s.new_count}건, 기존(승인) {s.existing_count}건, 해소 {s.resolved_count}건\n")
-    md.extend(cost_section(report))
-    md.extend(_ledger_section(report))
-    md.append("---\n")
-
+    status_str = _status_text(report)
+    md = _header_lines(report, status_str)
+    md.extend(_statistics_lines(report, status_str))
     md.append("## 2. 지적사항 총괄표\n")
     if not report.violations:
         md.append(
@@ -284,3 +229,76 @@ def generate_markdown_report(report: AuditReport, rules: list[BaseRule] | None =
         if manual:
             md.append("\n정적 분석으로 판정할 수 없어 사람이 직접 확인해야 하는 항목: " + ", ".join(f"{m.item.id} {m.item.name}" for m in manual))
     return "\n".join(md)
+
+
+def _status_text(report: AuditReport) -> str:
+    s = report.summary
+    if s.is_passed and s.unverified_rule_language_pairs:
+        status_str = "통과 (PASS) · 단, 미검증 (규칙, 언어) 조합 포함"
+    elif s.is_passed:
+        status_str = "통과 (PASS)"
+    elif s.gate_exceeded and s.gate_only_failure:
+        status_str = "재검토 필요 (신뢰 지표 상한 초과)"
+    else:
+        status_str = "미통과 (시정조치 필요 / FAIL)"
+    return status_str
+
+
+def _header_lines(report: AuditReport, status_str: str) -> list[str]:
+    """문서 머리말: 문서번호·대상·등급·신뢰 지표·도구와 설정"""
+    s = report.summary
+    md = [f"# {report.title}\n"]
+    md.append(f"- **문서번호**: {report.document_id}")
+    md.append(f"- **점검 대상 경로**: `{report.target_path}`")
+    md.append(f"- **점검 주체**: {report.auditor}")
+    md.append(f"- **점검일자**: {report.audit_date}")
+    md.append(f"- **종합 등급**: **{s.grade}** ({status_str})")
+    if s.evaluated_rule_language_pairs:
+        md.append(f"- **신뢰 지표**: 적용된 (규칙, 언어) {s.evaluated_rule_language_pairs}개 중 미검증 {s.unverified_rule_language_pairs}개 · 분석 unknown 비율 {s.analysis_unknown_rate if s.analysis_unknown_rate is not None else '-'}. 미검증 조합의 `지적 없음`은 통과 근거가 아닙니다.")
+    md.extend(f"- **신뢰 지표 상한 초과**: {item}" for item in s.gate_exceeded)
+    meta = report.metadata
+    md.append(f"- **점검 완료 상태**: {_STATUS_LABEL.get(s.scan_status, s.scan_status)}")
+    if meta.get("tool_version"):
+        md.append(f"- **도구·규칙셋**: 오철칙 {meta['tool_version']} / 규칙 {meta.get('ruleset', {}).get('count', '?')}개 (해시 {meta.get('ruleset', {}).get('hash', '?')})")
+    if meta.get("config_source"):
+        md.append(f"- **설정**: {meta['config_source']} (설정 해시 {meta.get('config_hash', '?')})")
+    md.append("")
+    md.append("---\n")
+    return md
+
+
+def _statistics_lines(report: AuditReport, status_str: str) -> list[str]:
+    """1절 점검 요약 통계: 심각도별 건수, 제외 파일, 점검 진단, 범위 제한, 비용과 근거 장부"""
+    s = report.summary
+    md: list[str] = []
+    md.append("## 1. 점검 요약 통계\n")
+    md.append("| 항목 | 결과 | 비고 |")
+    md.append("|---|---|---|")
+    md.append(f"| 점검 대상 파일 수 | {s.total_files_scanned}개 | 설정의 제외 대상을 뺀 전체 |")
+    md.append(f"| 총 지적 건수 | {s.total_violations}건 | 억제된 지적 {s.suppressed_count}건 별도 |")
+    md.append(f"| 치명적 (Critical) | {s.critical_count}건 | 배포 차단 사유 |")
+    md.append(f"| 고위험 (High) | {s.high_count}건 | 시정조치 필요 |")
+    md.append(f"| 중위험 (Medium) | {s.medium_count}건 | 개선 권고 |")
+    md.append(f"| 저위험 (Low) | {s.low_count}건 | 참고 |")
+    md.append(f"| 최종 판정 | **{status_str}** | 탑재된 규칙 기준 |\n")
+    skipped = report.metadata.get("skipped_files") or []
+    if skipped:
+        md.append(f"> 점검에서 제외된 파일 {len(skipped)}개: " + ", ".join(f"`{x['path']}`({x['reason']})" for x in skipped[:5]) + "\n")
+    problems = [d for d in report.diagnostics if d.severity in ("error", "warning")]
+    if problems:
+        md.append("### 점검 진단\n")
+        for d in problems[:30]:
+            where = f"`{d.file_path}`: " if d.file_path else ""
+            md.append(f"- [{d.severity}] {where}{d.message}")
+        if len(problems) > 30:
+            md.append(f"- … 외 {len(problems) - 30}건")
+        md.append("")
+    scope = report.metadata.get("scope")
+    if scope:
+        md.append(f"> 범위 제한: {scope['ref']} 이후 바뀐 파일 {scope['changed_files']}개의 지적만 표시했습니다. {scope['note']}\n")
+    if s.new_count is not None:
+        md.append(f"> 기준선 대비: 신규·재검토 {s.new_count}건, 기존(승인) {s.existing_count}건, 해소 {s.resolved_count}건\n")
+    md.extend(cost_section(report))
+    md.extend(_ledger_section(report))
+    md.append("---\n")
+    return md

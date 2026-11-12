@@ -9,18 +9,13 @@
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import NamedTuple
 
 from iron_laws.engine import xfile_go, xfile_java, xfile_js, xfile_php, xfile_python
 from iron_laws.engine.languages import JS_FAMILY, Lang
+from iron_laws.engine.resolve_result import ResolveResult
 from iron_laws.engine.source import SourceFile
 
 DEFAULT_LOOKUP_BUDGET = 20000
-
-
-class ResolveResult(NamedTuple):
-    targets: list  # [(SourceFile, Func)]
-    gap: str | None = None  # 프로젝트 안의 대상으로 보이지만 정할 수 없을 때의 사유
 
 
 RESOLVERS = {Lang.PYTHON: xfile_python, Lang.JAVA: xfile_java, Lang.GO: xfile_go, Lang.PHP: xfile_php, **{lang: xfile_js for lang in JS_FAMILY}}

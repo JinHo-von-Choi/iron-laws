@@ -19,7 +19,7 @@ from pathlib import Path, PurePosixPath
 
 import yaml
 
-from iron_laws.deps.lockfiles import REQ_LINE, _pyproject_direct
+from iron_laws.deps.manifests import REQ_LINE, pyproject_direct
 from iron_laws.deps.versions import normalize_name
 
 
@@ -83,7 +83,7 @@ def _package_lock(path: Path) -> DependencyGraph:
     entries = data.get("packages")
     if isinstance(entries, dict):
         root = entries.get("") or {}
-        direct = {name for section in ("dependencies", "devDependencies", "optionalDependencies", "peerDependencies") for name in (root.get(section) or {})}
+        direct = {name for section in ("dependencies", "devDependencies", "optionalDependencies", "peerDependencies") for name in (root.get(section) or {})}  # iron-laws: ignore[ARC-205] 매니페스트 파일 형식이 정한 키 이름이다
         live = {k: v for k, v in entries.items() if k and isinstance(v, dict) and v.get("version") and not v.get("link")}
         ids: dict[str, str] = {}
         for key, item in live.items():
@@ -223,7 +223,7 @@ def _poetry(path: Path) -> DependencyGraph:
             graph.link(parent, targets[0])
         elif len(targets) > 1:
             ambiguous += 1
-    root = _pyproject_direct(path.parent / "pyproject.toml")
+    root = pyproject_direct(path.parent / "pyproject.toml")
     for node in graph.nodes.values():
         node.direct = (node.name in root) if root else None
     if ambiguous:

@@ -12,6 +12,7 @@ from pathlib import PurePosixPath
 from posixpath import normpath
 
 from iron_laws.engine.languages import Lang
+from iron_laws.engine.resolve_result import ResolveResult
 from iron_laws.engine.source import SourceFile
 
 INCLUDE_TYPES = {"include_expression", "include_once_expression", "require_expression", "require_once_expression"}
@@ -87,8 +88,6 @@ def _in_file(index, rel: str, name: str, static_class: str | None = None):
 
 
 def resolve(index, src: SourceFile, callee: str, argc: int):
-    from iron_laws.engine.xfile import ResolveResult
-
     if "->" in callee or callee.startswith("$"):
         return ResolveResult([])
     if "::" in callee:

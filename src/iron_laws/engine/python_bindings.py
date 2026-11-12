@@ -4,8 +4,6 @@ import ast
 import re
 from dataclasses import dataclass, field
 
-from iron_laws.engine import xfile
-from iron_laws.engine.ast_tools import Call
 from iron_laws.engine.languages import Lang
 from iron_laws.engine.python_ast import parse_python
 from iron_laws.engine.source import SourceFile
@@ -54,7 +52,7 @@ class BindingIndex(ast.NodeVisitor):
         self.conditional = 0
         self.visit(tree)
 
-    def visit_FunctionDef(self, node):
+    def visit_FunctionDef(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
         self.scope.bind(node.name, node.lineno, None)
         self.functions[node.lineno] = node
         outer = self.scope
@@ -75,7 +73,7 @@ class BindingIndex(ast.NodeVisitor):
 
     visit_AsyncFunctionDef = visit_FunctionDef
 
-    def visit_ClassDef(self, node):
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
         self.scope.bind(node.name, node.lineno, None)
         parent = self.scope
         self.scope = Scope(node.lineno, node.end_lineno, parent, is_class=True)
@@ -84,7 +82,7 @@ class BindingIndex(ast.NodeVisitor):
             self.visit(statement)
         self.scope = parent
 
-    def visit_Lambda(self, node):
+    def visit_Lambda(self, node: ast.Lambda) -> None:
         parent = self.scope
         self.scope = Scope(node.lineno, node.end_lineno, parent)
         self.scopes.append(self.scope)
@@ -93,30 +91,30 @@ class BindingIndex(ast.NodeVisitor):
         self.visit(node.body)
         self.scope = parent
 
-    def visit_Name(self, node):
+    def visit_Name(self, node: ast.Name) -> None:
         if isinstance(node.ctx, (ast.Store, ast.Del)):
             self.scope.bind(node.id, node.lineno, None)
 
-    def visit_ExceptHandler(self, node):
+    def visit_ExceptHandler(self, node: ast.ExceptHandler) -> None:
         if node.name:
             self.scope.bind(node.name, node.lineno, None)
         self.generic_visit(node)
 
-    def visit_Global(self, node):
+    def visit_Global(self, node: ast.Global | ast.Nonlocal) -> None:
         for name in node.names:
             self.scopes[0].bind(name, node.lineno, None)
             self.scope.bind(name, node.lineno, None)
 
     visit_Nonlocal = visit_Global
 
-    def visit_Import(self, node):
+    def visit_Import(self, node: ast.Import) -> None:
         for alias in node.names:
             kind = alias.name if alias.name in ('re', 'typer', 'subprocess') and not self.conditional else None
             name = alias.asname or alias.name.split('.')[0]
             origin = (alias.name if alias.asname else name) if alias.name in SINK_MODULES or name in SINK_MODULES else None
             self.scope.bind(name, node.lineno, kind, origin)
 
-    def visit_ImportFrom(self, node):
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
         for alias in node.names:
             kind = None
             if not self.conditional and not node.level:
@@ -124,7 +122,7 @@ class BindingIndex(ast.NodeVisitor):
             origin = f'{node.module}.{alias.name}' if not node.level and node.module in SINK_MODULES else None
             self.scope.bind(alias.asname or alias.name, node.lineno, kind, origin)
 
-    def kind(self, node, line):
+    def kind(self, node: ast.expr | None, line: int) -> str | None:
         if isinstance(node, ast.Name):
             return self.scope.resolve(node.id, line)
         if isinstance(node, ast.Attribute):
@@ -135,7 +133,7 @@ class BindingIndex(ast.NodeVisitor):
             return {'re.compile': 'regex', 'typer.Typer': 'typer_app'}.get(callee)
         return None
 
-    def origin(self, node, line):
+    def origin(self, node: ast.expr | None, line: int) -> str | None:
         """식이 가리키는 위험 모듈 경로(os.system 등). 모르면 None"""
         if isinstance(node, ast.Name):
             return self.scope.resolve_origin(node.id, line)
@@ -144,26 +142,26 @@ class BindingIndex(ast.NodeVisitor):
             return f'{base}.{node.attr}' if base else None
         return None
 
-    def visit_Assign(self, node):
+    def visit_Assign(self, node: ast.Assign) -> None:
         kind = self.kind(node.value, node.lineno) if not self.conditional else None
         origin = self.origin(node.value, node.lineno)
         for target in node.targets:
             self._target(target, node.lineno, kind, origin)
         self.visit(node.value)
 
-    def visit_AnnAssign(self, node):
+    def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
         kind = self.kind(node.value, node.lineno) if not self.conditional else None
         self._target(node.target, node.lineno, kind)
 
-    def visit_AugAssign(self, node):
+    def visit_AugAssign(self, node: ast.AugAssign) -> None:
         self._target(node.target, node.lineno, None)
 
-    def _target(self, node, line, kind, origin=None):
+    def _target(self, node: ast.expr, line: int, kind: str | None, origin: str | None = None) -> None:
         for child in ast.walk(node):
             if isinstance(child, ast.Name) and isinstance(child.ctx, ast.Store):
                 self.scope.bind(child.id, line, kind if child is node else None, origin if child is node else None)
 
-    def visit_If(self, node):
+    def visit_If(self, node: ast.If | ast.For | ast.AsyncFor | ast.While | ast.Try | ast.With) -> None:
         self.conditional += 1
         self.generic_visit(node)
         self.conditional -= 1
@@ -205,65 +203,3 @@ def canonical_callee(src: SourceFile, callee: str, line: int) -> str:
     head, dot, rest = callee.partition('.')
     origin = index.at(line).resolve_origin(head, line)
     return f'{origin}{dot}{rest}' if origin else callee
-
-
-def is_regex_call(src: SourceFile, call: Call) -> bool:
-    index = binding_index(src)
-    if index is None or '.' not in call.callee:
-        return False
-    receiver, method = call.callee.rsplit('.', 1)
-    if '.' in receiver:
-        return False
-    scope = index.at(call.line)
-    kind = scope.resolve(receiver, call.line)
-    # 전역 재대입이 있으면 함수가 실행되는 시점을 알 수 없으므로 면제하지 않는다.
-    owner = scope
-    while receiver not in owner.events and owner.parent:
-        owner = owner.parent
-    # 열 위치가 없는 이 인덱스로는 같은 줄의 대입과 호출 순서를 증명할 수 없다.
-    if any(at == call.line for at, _ in owner.events.get(receiver, [])):
-        return False
-    if owner.parent is None and scope is not owner and len(owner.events.get(receiver, [])) != 1:
-        return False
-    return kind == 're' and method in ('search', 'match', 'fullmatch', 'finditer', 'findall') or kind == 'regex'
-
-
-def _imported_kind(src: SourceFile, kind: str | None, depth: int = 0) -> str | None:
-    if kind is None or not kind.startswith('imported:'):
-        return kind
-    if depth >= 3:
-        return None
-    index = xfile.get_index()
-    if index is None:
-        return None
-
-    def resolve():
-        _, module, name = kind.split(':', 2)
-        path = index.lookup_module(module, src.path.as_posix())
-        if path is None:
-            return None
-        target = index.files[path]
-        bindings = binding_index(target)
-        if bindings is None or len(bindings.scopes[0].events.get(name, [])) != 1:
-            return None
-        value = bindings.scopes[0].resolve(name, 10**9)
-        return _imported_kind(target, value, depth + 1)
-
-    return src.memo('imported_binding:' + kind, resolve)
-
-
-def is_typer_command(src: SourceFile, function_line: int) -> bool:
-    index = binding_index(src)
-    if index is None:
-        return False
-    function = index.functions.get(function_line)
-    for fn in [function] if function is not None else []:
-        parent = index.at(fn.lineno).parent
-        if parent is None:
-            continue
-        for decorator in fn.decorator_list:
-            if isinstance(decorator, ast.Call) and isinstance(decorator.func, ast.Attribute) and decorator.func.attr == 'command':
-                receiver = decorator.func.value
-                if isinstance(receiver, ast.Name) and _imported_kind(src, parent.resolve(receiver.id, fn.lineno)) == 'typer_app':
-                    return True
-    return False

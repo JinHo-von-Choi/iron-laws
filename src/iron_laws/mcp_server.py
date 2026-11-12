@@ -143,7 +143,7 @@ class IronLawsTools:
             scanner.fail_on_source = "MCP 입력"
         return scanner.scan(), target
 
-    def check(self, path: str = ".", changed_since: str | None = None, fail_on: str | None = None,
+    def check(self, path: str = ".", changed_since: str | None = None, fail_on: str | None = None,  # iron-laws: ignore[ARC-208] 외부 JSON(보고서·기록 파일·프로토콜 메시지)을 읽고 쓰는 경계라 dict를 그대로 다룬다
               max_analysis_unknown_rate: float | None = None, max_unverified_rule_language_rate: float | None = None) -> dict[str, Any]:
         gates = {k: v for k, v in (("max_analysis_unknown_rate", max_analysis_unknown_rate), ("max_unverified_rule_language_rate", max_unverified_rule_language_rate)) if v is not None}
         for value in gates.values():

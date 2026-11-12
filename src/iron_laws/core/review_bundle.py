@@ -12,7 +12,7 @@ from dataclasses import asdict, dataclass, field
 from typing import Any
 
 from iron_laws.core.approvals import ApprovalStatusRow
-from iron_laws.core.models import AuditReport
+from iron_laws.core.models import AuditReport, CoverageLedger
 
 DECISION_OF_STATUS = {
     "valid": "keep",
@@ -104,7 +104,7 @@ def build_bundle(
     for path in sorted(changed_files or []):
         changed.append({"kind": "file", "subject": path, "detail": "이번 변경에 포함된 파일"})
     current = {
-        "contract_digest": execution.contract_digest if execution else "",
+        "contract_digest": execution.contract_digest if execution else "",  # iron-laws: ignore[ARC-205] 보고서 JSON의 필드 이름이다
         "config_hash": execution.config_hash if execution else "",
         "ruleset_hash": execution.ruleset_hash if execution else "",
         "tool_version": execution.tool_version if execution else "",
@@ -112,65 +112,15 @@ def build_bundle(
     policy_changes: dict[str, set[str]] = {}
     decisions: list[ApprovalDecision] = []
     for row in sorted(rows, key=lambda r: r.approval.id):
-        record = row.approval.record
-        finding = record.finding
-        recorded = record.policy.model_dump() if record.policy else {}
-        for key, label in (("contract_digest", "근거 계약"), ("config_hash", "점검 설정"), ("ruleset_hash", "규칙 집합"), ("tool_version", "도구 버전")):
-            if recorded.get(key) and current[key] and recorded[key] != current[key]:
-                policy_changes.setdefault(label, set()).add(row.approval.id)
-        decision = DECISION_OF_STATUS.get(row.status, "undeterminable")
-        boundaries = [p.detail for p in row.premises if p.key == "boundaries" and p.state == "unknown"]
-        boundaries += [r for p in row.premises if p.key == "boundaries" and p.state == "changed" for r in p.reasons]
-        decisions.append(
-            ApprovalDecision(
-                approval_id=row.approval.id,
-                rule_id=finding.rule_id if finding else "",
-                location=_location(row),
-                decision=decision,
-                status=row.status,
-                why_changed=list(row.reasons) if decision != "keep" else [],
-                why_kept=list(row.keep_reasons) if decision == "keep" else [],
-                boundaries=boundaries,
-                evidence={
-                    "approval_id": row.approval.id,
-                    "finding_id": row.violation.finding_id if row.violation is not None else None,
-                    "approved_fingerprint": finding.fingerprint if finding else "",
-                    "receipt_digest": record.receipt_digest,
-                    "expires": record.expires,
-                    "recorded_policy": recorded,
-                    "current_policy": current,
-                },
-            )
-        )
+        decisions.append(_decision_of(row, current, policy_changes))
         for p in row.premises:
             if p.state == "changed":
                 changed.append({"kind": "premise", "subject": f"{row.approval.id} · {p.label}", "detail": "; ".join(p.reasons)})
     for label, ids in sorted(policy_changes.items()):
         changed.append({"kind": "policy", "subject": label, "detail": f"승인 {len(ids)}건이 기록한 값과 현재 값이 다르다: {', '.join(sorted(ids)[:5])}"})
 
-    actions: list[dict[str, str]] = []
-    for d in decisions:
-        if d.decision == "invalidate":
-            actions.append({"kind": "re_review", "target": d.approval_id, "text": f"{d.rule_id} {d.location} 승인을 다시 검토한 뒤 새 근거로 승인하거나 수정하십시오 — {'; '.join(d.why_changed[:3])}"})
-        elif d.decision == "undeterminable":
-            actions.append({"kind": "confirm_target", "target": d.approval_id, "text": f"{d.location}: 승인 대상 파일이 없거나 점검하지 못했다. 대상을 확인하십시오(해소로 보지 않는다)"})
-    if ledger is not None:
-        for blocker in ledger.blockers:
-            actions.append({"kind": "new_evidence", "target": ledger.contract_digest, "text": f"계약이 요구한 근거가 없다: {blocker}"})
-    gaps: list[dict[str, str]] = []
-    if ledger is not None:
-        for blocker in ledger.blockers:
-            gaps.append({"kind": "contract_gap", "text": blocker})
-    for d in report.diagnostics:
-        if d.severity in ("error", "warning") or d.kind == "analysis_limit":
-            gaps.append({"kind": f"diagnostic:{d.kind}", "text": f"{d.file_path + ': ' if d.file_path else ''}{d.message}"})
-    for d in decisions:
-        for b in d.boundaries:
-            gaps.append({"kind": "dynamic_boundary", "text": f"{d.approval_id}: {b}"})
-    review_only = [v for v in report.violations if v.confidence.value == "REVIEW" and v.approval_status in (None, "none", "expired", "revoked", "invalid")]
-    if review_only:
-        gaps.append({"kind": "unreviewed_findings", "text": f"승인 없는 '확인 필요' 지적 {len(review_only)}건(`approvals queue`로 심각도 순 확인). 변경과 무관하게 남아 있는 판단 보류이며 필수 행동은 아니다"})
-    gaps = [dict(t) for t in sorted({tuple(sorted(g.items())) for g in gaps})]
+    actions = _actions(decisions, ledger)
+    gaps = _gaps(report, decisions, ledger)
 
     reproduction = {
         "run_id": run["run_id"],
@@ -185,6 +135,70 @@ def build_bundle(
         "details": "승인별 근거 ID는 approvals[].evidence, 전제별 비교는 `approvals status --json`",
     }
     return ReviewBundle(run=run, changed_premises=changed, approvals=decisions, actions=actions, gaps=gaps, reproduction=reproduction)
+
+def _decision_of(row: ApprovalStatusRow, current: dict[str, str], policy_changes: dict[str, set[str]]) -> ApprovalDecision:
+    """승인 하나의 판단(유지·무효화·판정 불가)과 근거. 기록한 정책 값이 현재와 다르면 policy_changes에 승인 ID를 더한다."""
+    record = row.approval.record
+    finding = record.finding
+    recorded = record.policy.model_dump() if record.policy else {}
+    for key, label in (("contract_digest", "근거 계약"), ("config_hash", "점검 설정"), ("ruleset_hash", "규칙 집합"), ("tool_version", "도구 버전")):
+        if recorded.get(key) and current[key] and recorded[key] != current[key]:
+            policy_changes.setdefault(label, set()).add(row.approval.id)
+    decision = DECISION_OF_STATUS.get(row.status, "undeterminable")
+    boundaries = [p.detail for p in row.premises if p.key == "boundaries" and p.state == "unknown"]
+    boundaries += [r for p in row.premises if p.key == "boundaries" and p.state == "changed" for r in p.reasons]
+    return ApprovalDecision(
+        approval_id=row.approval.id,
+        rule_id=finding.rule_id if finding else "",
+        location=_location(row),
+        decision=decision,
+        status=row.status,
+        why_changed=list(row.reasons) if decision != "keep" else [],
+        why_kept=list(row.keep_reasons) if decision == "keep" else [],
+        boundaries=boundaries,
+        evidence={
+            "approval_id": row.approval.id,
+            "finding_id": row.violation.finding_id if row.violation is not None else None,
+            "approved_fingerprint": finding.fingerprint if finding else "",
+            "receipt_digest": record.receipt_digest,
+            "expires": record.expires,
+            "recorded_policy": recorded,
+            "current_policy": current,
+        },
+    )
+
+
+def _actions(decisions: list[ApprovalDecision], ledger: CoverageLedger | None) -> list[dict[str, str]]:
+    """사람이 해야 할 일: 무효화된 승인 재검토, 대상 확인, 계약이 요구한 근거 보충"""
+    actions: list[dict[str, str]] = []
+    for d in decisions:
+        if d.decision == "invalidate":
+            actions.append({"kind": "re_review", "target": d.approval_id, "text": f"{d.rule_id} {d.location} 승인을 다시 검토한 뒤 새 근거로 승인하거나 수정하십시오 — {'; '.join(d.why_changed[:3])}"})
+        elif d.decision == "undeterminable":
+            actions.append({"kind": "confirm_target", "target": d.approval_id, "text": f"{d.location}: 승인 대상 파일이 없거나 점검하지 못했다. 대상을 확인하십시오(해소로 보지 않는다)"})
+    if ledger is not None:
+        for blocker in ledger.blockers:
+            actions.append({"kind": "new_evidence", "target": ledger.contract_digest, "text": f"계약이 요구한 근거가 없다: {blocker}"})
+    return actions
+
+
+def _gaps(report: AuditReport, decisions: list[ApprovalDecision], ledger: CoverageLedger | None) -> list[dict[str, str]]:
+    """확인하지 못한 범위: 계약 공백, 점검 진단, 동적 경계, 승인 없는 '확인 필요' 지적"""
+    gaps: list[dict[str, str]] = []
+    if ledger is not None:
+        for blocker in ledger.blockers:
+            gaps.append({"kind": "contract_gap", "text": blocker})
+    for d in report.diagnostics:
+        if d.severity in ("error", "warning") or d.kind == "analysis_limit":
+            gaps.append({"kind": f"diagnostic:{d.kind}", "text": f"{d.file_path + ': ' if d.file_path else ''}{d.message}"})
+    for d in decisions:
+        for b in d.boundaries:
+            gaps.append({"kind": "dynamic_boundary", "text": f"{d.approval_id}: {b}"})
+    review_only = [v for v in report.violations if v.confidence.value == "REVIEW" and v.approval_status in (None, "none", "expired", "revoked", "invalid")]
+    if review_only:
+        gaps.append({"kind": "unreviewed_findings", "text": f"승인 없는 '확인 필요' 지적 {len(review_only)}건(`approvals queue`로 심각도 순 확인). 변경과 무관하게 남아 있는 판단 보류이며 필수 행동은 아니다"})
+    gaps = [dict(t) for t in sorted({tuple(sorted(g.items())) for g in gaps})]
+    return gaps
 
 
 def render_markdown(bundle: ReviewBundle) -> str:

@@ -71,7 +71,7 @@ test_presets:
 
 ## Claude Code 플러그인으로 한 번에 설치
 
-저장소 루트가 Claude Code 플러그인입니다. 위 세 시점의 훅과 MCP 서버(`iron-laws mcp --root <프로젝트>`)를 한 번에 켭니다.
+저장소 루트가 Claude Code 플러그인입니다. 위 세 시점의 훅과 MCP 서버(`iron-laws mcp --root <프로젝트>`)를 한 번에 켜고, 스킬 `iron-laws`(`skills/iron-laws/SKILL.md`)를 더합니다. 스킬은 에이전트가 점검 범위를 고르고, 지적을 실제 결함과 오탐으로 나누고, 사유 있는 억제 주석을 달고, 끝내기 전에 전체 점검과 보고를 하는 순서를 담고 있습니다.
 
 ```bash
 claude plugin marketplace add JinHo-von-Choi/iron-laws

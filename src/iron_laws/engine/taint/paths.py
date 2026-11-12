@@ -15,6 +15,7 @@ from iron_laws.engine.taint.constants import (
     list_get_is_literal,
     python_container_get_is_literal,
 )
+from iron_laws.engine.taint.nodes import ternary_parts
 from iron_laws.engine.taint.resolve import _call_parts
 
 ASSIGN_TYPES = {
@@ -175,15 +176,6 @@ def _path_hit(path: str, whole_use: bool, names: set[str]) -> bool:
     return False
 
 
-def _ternary_parts(node: Node) -> tuple[Node, Node, Node] | None:
-    """(조건, 참일 때 값, 거짓일 때 값). Python 조건식(a if 조건 else b)은 필드 이름이 없어 자식 순서로 찾는다."""
-    if node.type == "conditional_expression":
-        named = [c for c in node.named_children if "comment" not in c.type]
-        return (named[1], named[0], named[2]) if len(named) == 3 else None
-    parts = tuple(node.child_by_field_name(k) for k in ("condition", "consequence", "alternative"))
-    return parts if all(p is not None for p in parts) else None
-
-
 def dead_ternary_ranges(src: SourceFile, node: Node) -> list[tuple[int, int]]:
     """node 안에서 조건이 상수인 조건식의 실행되지 않는 갈래(바이트 범위)"""
     found: list[tuple[int, int]] = []
@@ -191,7 +183,7 @@ def dead_ternary_ranges(src: SourceFile, node: Node) -> list[tuple[int, int]]:
     while stack:
         n = stack.pop()
         if n.type in ("ternary_expression", "conditional_expression"):
-            parts3 = _ternary_parts(n)
+            parts3 = ternary_parts(n)
             known = condition_value(src, parts3[0]) if parts3 is not None else None
             if known is not None:
                 dead = parts3[2] if known else parts3[1]
@@ -212,7 +204,7 @@ def _reads(src: SourceFile, node: Node, skip=None) -> list[tuple[str, bool]]:
         if skip is not None and skip(n):
             continue
         if n.type in ("ternary_expression", "conditional_expression"):
-            parts3 = _ternary_parts(n)
+            parts3 = ternary_parts(n)
             known = condition_value(src, parts3[0]) if parts3 is not None else None
             if known is not None:
                 stack.append(parts3[1] if known else parts3[2])

@@ -5,6 +5,21 @@
 
 ## [Unreleased]
 
+## [1.12.1] - 2026-11-12
+
+### Added
+- Claude Code 플러그인에 스킬 `iron-laws`(`skills/iron-laws/SKILL.md`)를 더한다. 편집 중에는 고친 파일이나 바뀐 파일만 점검하고, 지적을 심각도·규칙별로 묶어 실제 결함과 오탐으로 나누고, 사유 있는 억제 주석을 달고, 끝내기 전에 전체 점검을 한 번 돌려 종료코드와 신뢰 지표로 보고하는 순서를 담는다. 판단이 필요한 흔한 지적과 하지 말아야 할 처리(설정 완화, 사유 없는 억제)도 적는다.
+
+### Changed
+- README를 입문 안내로 줄이고, 자세한 내용을 사용법(`docs/USAGE.md`), 에이전트 연결(`docs/AGENT_INTEGRATION.md`), 의존성 점검(`docs/DEPENDENCIES.md`), 구조 진단(`docs/ARCHITECTURE.md`), 맞춤 설정(`docs/CUSTOMIZATION.md`), 규칙(`docs/RULES.md`) 문서로 나눈다.
+- `iron-laws rules` 표에서 같은 계열 안의 규칙 순서가 일부 바뀐다. 규칙 목록, 규칙별 판 번호, 규칙 집합 해시는 같다.
+- Python 코드에서 오철칙 모듈을 직접 부르는 경우 아래 호출 방식이 바뀐다. 명령줄 사용법은 같다.
+  - 회귀시험 명세 모델(`RegressionSpec` 등)과 `load_spec`·`dump_spec`·`propose_spec`은 `iron_laws.verify.regression_spec`에 있다.
+  - `run_regression_check`는 원본·수정본·작업 폴더를 `RegressionDirs` 하나로 받고, 쓰이지 않던 `allowed` 인자를 없앤다. `regression_only`는 명세·실행 이미지·한도를 `VerifyOptions`로 받는다.
+  - `build_ledger`는 입력을 `LedgerInputs`로, `evaluate_approvals`는 점검한 파일·기존 파일·바뀐 파일을 `ScanScope`로 받는다.
+  - `get_active_rules`와 `apply_custom_spec`은 사용자 명세의 예제를 점검할 함수를 `scan` 인자로 받는다. 명세가 설정돼 있는데 `scan`이 없으면 `ConfigError`를 낸다.
+  - 600줄이 넘던 규칙 모듈을 나눠, 일부 규칙 클래스가 `iron_laws.rules`의 새 모듈(`errors_tests`, `errors_defaults`, `ai_code_supply_chain`, `secrets_crypto_exposure`, `performance_queries`, `code_quality_memory`, `architecture_duplicates`)로 옮겨 간다.
+
 ## [1.12.0] - 2026-11-10
 
 ### Added

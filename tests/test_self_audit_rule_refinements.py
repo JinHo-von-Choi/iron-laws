@@ -5,7 +5,8 @@ import pytest
 from iron_laws.engine.source import SourceFile
 from iron_laws.rules.ai_code import HardcodedConfigRule
 from iron_laws.rules.architecture import DbInLoopRule, SizeAndComplexityRule
-from iron_laws.rules.errors import TestWithoutAssertionRule, ValidationMessageMismatchRule
+from iron_laws.rules.errors_defaults import ValidationMessageMismatchRule
+from iron_laws.rules.errors_tests import TestWithoutAssertionRule
 from iron_laws.rules.injection import LdapInjectionRule
 
 
@@ -44,7 +45,7 @@ def test_python_parse_failure_records_issue_and_cannot_exempt_receiver():
     ('role in allowed_roles', 'None', 'return None', True),
 ])
 def test_allowlist_success_requires_void_contract_and_denial(condition, annotation, denial, expected):
-    from iron_laws.rules.errors import FailureAsDefaultRule
+    from iron_laws.rules.errors_defaults import FailureAsDefaultRule
     src = SourceFile(Path('app.py'), f'def check_permission(role) -> {annotation}:\n    if {condition}:\n        return None\n    {denial}\n')
     assert bool(FailureAsDefaultRule().check(src)) is expected
 
@@ -121,7 +122,7 @@ def test_broad_exception_requires_failure_diagnostic(record, expected):
 
 @pytest.mark.parametrize('annotation, name, expected', [('list[Violation]', 'check', False), ('bool', 'authenticate', True), ('list[Violation]', 'authenticate', True)])
 def test_analysis_empty_result_is_not_authentication_fallback(annotation, name, expected):
-    from iron_laws.rules.errors import FailureAsDefaultRule
+    from iron_laws.rules.errors_defaults import FailureAsDefaultRule
     src = SourceFile(Path('app.py'), f'def {name}(value) -> {annotation}:\n    if len(value) < 3:\n        return []\n')
     assert bool(FailureAsDefaultRule().check(src)) is expected
 
@@ -184,7 +185,7 @@ def test_db_receiver_name_boundary(receiver, expected):
 
 
 def test_report_lookups_are_not_db_queries():
-    from iron_laws.rules.performance import ManyQueriesRule
+    from iron_laws.rules.performance_queries import ManyQueriesRule
     body = ''.join(f'    report.get("k{i}")\n' for i in range(6))
     assert not ManyQueriesRule().check(SourceFile(Path('app.py'), 'def summarize(report):\n' + body))
     assert ManyQueriesRule().check(SourceFile(Path('app.py'), 'def summarize(repo):\n' + body.replace('report', 'repo')))
@@ -209,7 +210,7 @@ def test_report_lookups_are_not_db_queries():
     ('build_signature', False),
 ])
 def test_failure_default_sensitive_name_tokens(name, expected):
-    from iron_laws.rules.errors import FailureAsDefaultRule
+    from iron_laws.rules.errors_defaults import FailureAsDefaultRule
     src = SourceFile(Path('app.py'), f'def {name}(data):\n    if data.size > 10:\n        return None\n    return data\n')
     assert bool(FailureAsDefaultRule().check(src)) is expected
 
@@ -220,7 +221,7 @@ def test_failure_default_sensitive_name_tokens(name, expected):
     ('dict | None', True),
 ])
 def test_failure_default_optional_finding_result(annotation, expected):
-    from iron_laws.rules.errors import FailureAsDefaultRule
+    from iron_laws.rules.errors_defaults import FailureAsDefaultRule
     src = SourceFile(Path('app.py'), f'def check_handler(node) -> {annotation}:\n    if node.kind != "call":\n        return None\n    return make(node)\n')
     assert bool(FailureAsDefaultRule().check(src)) is expected
 

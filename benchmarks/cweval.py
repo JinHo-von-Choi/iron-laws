@@ -117,7 +117,7 @@ def scan_case(case: dict, work: Path) -> dict:
         "kind": case["kind"],
         "same_cwe": sorted({v.rule_id for v in same}),
         "same_cwe_confirmed": sorted({v.rule_id for v in same if v.confidence.value == "CONFIRMED"}),
-        "other_rules": sorted({v.rule_id for v in report.violations if v not in same}),
+        "other_rules": sorted({v.rule_id for v in report.violations if case["cwe"] not in cwes_of(v)}),
     }
 
 

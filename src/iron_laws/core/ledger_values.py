@@ -154,7 +154,7 @@ class _Closed:
         # 함수 매개변수
         fn = enclosing_function(node, Lang.PYTHON)
         if fn is not None:
-            params = fn.child_by_field_name("parameters")
+            params = fn.child_by_field_name("parameters")  # iron-laws: ignore[ARC-205] tree-sitter 문법이 정한 필드 이름이다
             names = [param_name(self.src, p) for p in (params.named_children if params else [])]
             if name in names:
                 return self._parameter(fn, name, depth, seen)

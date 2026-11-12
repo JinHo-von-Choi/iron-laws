@@ -23,17 +23,15 @@ from iron_laws.core.scanner import AuditScanner
 from iron_laws.verify.engine import VerifyOptions, regression_only, resolve_finding, verify_patch
 from iron_laws.verify.regression import (
     HARNESS_DIR,
-    RegressionSpec,
+    RegressionDirs,
     build_mutants,
-    dump_spec,
     install_harness,
-    load_spec,
     parse_result,
-    propose_spec,
     run_harness,
     run_regression_check,
     split_hunks,
 )
+from iron_laws.verify.regression_spec import RegressionSpec, dump_spec, load_spec, propose_spec
 from iron_laws.verify.runner import RunLimits, RunResult
 from tests.regression_corpus import CASES, SUPPORTED, bad_fixes
 from tests.runner_doubles import LocalTestRunner, ScriptedRunner
@@ -76,11 +74,15 @@ ORIGINAL_MEMO: dict = {}  # 같은 원본·명세의 원본 단계 결과 재사
 RESULTS: dict = {}  # (표본, 변형) → 검증 결과. 같은 검증을 시험마다 다시 돌리지 않는다
 
 
+def regression_options(spec_path: Path) -> VerifyOptions:
+    return VerifyOptions(runner="none", limits=LIMITS, regression_spec=spec_path)
+
+
 def check(tmp_path: Path, project: Path, candidate_code: str, spec: RegressionSpec, runner=LOCAL, patch_name="p.diff"):
     patch = tmp_path / patch_name
     patch.write_text(make_diff(project, {"app.py": candidate_code}))
     spec_path = spec_file(tmp_path, confirmed(spec), f"spec-{patch_name}.yml")
-    return regression_only(project, patch, spec_path, "none", None, LIMITS, runner, ORIGINAL_MEMO if runner is LOCAL else None)
+    return regression_only(project, patch, regression_options(spec_path), runner, ORIGINAL_MEMO if runner is LOCAL else None)
 
 
 def evaluate(case, variant: str, tmp_path: Path):
@@ -170,7 +172,7 @@ def test_unconfirmed_spec_is_never_used_as_evidence(tmp_path: Path):
     spec = propose(project, case)
     patch = tmp_path / "p.diff"
     patch.write_text(make_diff(project, {"app.py": case.fix}))
-    result = regression_only(project, patch, spec_file(tmp_path, spec), "none", None, LIMITS, LOCAL)
+    result = regression_only(project, patch, regression_options(spec_file(tmp_path, spec)), LOCAL)
     assert result.result == "unknown" and "확정되지 않았다" in result.reason and not result.executed
 
 
@@ -284,7 +286,7 @@ def test_flaky_results_are_unknown(tmp_path: Path):
     original, candidate = tmp_path / "o", tmp_path / "c"
     shutil.copytree(project, original)
     shutil.copytree(project, candidate)
-    result = run_regression_check(spec_file(tmp_path, spec), original, candidate, tmp_path, flaky, LIMITS, [])
+    result = run_regression_check(spec_file(tmp_path, spec), RegressionDirs(original, candidate, tmp_path), flaky, LIMITS)
     assert result.result == "unknown" and "flaky" in result.reason
 
 
@@ -307,7 +309,7 @@ def test_isolation_unavailable_or_limits_are_not_run_not_failure(tmp_path: Path)
     spec = propose(project, case)
     patch = tmp_path / "p.diff"
     patch.write_text(make_diff(project, {"app.py": case.fix}))
-    result = regression_only(project, patch, spec_file(tmp_path, confirmed(spec)), "none", None, LIMITS)  # 격리 없음
+    result = regression_only(project, patch, regression_options(spec_file(tmp_path, confirmed(spec))))  # 격리 없음
     assert result.result == "unknown" and not result.executed and "격리" in result.reason
 
 

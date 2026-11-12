@@ -42,7 +42,7 @@ class Advisory:
     affected: list[Affected] = field(default_factory=list)
 
 
-def _severity(raw: dict[str, Any]) -> str:
+def _severity(raw: dict[str, Any]) -> str:  # iron-laws: ignore[ARC-208] 외부 JSON(보고서·기록 파일·프로토콜 메시지)을 읽고 쓰는 경계라 dict를 그대로 다룬다
     for source in (raw.get("database_specific") or {}, *(a.get("ecosystem_specific") or {} for a in raw.get("affected") or [])):
         value = str(source.get("severity") or "").upper()
         if value in ("LOW", "MODERATE", "MEDIUM", "HIGH", "CRITICAL"):

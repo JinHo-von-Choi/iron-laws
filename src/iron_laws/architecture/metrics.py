@@ -115,13 +115,18 @@ def _hotspots(root: Path, sources: list[SourceFile]) -> list[Hotspot]:
     counts = _git_change_counts(root, HOTSPOT_COMMITS)
     if not counts:
         return []
+    # git 경로는 저장소 기준이고 점검 경로는 점검 폴더 기준이라, 경로 끝부분(폴더 단위)이 같으면 같은 파일로 본다
+    by_suffix: dict[str, int] = {}
+    for name, count in counts.items():
+        parts = name.split("/")
+        for i in range(len(parts)):
+            key = "/".join(parts[i:])
+            by_suffix[key] = max(by_suffix.get(key, 0), count)
     found: list[Hotspot] = []
     for src in sources:
         rel = src.path.as_posix()
-        changes = 0
-        for name, count in counts.items():
-            if name.endswith(rel) or rel.endswith(name):
-                changes = max(changes, count)
+        parts = rel.split("/")
+        changes = max([by_suffix.get(rel, 0), *(counts.get("/".join(parts[i:]), 0) for i in range(len(parts)))])
         if not changes:
             continue
         lines = len([ln for ln in src.lines if ln.strip()])

@@ -60,7 +60,7 @@ def method_hit(root: Path, rules: set[str], methods: list[tuple[str, str]], repo
             continue
         spans = entry_ranges(path.read_text(encoding="utf-8", errors="replace"), ".java", method)
         located |= bool(spans)
-        if any(a <= n <= b for n in found.get(rel, []) for a, b in spans):
+        if any(a <= n <= b for n in found.get(rel, []) for a, b in spans):  # iron-laws: ignore[PERF-102] spans는 메서드 하나의 줄 범위라 한두 개다
             return True
     return False if located else None
 
@@ -105,7 +105,7 @@ def main(dataset: Path, commit: str, work: Path, fetch: bool, raw_output: Path |
         outcomes[slug] = result
         print(slug, result, flush=True)
     raw = {
-        "tool_version": tool_version(),
+        "tool_version": tool_version(),  # iron-laws: ignore[ARC-205] 보고서 JSON의 필드 이름이다
         "dataset": "CWE-Bench-Java",
         "dataset_commit": commit,
         "command": "benchmarks/cwe_bench_java.py <cwe-bench-java 폴더> <커밋> <작업 폴더> --fetch",

@@ -16,7 +16,7 @@ from iron_laws.engine.ast_tools import (
 )
 from iron_laws.engine.languages import JS_FAMILY, Lang
 from iron_laws.engine.project import ProjectContext
-from iron_laws.engine.python_bindings import is_regex_call
+from iron_laws.engine.python_call_kinds import is_regex_call
 from iron_laws.engine.source import SourceFile
 from iron_laws.rules.ai_code import HardcodedConfigRule
 from iron_laws.rules.architecture_common import (
@@ -223,7 +223,7 @@ class ReusableObjectRule(ArchRule):
             fn = enclosing_function(call.node, src.lang)
             if fn is None:
                 continue
-            for pattern, needs_literal, label in patterns:
+            for pattern, needs_literal, label in patterns:  # iron-laws: ignore[PERF-102] patterns는 언어별 고정 패턴 표(REUSABLE_PATTERNS)다
                 if not pattern.search(call.callee):
                     continue
                 if needs_literal and not (call.args and is_literal(call.args[0])):

@@ -12,6 +12,7 @@ import re
 from pathlib import PurePosixPath
 
 from iron_laws.engine.languages import Lang
+from iron_laws.engine.resolve_result import ResolveResult
 from iron_laws.engine.source import SourceFile
 
 # 표준 라이브러리의 최상위 패키지. 첫 경로 요소가 이 이름이면 프로젝트 폴더로 연결하지 않는다
@@ -96,8 +97,6 @@ def _functions(index, files: list[str], name: str, exported_only: bool):
 
 
 def resolve(index, src: SourceFile, callee: str, argc: int):
-    from iron_laws.engine.xfile import ResolveResult
-
     here = PurePosixPath(src.path.as_posix()).parent.as_posix()
     if "." not in callee:
         same = [p for p in index.go_dirs.get(here, []) if p != src.path.as_posix() and package_of(index.files[p]) == package_of(src)]

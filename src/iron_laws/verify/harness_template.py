@@ -13,6 +13,7 @@
 작성자: 최진호
 작성일: 2026-10-04
 """
+# iron-laws: ignore-file[ARC-201] 파일 대부분이 격리 환경에 복사해 실행하는 harness 원문 문자열(HARNESS_SOURCE)이다
 
 HARNESS_SOURCE = r'''
 import builtins

@@ -13,7 +13,7 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from iron_laws.core.models import AuditReport
+from iron_laws.core.models import AuditReport, Violation
 from iron_laws.reporters.coverage import rule_item_ids
 from iron_laws.reporters.markdown import cost_section
 from iron_laws.standards import impl_items
@@ -45,15 +45,21 @@ def build_rows(report: AuditReport, rules) -> list[ItemRow]:
     for point in (ledger.points if ledger is not None else []):
         if point.in_scope and point.state in GAP_LABEL and point.family in FAMILY_ITEM:
             gaps[FAMILY_ITEM[point.family]][point.state] += 1
+    # 규칙별로 (보고서 안 순서, 값)을 모아 둔다. 항목마다 전체 지적·억제를 다시 훑지 않고, 원래 순서대로 합친다.
+    findings_by_rule: dict[str, list[tuple[int, Violation]]] = defaultdict(list)
+    for order, v in enumerate(report.violations):
+        findings_by_rule[v.rule_id].append((order, v))
+    suppressions_by_rule: dict[str, list[tuple[int, dict]]] = defaultdict(list)
+    for order, s in enumerate(suppressions):
+        suppressions_by_rule[s["rule_id"]].append((order, s))
     rows = []
     for item_id, item in impl_items().items():
         rule_ids = sorted(rules_by_item.get(item_id, []))
         row = ItemRow(item_id, item.name, rule_ids)
-        row.findings = [v for v in report.violations if v.rule_id in rule_ids]
-        for s in suppressions:
-            if s["rule_id"] in rule_ids:
-                until = f", {s['until']}까지" if s.get("until") else ""
-                row.remaining.append(f"억제 {s['rule_id']} {s['path']}:{s['line']} — {s['reason'] or '(사유 없음)'}{until}")
+        row.findings = [v for _, v in sorted(pair for rule_id in set(rule_ids) for pair in findings_by_rule[rule_id])]
+        for _, s in sorted(pair for rule_id in set(rule_ids) for pair in suppressions_by_rule[rule_id]):
+            until = f", {s['until']}까지" if s.get("until") else ""
+            row.remaining.append(f"억제 {s['rule_id']} {s['path']}:{s['line']} — {s['reason'] or '(사유 없음)'}{until}")
         for v in row.findings:
             if v.approval_status == "approved":
                 row.remaining.append(f"승인 {v.rule_id} {v.file_path.as_posix()}:{v.line_number} — 승인 {v.approval_id}")

@@ -8,6 +8,7 @@ import importlib
 import pkgutil
 
 from iron_laws.core.config import ConfigError, IronLawsConfig
+from iron_laws.core.custom_spec import ScanFn, apply_custom_spec
 from iron_laws.rules.base import BaseRule
 
 # 규칙이 속한 계열의 순서. 계열 안의 순서는 분류와 무관하지만, `iron-laws rules` 목록이 계열별로 모여 보이도록 잡는다.
@@ -70,6 +71,7 @@ def get_active_rules(
     enabled: list[str] | None = None,
     disabled: list[str] | None = None,
     config: IronLawsConfig | None = None,
+    scan: ScanFn | None = None,
 ) -> list[BaseRule]:
     """설정에 따라 활성화된 규칙 인스턴스 리스트 생성"""
     instances = [cls() for cls in ALL_RULES]
@@ -94,7 +96,5 @@ def get_active_rules(
 
     if not instances:
         raise ConfigError("활성화된 규칙이 없습니다. enabled_rules와 disabled_rules를 확인하세요")
-    from iron_laws.core.custom_spec import apply_custom_spec
-
-    apply_custom_spec(instances, config.policies.custom_spec if config is not None else None)
+    apply_custom_spec(instances, config.policies.custom_spec if config is not None else None, scan)
     return instances

@@ -23,7 +23,8 @@ from iron_laws.engine.ast_tools import (
 from iron_laws.engine.languages import ALL_LANGS, C_FAMILY, JS_FAMILY, Lang
 from iron_laws.engine.source import SourceFile
 from iron_laws.engine.taint import Ctx, is_tainted, param_name, reaching_definitions, resolve_any
-from iron_laws.engine.taint.constants import in_dead_branch, is_closed_value
+from iron_laws.engine.taint.closed import is_closed_value
+from iron_laws.engine.taint.constants import in_dead_branch
 from iron_laws.engine.xfile import note_limit
 
 PY = frozenset({Lang.PYTHON})
@@ -114,7 +115,7 @@ def _hits_in(
     ctx: Ctx,
 ) -> Iterator[tuple[Call, Node, Flow]]:
     for call in calls:
-        for sink in applicable:
+        for sink in applicable:  # iron-laws: ignore[PERF-102] applicable은 규칙에 고정된 싱크 표다
             if not sink.callee.search(call.callee):
                 continue
             for arg in select(src, call, sink):

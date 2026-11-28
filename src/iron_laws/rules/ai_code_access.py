@@ -199,7 +199,7 @@ class DatabaseAccessPolicyRule(AiRule):
 
 
 class UnauthenticatedEndpointRule(BaseRule):
-    version = 2
+    version = 3  # Next.js Server Actions도 엔드포인트로 판정한다
     rule_id = "IL-525"
     name = "인증 확인이 보이지 않는 중요 기능 엔드포인트 탐지"
     iron_law = IronLaw.LAW_5

@@ -38,23 +38,27 @@ class DuplicateHelperRule(ArchRule):
     def check(self, src: SourceFile) -> list[Violation]:
         return []
 
+    def fingerprints(self, src: SourceFile, limits) -> list[tuple]:
+        """파일의 비교 대상 함수마다 (함수, 토큰, shingle 집합). 에이전트 훅의 편집 중 중복 알림도 같은 지문을 쓴다"""
+        if _is_generated(src) or src.root is None:
+            return []
+        out = []
+        for fn in iter_functions(src):
+            if fn.body is None or self.skip_names.match(fn.name) or fn.length < 5:
+                continue
+            tokens = self._tokens(src, fn.node)
+            if len(tokens) < limits.duplicate_min_nodes:
+                continue
+            if self.trivial.match(fn.name) and len(tokens) < limits.duplicate_min_nodes * 2:
+                continue
+            # 문자열 hash()는 실행마다 달라져 같은 코드에서 다른 결과가 나온다. 실행과 무관한 해시를 쓴다
+            shingles = {zlib.crc32("\x1f".join(tokens[i : i + self.SHINGLE]).encode("utf-8")) for i in range(len(tokens) - self.SHINGLE + 1)}
+            out.append((fn, tokens, shingles))
+        return out
+
     def check_project(self, project: ProjectContext) -> list[Violation]:
         limits = project.config.limits
-        funcs = []
-        for src in project.source_files():
-            if _is_generated(src) or src.root is None:
-                continue
-            for fn in iter_functions(src):
-                if fn.body is None or self.skip_names.match(fn.name) or fn.length < 5:
-                    continue
-                tokens = self._tokens(src, fn.node)
-                if len(tokens) < limits.duplicate_min_nodes:
-                    continue
-                if self.trivial.match(fn.name) and len(tokens) < limits.duplicate_min_nodes * 2:
-                    continue
-                # 문자열 hash()는 실행마다 달라져 같은 코드에서 다른 결과가 나온다. 실행과 무관한 해시를 쓴다
-                shingles = {zlib.crc32("\x1f".join(tokens[i : i + self.SHINGLE]).encode("utf-8")) for i in range(len(tokens) - self.SHINGLE + 1)}
-                funcs.append((src, fn, tokens, shingles))
+        funcs = [(src, fn, tokens, shingles) for src in project.source_files() for fn, tokens, shingles in self.fingerprints(src, limits)]
         if len(funcs) < 2:
             return []
 

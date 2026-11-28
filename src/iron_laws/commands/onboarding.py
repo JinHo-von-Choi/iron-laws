@@ -31,21 +31,71 @@ def _ask_stage() -> str | None:
     return STAGES[int(answer) - 1] if answer.isdigit() and 1 <= int(answer) <= len(STAGES) else None
 
 
+def _first_move(root: Path, key: str) -> None:
+    """이미 코드가 있으면 틀의 구조 계약으로 점검해, 계약에 어긋나는 import 수와 지금 옮길 것 하나를 보여 준다"""
+    from iron_laws.blueprints import BLUEPRINTS
+    from iron_laws.core.scanner import AuditScanner
+
+    config = IronLawsConfig(architecture=BLUEPRINTS[key].contract(), enabled_rules=["ARC-207"])
+    report = AuditScanner(root, config=config).scan()
+    found = sorted((v for v in report.violations if v.rule_id == "ARC-207"), key=lambda v: (v.file_path.as_posix(), v.line_number))
+    if report.summary.total_files_scanned == 0:
+        return
+    if not found:
+        console.print("지금 코드는 이 틀의 구조 계약에 어긋나는 import가 없습니다.")
+        return
+    first = found[0]
+    console.print(f"지금 코드에 틀의 구조 계약과 어긋나는 import가 {len(found)}곳 있습니다. 한꺼번에 옮기지 말고 하나씩 고치십시오.")
+    console.print(f"먼저 고칠 것: {first.file_path.as_posix()}:{first.line_number} — {first.message}")
+    console.print(f"고친 뒤 확인: iron-laws check {root} (이 위치의 ARC-207 지적이 사라져야 합니다)")
+
+
+def _stack(root: Path, stack: str, stage: str | None, write: bool) -> None:
+    from iron_laws.blueprints import BLUEPRINTS, apply, contract_yaml, detect
+
+    key = detect(root) if stack == "auto" else stack
+    if key is None:
+        err.print("[bold red]스택을 알아내지 못했습니다. --stack nextjs 또는 --stack fastapi로 정하십시오.[/bold red]")
+        raise typer.Exit(2)
+    if key not in BLUEPRINTS:
+        err.print(f"[bold red]--stack은 {', '.join(BLUEPRINTS)}, auto 가운데 하나여야 합니다.[/bold red]")
+        raise typer.Exit(2)
+    bp = BLUEPRINTS[key]
+    if write:
+        for line in apply(root, bp, stage):
+            console.print(line)
+    else:
+        console.print(f"# 구조 틀 미리보기: {bp.title} (파일을 만들려면 --write)\n")
+        console.print("## .iron-laws.yml에 들어갈 구조 계약\n")
+        console.print(contract_yaml(bp), markup=False)
+        console.print("## AGENTS.md·CLAUDE.md에 들어갈 절\n")
+        console.print(bp.guideline_section(), markup=False)
+        missing = [f for f in bp.folders if not (root / f).exists()]
+        console.print("## 만들 폴더: " + (", ".join(missing) if missing else "없음(모두 있음)"))
+    _first_move(root, key)
+
+
 @app.command("init")
 def init_command(
     target_dir: Path = typer.Argument(Path("."), help="설정 파일을 생성할 디렉터리"),
     stage: str | None = StageOpt,
+    stack: str | None = typer.Option(None, "--stack", help="구조 틀: nextjs, fastapi, auto(코드에서 알아냄). 기본은 미리보기이고 --write를 주면 파일을 만듭니다"),
+    write: bool = typer.Option(False, "--write", help="--stack의 구조 계약·지침 절·폴더를 실제로 만듭니다. 기존 파일은 덮어쓰지 않고 지침 파일에는 표시한 절만 넣습니다"),
 ):
     """
     현재 디렉터리에 .iron-laws.yml 기본 설정 파일을 생성합니다. 이미 설정 파일(.iron-laws.yml·.iron-laws.yaml)이 있으면 덮어쓰지 않습니다.
+    --stack을 주면 그 스택의 구조 틀(구조 계약, 에이전트 지침 절, 폴더)을 보여 주거나(--write면) 만듭니다.
     """
+    if stage is not None and stage not in STAGES:
+        err.print(f"[bold red]--stage는 {', '.join(STAGES)} 가운데 하나여야 합니다.[/bold red]")
+        raise typer.Exit(2)
+    if stack is not None:
+        _stack(target_dir, stack, stage, write)
+        return
     existing = next((target_dir / name for name in CONFIG_NAMES if (target_dir / name).exists()), None)
     if existing is not None:
         err.print(f"[bold yellow]이미 설정 파일이 존재합니다: {existing}[/bold yellow]")
         return
-    if stage is not None and stage not in STAGES:
-        err.print(f"[bold red]--stage는 {', '.join(STAGES)} 가운데 하나여야 합니다.[/bold red]")
-        raise typer.Exit(2)
     stage = stage or _ask_stage()
     config = IronLawsConfig(stage=stage)
     body = yaml.safe_dump(config.report_dump(), allow_unicode=True, sort_keys=False)

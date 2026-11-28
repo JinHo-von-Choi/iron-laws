@@ -112,6 +112,7 @@ class SizeAndComplexityRule(ArchRule):
 
 
 class LayeringRule(ArchRule):
+    version = 2  # FastAPI 의존성으로 받은 세션(db.add·db.query·db.get 등)도 DB 직접 호출로 본다
     rule_id = "ARC-202"
     name = "요청 처리기(컨트롤러)의 데이터베이스 직접 접근 탐지"
     severity = Severity.MEDIUM
@@ -126,7 +127,10 @@ class LayeringRule(ArchRule):
     }
     js_route = re.compile(r"\b(?:app|router|server|api|route)\.(?:get|post|put|patch|delete|use)\(")
     db_markers = {
-        Lang.PYTHON: re.compile(r"\.execute(many)?\(|\bcursor\b|session\.(query|add|commit|execute|delete)|db\.session|\.objects\.(filter|get|create|all|update|delete)|sqlite3\.connect|psycopg2|pymysql|\.query\.(filter|get|all)"),
+        Lang.PYTHON: re.compile(
+            r"\.execute(many)?\(|\bcursor\b|session\.(query|add|add_all|commit|execute|delete|scalars|scalar|refresh|flush|merge)\b|db\.session|\.objects\.(filter|get|create|all|update|delete)|sqlite3\.connect|psycopg2|pymysql|\.query\.(filter|get|all)"
+            r"|\bdb\.(query|add|add_all|commit|execute|delete|get|scalars|scalar|refresh|flush|merge)\("  # FastAPI의 `db: Session = Depends(get_db)` 뒤 호출
+        ),
         Lang.JAVA: re.compile(r"JdbcTemplate|EntityManager|DriverManager|createQuery\(|executeQuery\(|createNativeQuery\("),
         Lang.CSHARP: re.compile(r"\bSqlConnection\b|\bSqlCommand\b|DbContext|\.ExecuteReader\(|FromSqlRaw|ExecuteSqlRaw"),
         Lang.GO: re.compile(r"\bsql\.(Open|DB)\b|\bdb\.(Query|Exec|QueryRow|Get|Select)\w*\(|gorm\.|\.Raw\("),
@@ -160,8 +164,29 @@ class LayeringRule(ArchRule):
         ]
 
 
+def _js_alias_index(project: ProjectContext, files: dict[str, SourceFile]):
+    """tsconfig paths 별칭 색인. 파일 간 추적(engine/xfile_js)과 같은 해석을 쓴다. 별칭이 없으면 None"""
+    from types import SimpleNamespace
+
+    from iron_laws.engine import xfile_js
+
+    index = SimpleNamespace(js_aliases=[], config_errors=[], files=set(files))
+    xfile_js.build(index, project.files)
+    return index if index.js_aliases else None
+
+
+def _alias_target(index, path: str, spec: str) -> str | None:
+    """별칭 import(@/lib/db 등)가 가리키는 프로젝트 파일. 패키지 이름이거나 대상을 정할 수 없으면 None"""
+    if index is None:
+        return None
+    from iron_laws.engine import xfile_js
+
+    target, _gap = xfile_js.resolve_module(index, path, spec)
+    return target
+
+
 class CircularDependencyRule(ArchRule):
-    version = 2
+    version = 3  # JS·TS의 tsconfig paths 별칭 import(@/…)도 의존으로 본다
     rule_id = "ARC-203"
     name = "모듈 간 순환 의존 탐지"
     severity = Severity.MEDIUM
@@ -169,7 +194,7 @@ class CircularDependencyRule(ArchRule):
     how_to_fix = "공통으로 쓰는 부분을 제3의 모듈로 빼내거나, 의존 방향이 한쪽으로만 흐르도록(상위→하위) 인터페이스를 도입하세요."
 
     py_import = re.compile(r"^\s*(?:from\s+(?P<from>\.*[\w.]*)\s+import\s+(?P<names>[^\n#]+)|import\s+(?P<imp>[\w., ]+))", re.MULTILINE)
-    js_import = re.compile(r"""(?:import\s+(?!type\b)[^'"\n]*?from\s*|import\s*\(\s*|require\(\s*|export\s+(?!type\b)[^'"\n]*?from\s*|import\s*)['"](?P<path>\.{1,2}/[^'"]*|\.{1,2})['"]""")
+    js_import = re.compile(r"""(?:import\s+(?!type\b)[^'"\n]*?from\s*|import\s*\(\s*|require\(\s*|export\s+(?!type\b)[^'"\n]*?from\s*|import\s*)['"](?P<path>[^'"\n]+)['"]""")
     java_pkg = re.compile(r"^\s*package\s+([\w.]+)\s*;", re.MULTILINE)
     java_imp = re.compile(r"^\s*import\s+([\w.]+)\s*;", re.MULTILINE)
 
@@ -192,6 +217,7 @@ class CircularDependencyRule(ArchRule):
 
     def _build_graph(self, project: ProjectContext):
         files = {f.path.as_posix(): f for f in project.source_files()}
+        aliases = _js_alias_index(project, files)
         graph: dict[str, set[str]] = defaultdict(set)
         edge_line: dict[tuple[str, str], int] = {}
         py_modules = {self._py_module(p): p for p in files if p.endswith(".py")}
@@ -211,7 +237,8 @@ class CircularDependencyRule(ArchRule):
                             edge_line.setdefault((path, target), line)
             elif src.lang in JS_FAMILY:
                 for m in self.js_import.finditer(text):
-                    target = self._js_resolve(path, m.group("path"), files)
+                    spec = m.group("path")
+                    target = self._js_resolve(path, spec, files) if spec.startswith(".") else _alias_target(aliases, path, spec)
                     if target and target != path:
                         graph[path].add(target)
                         edge_line.setdefault((path, target), text.count("\n", 0, m.start()) + 1)
@@ -357,7 +384,7 @@ class LayerDirectionRule(ArchRule):
     rule_id = "ARC-207"
     name = "계층 위반 및 의존 방향 위반 탐지"
     severity = Severity.MEDIUM
-    version = 3  # 설정의 architecture 계약이 있으면 폴더 이름 추정 대신 계약으로 판정한다
+    version = 4  # tsconfig paths 별칭 import(@/…)도 의존 방향 판정에 넣는다. 3: 설정의 architecture 계약이 있으면 폴더 이름 추정 대신 계약으로 판정한다
     plain = "화면·요청 처리 → 업무 규칙 → 데이터 접근 순서로만 호출해야 고칠 곳과 보안 검사 위치가 분명해집니다. 아래 계층이 위 계층을 부르거나, 컨트롤러가 DB 드라이버를 직접 쓰면 한 곳을 고칠 때 다른 곳이 깨지고 권한 검사가 빠지는 곳이 생깁니다."
     how_to_fix = "의존은 항상 위에서 아래(컨트롤러 → 서비스 → 저장소)로만 흐르게 하세요. 저장소·서비스가 컨트롤러나 웹 프레임워크 타입을 import 하면 필요한 값만 인자로 받도록 바꾸고, 컨트롤러가 DB를 직접 쓰는 코드는 서비스·저장소로 옮기세요."
 

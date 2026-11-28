@@ -273,6 +273,39 @@ def _next_path(rel: str) -> str | None:
     return None
 
 
+USE_SERVER_RE = re.compile(r"""^\s*['"]use server['"];?""")
+
+
+def _next_actions(src: SourceFile, g: _Globals) -> list[Route]:
+    """Next.js Server Actions. 파일 첫 문장이 'use server'이면 내보낸 함수가, 함수 본문 첫 문장이 'use server'이면 그 함수가
+    브라우저에서 POST로 부를 수 있는 서버 함수다. URL이 없으므로 경로는 `/_action/<폴더>/<함수 이름>`으로 적는다"""
+    file_level = bool(USE_SERVER_RE.match(src.code_text))
+    if not file_level and "use server" not in src.code_text:
+        return []
+    routes = []
+    for fn in iter_functions(src):
+        if fn.name == "<anonymous>" or fn.body is None:
+            continue
+        exported = fn.node.parent is not None and fn.node.parent.type == "export_statement"
+        inline = bool(USE_SERVER_RE.match(src.code_of(fn.body).lstrip("{")))
+        if not ((file_level and exported) or inline):
+            continue
+        folder = PurePosixPath(src.path.as_posix()).parent.as_posix()
+        path = f"/_action/{folder}/{fn.name}" if folder != "." else f"/_action/{fn.name}"  # 폴더를 넣어 관리 화면(admin)의 서버 함수를 구분한다
+        text = src.code_of(fn.node)
+        if AUTH_MARKER.search(text):
+            auth = ("yes", "서버 함수에 인증 표지가 있다")
+        elif g.next_middleware == "all":
+            auth = ("yes", "모든 경로에 적용되는 미들웨어에 인증 표지가 있다")
+        elif g.next_middleware == "matcher":
+            auth = ("unknown", "미들웨어 matcher가 이 서버 함수를 부르는 화면에 적용되는지 정할 수 없다")
+        else:
+            auth = ("no", "인증 표지가 없다")
+        authz = _authz(path, text, text)
+        routes.append(Route("nextjs-action", "POST", path, src.path.as_posix(), src.line_of(fn.node), fn.name, is_sensitive("post", path), *auth, *authz, node=fn.node))
+    return routes
+
+
 def _nextjs(src: SourceFile, g: _Globals) -> list[Route]:
     path = _next_path(src.path.as_posix())
     if path is None:
@@ -453,7 +486,7 @@ def discover_routes(files: list[SourceFile], auth: AuthSettings | None = None, t
         if f.lang is Lang.PYTHON:
             routes += _flask_fastapi(f) + _django(f, views, g)
         elif f.lang in JS_FAMILY:
-            routes += _express(f) + _nextjs(f, g)
+            routes += _express(f) + _nextjs(f, g) + _next_actions(f, g)
         elif f.lang is Lang.JAVA:
             routes += _spring(f, g, auth, markers)
         elif f.lang is Lang.CSHARP:

@@ -277,8 +277,8 @@
  },
  "ARC-202": {
   "python": {
-   "negative": 1,
-   "positive": 1
+   "negative": 2,
+   "positive": 2
   }
  },
  "ARC-203": {
@@ -286,8 +286,16 @@
    "negative": 1,
    "positive": 1
   },
+  "kind:json": {
+   "negative": 2,
+   "positive": 0
+  },
   "python": {
    "negative": 2,
+   "positive": 1
+  },
+  "typescript": {
+   "negative": 1,
    "positive": 1
   }
  },

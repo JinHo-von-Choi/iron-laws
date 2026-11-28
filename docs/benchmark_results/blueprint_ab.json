@@ -1,0 +1,151 @@
+{
+ "ai_cmd": "claude -p --tools '' --strict-mcp-config --setting-sources '' --no-session-persistence --model sonnet",
+ "image": "iron-laws-blueprint:py313",
+ "summary": {
+  "plain": {
+   "functional": "6/6",
+   "ARC-201": 0,
+   "ARC-202": 6,
+   "ARC-203": 0,
+   "ARC-204": 0,
+   "files": 20
+  },
+  "blueprint": {
+   "functional": "6/6",
+   "ARC-201": 0,
+   "ARC-202": 0,
+   "ARC-203": 0,
+   "ARC-204": 0,
+   "files": 103,
+   "ARC-207": 0
+  }
+ },
+ "rows": [
+  {
+   "task": "notes",
+   "variant": "plain",
+   "functional": true,
+   "ARC-201": 0,
+   "ARC-202": 1,
+   "ARC-203": 0,
+   "ARC-204": 0,
+   "files": 2
+  },
+  {
+   "task": "notes",
+   "variant": "blueprint",
+   "functional": true,
+   "ARC-201": 0,
+   "ARC-202": 0,
+   "ARC-203": 0,
+   "ARC-204": 0,
+   "ARC-207": 0,
+   "files": 17
+  },
+  {
+   "task": "users",
+   "variant": "plain",
+   "functional": true,
+   "ARC-201": 0,
+   "ARC-202": 1,
+   "ARC-203": 0,
+   "ARC-204": 0,
+   "files": 5
+  },
+  {
+   "task": "users",
+   "variant": "blueprint",
+   "functional": true,
+   "ARC-201": 0,
+   "ARC-202": 0,
+   "ARC-203": 0,
+   "ARC-204": 0,
+   "ARC-207": 0,
+   "files": 16
+  },
+  {
+   "task": "todos",
+   "variant": "plain",
+   "functional": true,
+   "ARC-201": 0,
+   "ARC-202": 1,
+   "ARC-203": 0,
+   "ARC-204": 0,
+   "files": 2
+  },
+  {
+   "task": "todos",
+   "variant": "blueprint",
+   "functional": true,
+   "ARC-201": 0,
+   "ARC-202": 0,
+   "ARC-203": 0,
+   "ARC-204": 0,
+   "ARC-207": 0,
+   "files": 17
+  },
+  {
+   "task": "inventory",
+   "variant": "plain",
+   "functional": true,
+   "ARC-201": 0,
+   "ARC-202": 1,
+   "ARC-203": 0,
+   "ARC-204": 0,
+   "files": 5
+  },
+  {
+   "task": "inventory",
+   "variant": "blueprint",
+   "functional": true,
+   "ARC-201": 0,
+   "ARC-202": 0,
+   "ARC-203": 0,
+   "ARC-204": 0,
+   "ARC-207": 0,
+   "files": 17
+  },
+  {
+   "task": "bookmarks",
+   "variant": "plain",
+   "functional": true,
+   "ARC-201": 0,
+   "ARC-202": 1,
+   "ARC-203": 0,
+   "ARC-204": 0,
+   "files": 4
+  },
+  {
+   "task": "bookmarks",
+   "variant": "blueprint",
+   "functional": true,
+   "ARC-201": 0,
+   "ARC-202": 0,
+   "ARC-203": 0,
+   "ARC-204": 0,
+   "ARC-207": 0,
+   "files": 16
+  },
+  {
+   "task": "comments",
+   "variant": "plain",
+   "functional": true,
+   "ARC-201": 0,
+   "ARC-202": 1,
+   "ARC-203": 0,
+   "ARC-204": 0,
+   "files": 2
+  },
+  {
+   "task": "comments",
+   "variant": "blueprint",
+   "functional": true,
+   "ARC-201": 0,
+   "ARC-202": 0,
+   "ARC-203": 0,
+   "ARC-204": 0,
+   "ARC-207": 0,
+   "files": 20
+  }
+ ]
+}

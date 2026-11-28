@@ -124,3 +124,16 @@ def test_report_and_command_carry_the_matrix(tmp_path: Path):
     assert finding.severity.value == "LOW" and "정할 수 없습니다" in finding.message
     out = runner.invoke(app, ["routes", str(tmp_path), "--format", "json"])
     assert out.exit_code == 0 and len(json.loads(out.stdout)) == 2
+
+
+def test_nextjs_server_actions_are_routes(tmp_path: Path):
+    files = {
+        "app/admin/actions.ts": "'use server';\n\nexport async function deleteUser(id: string) {\n  await db.user.delete({ where: { id } });\n}\n\nasync function helper() {\n  return 1;\n}\n",
+        "app/page.tsx": "export default async function Page() {\n  async function save(form: FormData) {\n    'use server';\n    const session = await auth();\n  }\n  return null;\n}\n",
+        "lib/util.ts": "export function add(a: number, b: number) {\n  return a + b;\n}\n",
+    }
+    r = _routes(tmp_path, files)
+    action = r[("nextjs-action", "POST", "/_action/app/admin/deleteUser")]
+    assert action.auth == "no" and action.kind == "admin"  # 관리 폴더의 서버 함수
+    assert r[("nextjs-action", "POST", "/_action/app/save")].auth == "yes"  # 함수 본문의 'use server'
+    assert not any(k[2].endswith("/helper") or k[2].endswith("/add") for k in r)  # 내보내지 않은 함수, 'use server'가 없는 파일

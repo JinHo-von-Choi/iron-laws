@@ -21,6 +21,7 @@ iron-laws tenancy .                        # 매퍼 문장별 소속(테넌트) 
 iron-laws audit . --format markdown --standard fin-selfcheck-2026 -o report.md   # 금융권 자체점검 12개 항목별 현황과 증빙 표
 iron-laws init --stage launch              # 기본 설정 파일 .iron-laws.yml 만들기(단계 지정)
 iron-laws stage preview production         # 단계를 올리면 새로 막히는 지적 미리 보기
+iron-laws init --stack fastapi              # 구조 틀(구조 계약·에이전트 지침 절·폴더) 미리 보기. --write로 만들기
 iron-laws guidelines export -o 지침.md      # 코딩 에이전트 지침(CLAUDE.md용)
 iron-laws check . --build-manifest git     # git 추적 파일과 대조해 빠진 파일과 이유 보기
 ```

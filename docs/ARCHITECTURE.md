@@ -9,6 +9,26 @@ iron-laws architecture . --format json -o now.json
 iron-laws architecture . --compare before.json    # 이전 진단과 지표 비교
 ```
 
+## 구조 틀 (`init --stack`)
+
+코드를 쓰기 전에 많이 쓰는 스택의 기본 계층 구조를 정해 둡니다. 지금은 `nextjs`(App Router + DB)와 `fastapi` 두 가지이고, `auto`는 코드에서 스택을 알아냅니다.
+
+```bash
+iron-laws init --stack fastapi                 # 미리보기: 구조 계약, 에이전트 지침 절, 만들 폴더
+iron-laws init --stack fastapi --write         # 실제로 만들기
+iron-laws init --stack auto                    # package.json의 next, fastapi import로 스택을 정한다
+```
+
+`--write`가 만드는 것은 세 가지입니다.
+
+1. `.iron-laws.yml`의 구조 계약(`architecture`, `strict: true`). 설정 파일이 없으면 만들고, 있으면 `architecture` 절이 없을 때만 끝에 더합니다.
+2. `AGENTS.md`·`CLAUDE.md`의 "프로젝트 구조" 절. 표시 주석으로 감싸 넣고, 다시 실행하면 그 절만 바꿉니다. 둘 다 없으면 `AGENTS.md`를 만듭니다. 규칙 ID를 단 문장은 오철칙이 점검으로 강제하고(`guidelines check`로 확인), "안내" 문장은 에이전트가 읽고 따르는 내용입니다.
+3. 없는 폴더(`app/services` 등)와 빈 `.gitkeep`.
+
+이미 코드가 있으면 틀의 계약으로 점검해, 어긋나는 import 수와 지금 고칠 곳 하나, 고친 뒤 확인할 명령을 보여 줍니다. 한꺼번에 옮기지 말고 하나씩 고치십시오.
+
+JS·TS의 import는 상대 경로와 tsconfig `paths` 별칭(`@/…`)을 따라 계층을 판정합니다.
+
 ## 운영 준비도
 
 진단 끝에 웹 서비스를 계속 돌리는 데 필요한 기본 장치를 한 표로 보여 줍니다. JSON에서는 `ops_readiness`이며, 아래 지표와 `--compare` 비교에는 들어가지 않습니다.

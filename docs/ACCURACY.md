@@ -166,6 +166,29 @@ Java, JavaScript, Python, C#, Go, Rust, PHP, C/C++ 오픈소스 프로젝트 수
 - 수정 지시문 + 검토 묶음은 해결 14/21로 기준과 같고, 결함 동작 제거는 16/21로 한 건 많다. 기준에서 해결이던 2건이 다른 결과로, 다른 결과이던 2건이 해결로 바뀌었다.
 - 표본이 작고, 응답을 한 번씩만 받았고, 모델 하나의 결과라서 안내물 사이의 차이를 그 안내물의 효과로 단정하지 않는다.
 
+### 4.5 구조 틀에 따른 AI 생성 결과
+
+같은 FastAPI 기능 요청 6개(메모, 회원, 할 일, 재고, 북마크, 글·댓글)를 AI에게 틀 없이, 그리고 `init --stack fastapi`의 지침 절과 함께 시켰다.
+
+- 기능 시험(pytest, TestClient)을 통과한 결과만 구조 지표로 비교한다. 생성된 코드는 네트워크 없는 컨테이너에서 돌린다.
+- AI: Claude Code CLI의 sonnet(도구 끔), 과제·방식마다 응답 한 번
+- 측정 도구 `benchmarks/blueprint_ab.py`, 기능 시험 이미지 `benchmarks/blueprint_ab.Dockerfile`, 원시 결과 `docs/benchmark_results/blueprint_ab.json`
+
+| 방식 | 기능 시험 통과 | 라우터의 DB 직접 접근(ARC-202) | 순환(ARC-203) | 중복 함수(ARC-204) | 큰 함수(ARC-201) | 구조 계약 위반(ARC-207) | 파이썬 파일 수 |
+|---|---|---|---|---|---|---|---|
+| 틀 없음 | 6/6 | 6 | 0 | 0 | 0 | - | 20 |
+| 틀과 함께 | 6/6 | 0 | 0 | 0 | 0 | 0 | 103 |
+
+- 틀 없이 만든 6개는 모두 라우터, DB 모델, 세션을 `app/main.py` 한 파일에 두고 핸들러에서 DB를 직접 불렀다. 틀과 함께 만든 6개는 라우터 → 서비스 → 저장소로 나뉘었고 계약 위반이 없었다.
+- 기능 크기가 작아 순환·중복·큰 함수는 두 방식 모두 0이다. 이 차이가 큰 프로젝트에서도 같은지는 재지 않았다.
+- 표본이 작고 응답을 한 번씩만 받았으며 모델 하나의 결과다.
+
+```bash
+docker build -t iron-laws-blueprint:py313 -f benchmarks/blueprint_ab.Dockerfile benchmarks
+uv run python benchmarks/blueprint_ab.py work docs/benchmark_results/blueprint_ab.json \
+  --ai-cmd="claude -p --tools '' --strict-mcp-config --setting-sources '' --no-session-persistence --model sonnet"
+```
+
 ## 5. 의존성 권고·성능·AI 공격면 규칙
 
 ### 5.1 의존성 권고(`iron-laws deps`)

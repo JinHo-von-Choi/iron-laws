@@ -12,9 +12,9 @@ from iron_laws.reporters.coverage import STATUS_MANUAL, build_design_status, bui
 from iron_laws.rules.base import BaseRule
 
 GROUPS: list[tuple[str, re.Pattern[str]]] = [
-    ("보안", re.compile(r"^(IL-1\d\d|IL-5(0\d|1[0-4]|2[5-9]|30)|IL-532|AI-10[789]|AI-11[3589]|AI-122)$")),
-    ("오류 처리·로그·입력 검증", re.compile(r"^(IL-30\d|IL-531|AI-112|AI-120)$")),
-    ("운영·설정·의존성·버전", re.compile(r"^(AI-10[1-6]|AI-110|AI-111|AI-114|AI-121)$")),
+    ("보안", re.compile(r"^(IL-1\d\d|IL-5(0\d|1[0-4]|2[5-9]|30)|IL-53[245]|AI-10[789]|AI-11[3589]|AI-12[23459])$")),
+    ("오류 처리·로그·입력 검증", re.compile(r"^(IL-30\d|IL-531|AI-112|AI-120|AI-128)$")),
+    ("운영·설정·의존성·버전", re.compile(r"^(AI-10[1-6]|AI-110|AI-111|AI-114|AI-121|AI-12[67])$")),
     ("구조·유지보수", re.compile(r"^(ARC-\d+|IL-51[5-9]|IL-52[0-4])$")),
     ("타입 안전성", re.compile(r"^TYP-\d+$")),
     ("AI 에이전트 공격면", re.compile(r"^AIA-\d+$")),

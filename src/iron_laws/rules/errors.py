@@ -395,7 +395,19 @@ class BroadExceptionRule(BaseRule):
         return found
 
 
+# 사용자 열거: 미등록 아이디와 비밀번호 불일치를 서로 다른 문구로 알리는 로그인 처리
+NOT_FOUND_MSG = re.compile(
+    r"(?i)(존재하지\s*않는|등록되지\s*않은|없는)\s*(아이디|계정|사용자|회원)|(아이디|계정|사용자|회원)\w*\s*(이|가)?\s*(없습니다|존재하지)|"
+    r"\b(user|account|member|login\s*id|username)\s*(not\s*found|does\s*not\s*exist|not\s*exist|unknown)|no\s+such\s+user"
+)
+BAD_PASSWORD_MSG = re.compile(
+    r"(?i)(비밀번호|패스워드)\w*\s*(가|이|를)?\s*(틀|일치하지|불일치|잘못|맞지)|\b(wrong|invalid|incorrect|bad)\s+password|\bpassword\s+(mismatch|incorrect|is\s+wrong|does\s+not\s+match)"
+)
+STRING_TYPES = frozenset({"string", "string_literal", "template_string", "interpreted_string_literal", "raw_string_literal", "verbatim_string_literal", "encapsed_string"})
+
+
 class ErrorExposureRule(BaseRule):
+    version = 2
     rule_id = "IL-305"
     name = "오류 메시지를 통한 정보 노출 탐지"
     iron_law = IronLaw.LAW_3
@@ -449,6 +461,27 @@ class ErrorExposureRule(BaseRule):
             for idx, line in enumerate(src.code_lines, start=1):
                 if re.search(r"ini_set\(\s*['\"]display_errors['\"]\s*,\s*(['\"]?(1|On|true)['\"]?|true)", line, re.IGNORECASE):
                     found.append(self.at_line(src, idx, "display_errors를 켜서 오류를 화면에 출력합니다."))
+        found.extend(self._user_enumeration(src))
+        return found
+
+    ENUMERATION_FIX = "미등록 아이디와 비밀번호 불일치에 같은 안내 문구(예: '아이디 또는 비밀번호가 올바르지 않습니다')와 같은 상태 코드를 쓰세요."
+
+    def _user_enumeration(self, src: SourceFile) -> list[Violation]:
+        found: list[Violation] = []
+        for idx, line in enumerate(src.code_lines, start=1):
+            if re.search(r"(?:\.|\b)(?:set)?[Hh]ideUserNotFoundExceptions\s*\(\s*false\s*\)", line):
+                found.append(self.at_line(src, idx, "미등록 아이디 예외를 숨기지 않아 아이디가 있는지 응답으로 알 수 있습니다.", severity=Severity.LOW, how_to_fix=self.ENUMERATION_FIX))
+        for fn in iter_functions(src):
+            strings = [n for n in walk_no_nested_functions(fn.node, src.lang) if n.type in STRING_TYPES]
+            missing = next((n for n in strings if NOT_FOUND_MSG.search(src.text_of(n))), None)
+            if missing is None or not any(BAD_PASSWORD_MSG.search(src.text_of(n)) for n in strings):
+                continue
+            found.append(
+                self.at_node(
+                    src, missing, "로그인 실패 안내가 미등록 아이디와 비밀번호 불일치를 서로 다른 문구로 알려 아이디가 있는지 알 수 있습니다.",
+                    severity=Severity.LOW, confidence=Confidence.REVIEW, how_to_fix=self.ENUMERATION_FIX,
+                )
+            )
         return found
 
 

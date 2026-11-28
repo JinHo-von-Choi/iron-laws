@@ -5,6 +5,46 @@
 
 ## [Unreleased]
 
+### Added
+- 인증 흐름 규칙: IL-534(로그인 없이 호출되는 라우트가 요청 값으로 조회한 사용자를 비밀번호·서명 토큰 검증 없이 로그인 상태로 만드는 코드, 저장된 토큰과 요청 값만 비교한 세션 전환), IL-535(비밀번호 대조 성공 분기 밖에서 로그인 실패 횟수·잠금을 초기화하는 코드. MyBatis UPDATE 문도 본다).
+- 응답·요청 처리 규칙: AI-123(OTP 비밀키·연동키·비밀번호를 응답 DTO나 화면 모델로 보냄), AI-124(GET 요청으로 세션 사용자 교체·삭제·전환), AI-125(요청 값으로 정한 조회 건수에 상한 없음), AI-126(세션 제한시간 정책 위반, `sessionFixation().none()`, 세션 ID를 새로 발급하지 않는 자체 로그인), AI-127(기준선에 없던 공개·관리 라우트, 인증이 사라진 라우트), AI-128(중요 기능과 인증 실패·권한 거부 처리기의 감사 기록 누락), AI-129(소속 키 없는 조회·변경, 소속 조건에 요청 값 바인딩).
+- 라우트 종류(`auth_flow`·`admin`·`normal`)를 판정하고 `routes` 명령이 종류 열, `--format csv`, `--auth` 필터를 지원한다. 시험 파일의 라우트는 넣지 않는다.
+- 설정 `auth`(인터셉터 보호, 로그인 검사 예외 표지·경로, 실패 기록 열), `tenancy`(소속 키, 로그인 사용자의 소속 식, 대상 테이블), `audit`(중요 라우트, 감사 기록 호출, 보안 이벤트 타입), `baseline.route_name_patterns`, `policies.session_timeout_max`, `policies.eol_db`.
+- `iron-laws tenancy`: 매퍼 호출별 소속 조건 확인 표(table·json·csv).
+- MyBatis 매퍼 색인: 매퍼 XML 문장을 namespace·id로 모아 Java 호출과 잇고, 매퍼 인터페이스의 `@Param` 이름으로 인자를 맞춘다.
+- 지원 종료 판정: `iron-laws index fetch --eol`로 받은 자료(`policies.eol_db`)로 Dockerfile·Compose 이미지, Maven·Gradle 직접 의존성, Python·Node.js 런타임 표기를 판정한다. 판정 기준일은 자료 수집일이다.
+- `deps`가 Maven·Gradle 매니페스트(`pom.xml`, `build.gradle(.kts)`, `gradle/libs.versions.toml`)의 직접 의존성을 OSV 권고와 대조한다. SBOM·OpenVEX는 `pkg:maven` 식별자를 쓴다. `benchmarks/deps_osv_crosscheck.py`는 Maven 패키지의 판정도 OSV 서버와 대조한다.
+- 기준 팩 `fin-selfcheck-2026`(침해사고 대비 금융권 IT보안 자체점검 12개 항목)과 `audit --standard <팩>`: 마크다운 보고서에 항목별 범위·대응 규칙·상태(지적 있음, 점검했고 지적 없음, 해당 규칙 미탑재, 분석 불가, 코드 밖 확인 필요)와 라우트·소속 확인·지원 종료 증빙 표를 더한다.
+- `spec draft` 초안의 `config_hints`: 로그인 인터셉터가 확인하는 애너테이션(`auth.exempt_markers` 후보)과 로그인 사용자의 소속을 읽는 호출식(`tenancy.principal` 후보).
+- `--triage-model` 요청에 인증·소속 지적의 판정 기준(CWE-306·287·307·639·200·352·770)과 물음을 더하고, IL-534·IL-535·IL-512·AI-129·AI-123 지적은 주변 줄 대신 감싼 함수 전체(최대 120줄)를 보낸다.
+- 사용자 명세에 `validators`(검사 함수: 대상 인자, 참이면 안전한지, 막는 문맥)와 `summaries`(전달 요약 `propagate`, 정규화 요약 `normalize`)를 더한다. 싱크는 `family` 대신 `context`를 적을 수 있고, 계열에 `xpath`·`ldap`·`xss`·`redirect`를 더한다. 정규화 요약은 정제가 아니며, 그 값을 기준 폴더와 비교하는 검사가 있을 때 정규화 근거로만 쓴다.
+- 설정 `policies.entry_points: public_api`: 시험이 아닌 코드의 공개 함수 매개변수(문자열·바이트·스트림·경로·URL)를 입력으로 보고, 그 입력만 닿는 경로·명령·코드·XPath·XXE·XSS 지적을 확인 필요로 낸다. 기본값은 `web`이며 기본값일 때는 `config_hash`가 바뀌지 않는다.
+- `spec draft`가 프로젝트가 import한 외부 패키지 호출 가운데 외부 입력을 받거나, 반환값이 싱크로 가거나, 문자열을 실행·해석하는 호출을 계열별 후보(`candidates`)로 모으고, `--llm-cmd`에 계열마다 따로 묻는다. LLM에게 예제는 오철칙이 아는 웹 요청 값에서 시작하고 `context`에는 정해진 값(shell·sql·path·code 등)만 쓰라고 지시한다.
+- 확인 필요 지적에도 근거 경로(싱크 인자까지 실제로 이어진 대입, 만난 검사 분기)를 붙인다. `--triage-model` 요청은 앞의 30건에 규칙마다 최대 2건의 표본을 더하고, 의견의 근거가 다른 파일에 있으면 엔진 근거 경로의 파일일 때만 대조한다.
+- 측정기: OWASP Benchmark(Java·Python)는 저장소 루트를 점검해 도우미 클래스와 설정 파일까지 분석하고 사례 파일만 채점한다(`--testcode-only`는 예전 방식). 원시 결과에 사례별 판정(`outcomes`)을 남긴다. CWE-Bench-Java는 판정 쌍(TP·TN, TP·FP, FN·TN, FN·FP), 분석하지 못한 이유(`not_fetched`·`method_not_found`), 두 커밋 사이에 바뀌지 않은 지적 줄(`unchanged`)을 기록하고, 짧은 해시를 전체 해시로 풀어 받으며, `benchmarks/cwe_bench_java_notes.json`의 사례(고친 쪽 커밋에 보안 수정이 없는 사례)를 따로 센다. Juliet은 하위 판정별 사례 수와 확인 필요 포함 결과를 따로 적는다. CWEval·CWE-Bench-Java는 `--entry-points public_api`·`--public-api`로 공개 API 모드를 잰다.
+
+### Changed
+- 보고서 `schema_version`을 1.9로 올린다. `metadata.routes.rows[].kind`, `metadata.tenancy`, `metadata.eol`, `execution.reference_data`, `execution.cost.counters`를 더한다. 독립 검증기는 1.9를 확인한다.
+- 설정 스키마에 절을 더해 `config_hash`가 모든 프로젝트에서 한 번 바뀐다. 기존 승인 기록은 "점검 설정이 바뀌었다"로 재검토 대상이 된다. 새 절(`auth`, `tenancy`, `audit`, `baseline`)이 든 설정 파일은 이전 버전이 읽지 못한다.
+- 판정이 바뀐 규칙의 판 번호를 올린다: IL-305(2, 사용자 열거 문구), IL-512(3, 2단계 인증 대상), IL-525(2, 관리 라우트·`@RequestMapping` 메서드·Spring 인증 근거), IL-526(3, IL-534가 지적한 줄은 내지 않음. IL-534를 끄면 그대로 낸다), IL-532(2, 로그인·인증번호 확인 라우트마다 판정. 라이브러리 수준 제한이 있으면 통과, 라우트를 복원하지 못하는 언어는 이전 방식), AI-106(2, springdoc·swagger 활성화), AI-121(3, 지원 종료 자료, 시험 파일 제외). 기준선을 쓰면 `baseline migrate`로 지문을 옮긴다.
+- Spring 라우트의 인증 근거로 본문의 `Authentication`·`Principal` 낱말 대신 보안 애너테이션, `Principal`·`Authentication` 매개변수, `getAuthentication()`·`getUserPrincipal()` 호출을 본다. `@RequestMapping`의 `method` 속성을 읽어 메서드마다 라우트를 만든다.
+- 기준선 파일에 선택 키 `routes`를 더한다. `routes`가 없는 기준선도 읽으며, 이때는 공격 표면 비교를 하지 않고 진단으로 알린다.
+- `iron-laws index fetch`의 `--ecosystem`은 `--eol`을 주지 않을 때만 필요하다.
+- 규칙 클래스가 새 모듈로 옮겨 간다: 로그인 시도 제한(IL-532)은 `rules.review_rules_auth`, 버전·지원 종료(AI-121)는 `rules.review_rules_versions`, 세션 정책(AI-126)은 `rules.ai_code_session`. `iron-laws rules` 표의 계열 안 순서가 일부 바뀐다.
+- CWE Top 25 2025 팩에 IL-534(CWE-306), AI-123(CWE-200), AI-124(CWE-352), AI-125(CWE-770), AI-129(CWE-639·863) 대응을 더한다.
+- 입력 원천: Python `request.query_string`, C·C++ 입력 함수가 버퍼 인자에 쓰는 값(`fgets`·`recv`·`read`·`fread`·`scanf` 계열, 오프셋·형변환을 거친 버퍼 포함)과 `getenv` 반환값, C# 형식이 `HttpRequest`인 매개변수·변수의 `Params`·`QueryString`·`Form`·`Cookies`·`Headers`, `Console.ReadLine`, 네트워크 스트림으로 만든 `StreamReader`의 읽기, `Socket.Receive`의 버퍼. 고정 파일 이름으로 연 스트림에서 읽은 값과 `%*s` 자리는 입력으로 보지 않는다.
+- 전파: 지역 객체의 메서드 호출(`w = mod.Cls(…)`, `Cls w = new Cls(…)`, `Cls(…).method()` 뒤의 메서드)을 그 클래스의 메서드 본문으로 판정하고, 상수만 돌려주는 메서드의 결과는 상수로 본다. C·C++ 문자열 복사 함수(`strcpy`·`strncat`·`memcpy` 등)와 C# `StringBuilder.Append` 계열이 오염을 옮긴다. 같은 파일과 프로젝트 헤더의 객체형 매크로(`#define EXECL execl`)를 펼친다. 상수 계산에 문자열 포함 검사(`'a' not in b`)와 값만 바꾸는 Python 함수(`base64`·`encode`·`decode`·`replace` 등)를 더한다. Flask 핸들러를 등록한 모든 경로에서 같은 고정 조각인 `request.path.split('/')[i]`는 상수다.
+- 검사 분기: 참이면 실행을 끊는 조건을 `or`·`||`로 나눠 통과한 경로의 사실(막은 글자, 숫자 형식, 문자열 리터럴 하나)을 읽는다. 차단 목록 검사는 지적을 없애지 않고 확인 필요로 낮춘다: 경로는 `..`를 막고 고정 기준 폴더가 붙을 때, SQL·XPath는 값을 감싸는 따옴표를 막거나 바꿀 때, 코드 실행은 값이 문자열 리터럴 하나인지 볼 때다. 숫자 형식 검사는 SQL·경로·XPath 지적을 없앤다. LDAP의 따옴표 검사와 명령의 식별자 형식 검사(`isidentifier`)는 인정하지 않는다. try 본문 안의 검사는 모든 예외 처리 분기가 실행을 끊을 때만 인정하고, `finally`의 싱크에는 인정하지 않는다. `urlparse(v).netloc`·`hostname`을 허용 목록과 비교하면 v를 허용 목록 검사로 본다.
+- IL-502(4): Python `codecs.open`·`io.open`의 경로 인자, `os.path.exists`·`isfile`·`isdir`, pathlib 객체의 `exists`·`is_file`·`is_dir`, C# `File.Exists`를 싱크로 본다. 정규화한 경로를 구분자 없이 문자열 접두사로 비교하면(`/data/app2`도 통과) 확인 필요로 낸다. `A && !검사` 거부 조건은 A가 같은 입력의 `..` 포함 검사일 때만 인정한다. Commons IO `FilenameUtils.normalize` 결과가 null이면 끝내는 분기를 `..` 이탈 검사로 보고, `new File(기준, 결과)`로 이으면 지적하지 않으며 `Path.resolve`·문자열 결합이면 확인 필요로 낸다. 값만 계산하는 경로 객체(`Path.of(x).isAbsolute()`, 모든 사용이 값 계산 메서드인 `File` 변수)는 싱크가 아니고, 검사한 경로를 같은 기준과 이름으로 다시 조립한 경로와, 검사한 `Path`를 문자열·`File`로 바꿔 담은 변수(`String s = path.toFile().getAbsolutePath()`)는 그 검사를 받은 것으로 본다. `Path.of(…)`를 문자열로 바꾼 값의 `startsWith`는 경로 단위 비교가 아니라 문자열 접두사 비교로 본다. 이미 검사를 거친 인자를 넘겨받는 도우미 함수 안은 따라가지 않는다. 구분자 없는 접두사 비교만 거친 인자를 넘겨받는 도우미 함수 안의 싱크는, 그 싱크에 닿는 모든 호출이 그런 검사를 거쳤으면 확인 필요로 낸다. 경로 객체를 목록에 담기만 하는 메서드는 확인 필요로 낸다.
+- IL-501(4): JDBC 호출 구문(`{call …}`), `addBatch`, `JdbcTemplate.queryForRowSet`, C# `CommandText` 대입(`=`·`+=`)을 싱크로 본다. IL-504(3): `Runtime.exec`의 환경 변수 배열을 키별로 판정하고(항목 전체·키가 외부 입력이거나 실행을 바꾸는 키면 확정, 그 밖의 고정 키에 값만 외부 입력이면 확인 필요), `ProcessBuilder`는 `start()` 앞의 마지막 `command(…)`와 `environment().put`을 본다. C·C++ `exec` 계열과 `_popen`을 싱크로 본다. IL-503(3): C# `CompileAssemblyFromSource`. IL-505(3): 리터럴이 아닌 문자열을 반환하는 Flask 핸들러, Spring `HtmlUtils.htmlEscape`를 HTML 정제로 인정(SQL·명령·경로에는 인정하지 않는다), C# 형식이 `HttpResponse`인 수신자의 `Write`. IL-507(3): import로 확인한 `flask.redirect`·`django.shortcuts.redirect` 등과 C# `HttpResponse.Redirect`. IL-508(4): C# `DirectorySearcher.Filter` 대입. IL-511(3): C# `new HttpCookie`의 값, `HttpResponse.AppendHeader`, URL 인코딩을 헤더 정제로 인정. IL-526(4): `flask.session[키] = 값`의 키와 값을 따로 판정하고 `session.update`를 보며, import로 다른 모듈의 `session`이면 보지 않는다. 문맥 정제(HTML 이스케이프 등)는 세션 저장 값의 검증으로 보지 않는다. IL-527(3): `elementpath.select`, `lxml.etree.XPath`·`XPathEvaluator`로 만든 객체의 호출, `StringIO.write`로 조립한 질의.
+- IL-515(3): 역직렬화 호출의 데이터 인자로 판정한다. 외부 입력이 닿으면 확정, 상수면 지적하지 않고, 출처를 모르면 확인 필요다. 데이터 없이 위험한 설정만 켜는 호출(`enableDefaultTyping`, `BinaryFormatter` 생성)은 지금처럼 확정이다. IL-509(2, Python): 외부 개체를 켠 파서로 파싱하는 입력을 같은 기준으로 판정한다.
+- IL-102(3): Java `getInstance`의 알고리즘 인자가 `Properties.getProperty(키, 기본값)`이면 리소스 폴더의 `.properties` 값으로 판정한다(파일·키가 있으면 확정, 기본값인지 알 수 없으면 확인 필요). Spring `@Value("${키:기본값}")`는 외부 설정이 덮어쓸 수 있어 확인 필요다. `getProperty`의 기본값 문자열만으로는 지적하지 않는다.
+- IL-514(3): `strcpy`·`strcat`은 목적지 버퍼의 남은 크기와 원본 길이를 상수로 계산해 넘치면 확정, 들어가면 지적하지 않고, 계산할 수 없으면 확인 필요로 낸다. 버퍼 앞쪽 쓰기·읽기(음수 오프셋)는 확정이다. 서식 인자는 외부 입력이 닿으면 심각도 CRITICAL로 확정, 리터럴만 복사한 버퍼면 지적하지 않는다. 다른 갈래에서 그 버퍼의 어느 위치든(`buf + len`처럼) 채우는 호출이 있으면 리터럴만 든 버퍼로 보지 않는다.
+- 사용자 명세의 예제는 선언한 모든 언어마다 확인하고, 항목을 넣기 전과 넣은 뒤를 각각 점검해 판정이 그 항목 때문에 바뀌었는지 본다. 언어가 둘 이상이면 예제를 언어별 사전으로 주어야 한다. `expect`·`negative_expect`·`positive_line`으로 기대 판정과 줄을 정할 수 있다. 예제 확인에 드는 점검이 항목마다 두 번으로 늘어난다.
+
+### Fixed
+- `--triage-model` 요청에 넣는 코드에서 20자가 넘는 식별자와 따옴표 안의 모든 문자열을 `****`로 가리던 것을 고친다. 이제 숫자와 영문자가 섞인 토큰 모양 값, 비밀 이름(password·token·api_key 등)에 대입한 값, 비밀로 판정된 값만 가리고, 함수·형식 이름과 SQL·경로 문자열은 그대로 보낸다.
+
 ## [1.12.1] - 2026-11-12
 
 ### Added

@@ -1,7 +1,7 @@
 """
 상수 계산: 조건·switch 선택값·리스트 원소가 코드만으로 정해지는 경우를 계산해, 실행되지 않는 갈래를 흐름 해석에서 뺀다.
 
-- 계산할 수 있는 것: 숫자·문자·문자열·참거짓 리터럴, 괄호, 사칙·나머지·비교·논리 연산, 상수 문자열의 charAt(상수),
+- 계산할 수 있는 것: 숫자·문자·문자열·참거짓 리터럴, 괄호, 사칙·나머지·비교·논리 연산, 문자열 포함 검사(in), 상수 문자열의 charAt(상수),
   함수 안에서 리터럴(또는 계산되는 식)로 한 번만 정의되고 다시 대입되지 않는 지역 변수.
 - 하나라도 확실하지 않으면 UNKNOWN을 돌려준다. 호출자는 UNKNOWN이면 지금처럼 모든 갈래를 따라간다(지적을 숨기지 않는 쪽).
 - 리스트·Map: 같은 블록에서 new ArrayList·HashMap으로 만들고 add·put(상수 키)·remove(상수)·clear만 한 지역 컬렉션에서
@@ -84,6 +84,8 @@ def _apply(op: str, left, right):
             return {"<": left < right, ">": left > right, "<=": left <= right, ">=": left >= right}[op]
         if op in ("==", "!=", "===", "!==") and type(left) is type(right):
             return (left == right) == (op in ("==", "==="))
+        if op in ("in", "not in") and isinstance(left, str) and isinstance(right, str):
+            return (left in right) == (op == "in")  # Python 포함 검사: 'should' not in TestParam
         if op in ("&&", "and") and isinstance(left, bool) and isinstance(right, bool):
             return left and right
         if op in ("||", "or") and isinstance(left, bool) and isinstance(right, bool):
@@ -469,3 +471,31 @@ def _container_read(src: SourceFile, read: Node) -> tuple[str, tuple] | None:
     if any(k is UNKNOWN for k in key):
         return None
     return src.text_of(target), key
+
+
+_PATH_SPLIT_RE = re.compile(r"^request\.path\.split\(\s*['\"]/['\"]\s*\)$")
+
+
+def route_segment_is_literal(src: SourceFile, read: Node) -> bool:
+    """`request.path.split('/')[i]`(또는 그 결과를 한 번 담은 변수의 [i])가, 이 핸들러를 등록한 모든 경로에서 같은 리터럴 조각이다"""
+    if src.lang is not Lang.PYTHON or read.type != "subscript":
+        return False
+    value, subscript = read.child_by_field_name("value"), read.child_by_field_name("subscript")
+    index = const_value(src, subscript)
+    if value is None or not isinstance(index, int) or isinstance(index, bool):
+        return False
+    fn = enclosing_function(read, src.lang)
+    if fn is None:
+        return False
+    target = value
+    if value.type == "identifier":
+        definition = _local_definition(src, value, fn)
+        if definition is None:
+            return False
+        target = definition
+    if not _PATH_SPLIT_RE.match(re.sub(r"\s+", "", src.text_of(target))):
+        return False
+    # 라우트 수집 모듈을 상수 계산이 처음 쓰일 때 가져온다
+    from iron_laws.engine.routes import route_segment_value
+
+    return route_segment_value(src, fn, index) is not None

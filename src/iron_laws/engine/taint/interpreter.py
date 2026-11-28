@@ -24,8 +24,9 @@ from iron_laws.engine.ast_tools import (
     function_parts,
     identifiers_in,
 )
-from iron_laws.engine.languages import Lang
+from iron_laws.engine.languages import C_FAMILY, Lang
 from iron_laws.engine.source import SourceFile
+from iron_laws.engine.taint import c_inputs
 from iron_laws.engine.taint.constants import condition_value, switch_case_index, switch_selector
 from iron_laws.engine.taint.nodes import (
     CASE_TYPES,
@@ -66,9 +67,9 @@ from iron_laws.engine.taint.sanitizers import (
 from iron_laws.engine.taint.sources import (
     ANNOTATED_PARAM_RE,
     ARCHIVE_SOURCE_RE,
-    _source_in,
     archive_file,
     expr_has_source,
+    file_source_in,
 )
 
 
@@ -181,7 +182,16 @@ def _call_is_clean(src: SourceFile, parts, names: set[str], cli: bool, ctx: Ctx,
 
 def _call_is_clean_in_point(src: SourceFile, parts, names: set[str], cli: bool, ctx: Ctx, by_name: bool) -> bool | None:
     callee, args = parts
-    helpers = resolve_any(src, callee, len(args))
+    if src.lang in C_FAMILY and c_inputs.returns_input(src, callee):
+        return False  # getenv 반환값은 외부 입력이다
+    if src.lang is Lang.CSHARP and _cs_network_read(src, callee, getattr(parts, "node", None)):
+        return False  # 네트워크 스트림에서 만든 StreamReader가 읽은 줄은 외부 입력이다
+    propagation = sanitizers.custom_propagation(callee, src.lang)
+    if propagation is not None and propagation[1] == "return":
+        # 사용자 명세의 전달 요약: 반환값의 오염은 지정한 인자의 오염과 같다
+        source = propagation[0]
+        return not (source < len(args) and expr_tainted(src, args[source], names, cli, ctx))
+    helpers = resolve_any(src, callee, len(args), at=getattr(parts, "node", None))
     index = xfile.get_index()
     if index is not None and index.exhausted:
         return None
@@ -200,6 +210,23 @@ def _call_is_clean_in_point(src: SourceFile, parts, names: set[str], cli: bool, 
     if not by_name and _UNIVERSAL_RE.search(callee):
         return True  # 중첩된 호출이라도 len()·int() 같은 값의 종류를 바꾸는 호출은 문자열 주입 경로가 아니다
     return None
+
+
+_CS_NETWORK_READER_RE = re.compile(r"new\s+StreamReader\s*\(.*(?:GetStream\s*\(|NetworkStream)", re.S)
+
+
+def _cs_network_read(src: SourceFile, callee: str, at: Node | None) -> bool:
+    """C# `sr.ReadLine()`·`sr.ReadToEnd()`이고 sr이 네트워크 스트림으로 만든 StreamReader다. 파일 스트림은 이번 범위가 아니다"""
+    receiver, _, method = callee.rpartition(".")
+    if at is None or method not in ("ReadLine", "ReadToEnd", "Read") or not re.fullmatch(r"[A-Za-z_]\w*", receiver):
+        return False
+    scope = enclosing_function(at, src.lang)
+    if scope is None:
+        return False
+    from iron_laws.engine.taint.definitions import reaching_definitions
+
+    defs = reaching_definitions(src, scope, receiver, at.start_byte)
+    return bool(defs) and all(_CS_NETWORK_READER_RE.search(src.text_of(d)) for d in defs)
 
 
 def _helper_returns_tainted(src: SourceFile, helpers, args: list[Node], names: set[str], cli: bool, ctx: Ctx) -> TaintResult:
@@ -252,7 +279,7 @@ def expr_tainted(src: SourceFile, node: Node, names: set[str], cli: bool = False
             for i in range(max(a, node.start_byte) - node.start_byte, min(b, node.end_byte) - node.start_byte):
                 buf[i] = 32
         remaining = buf.decode("utf-8", errors="replace")
-        if _source_in(remaining, cli, src.lang, archive_file(src)):
+        if file_source_in(src, remaining, cli, node):
             return True
         return reads_tainted(src, node, names, skip=lambda n: any(a <= n.start_byte and n.end_byte <= b for a, b in ranges))
     if expr_has_source(src, node, cli):
@@ -552,6 +579,20 @@ class _Flow:
             return self._assign(node, state, kill=node.type not in AUGMENTED_TYPES)
         if node.type in self.call_types:
             parts = _call_parts(self.src, node)
+            if parts and self.src.lang in C_FAMILY:
+                state = self._c_call_effect(parts, state)
+            propagation = sanitizers.custom_propagation(parts[0], self.src.lang) if parts else None
+            if propagation is not None and propagation[1].isdigit():
+                # 사용자 명세의 전달 요약: 원본 인자의 오염을 대상 인자(출력 버퍼·스트림)로 옮긴다
+                source, target = propagation[0], int(propagation[1])
+                args = parts[1]
+                if source < len(args) and target < len(args) and args[target].type in ("identifier", "variable_name") and expr_tainted(self.src, args[source], set(state), self.cli, self.ctx):
+                    state = state | {self.src.text_of(args[target]).lstrip("$")}
+            if parts and self.src.lang is Lang.CSHARP and parts[0].endswith(".Receive") and parts[1]:
+                # Socket.Receive는 받은 바이트 수를 돌려주고 외부 입력은 버퍼 인자에 쓴다
+                buffer = parts[1][0]
+                if buffer.type == "identifier":
+                    state = state | {self.src.text_of(buffer)}
             if parts and "." in parts[0] and parts[0].rsplit(".", 1)[-1] in MUTATING_METHODS:
                 receiver = parts[0].rsplit(".", 1)[0]
                 m = re.match(r"[A-Za-z_$][\w$]*", receiver)
@@ -564,6 +605,21 @@ class _Flow:
                     return state - {path}  # 상수 키에 깨끗한 값을 넣으면 그 키는 깨끗하다
                 if m and any(expr_tainted(self.src, a, set(state), self.cli, self.ctx) for a in parts[1]):
                     return state | {m.group(0).lstrip("$")}
+        return state
+
+    def _c_call_effect(self, parts, state: frozenset[str]) -> frozenset[str]:
+        """C 입력 함수가 버퍼 인자에 쓴 외부 입력, 문자열 복사 함수가 목적지 버퍼로 옮긴 오염"""
+        callee, args = parts
+        targets = c_inputs.input_targets(self.src, callee, args, self.scope)
+        if targets:
+            state = state | set(targets)
+        flow = c_inputs.copy_flow(self.src, callee)
+        if flow is not None and len(args) > flow[0]:
+            dest, sources = flow
+            if any(i < len(args) and expr_tainted(self.src, args[i], set(state), self.cli, self.ctx) for i in sources):
+                base = c_inputs.base_variable(self.src, args[dest])
+                if base:
+                    state = state | {base}
         return state
 
     def _assign(self, node: Node, state: State, kill: bool) -> State:

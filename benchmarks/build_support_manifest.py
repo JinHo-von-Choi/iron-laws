@@ -33,6 +33,7 @@ CASE_SOURCES = [
     ("tests.test_go_php_cases", "CASES"),
     ("tests.test_go_php_cases", "KOTLIN_CASES"),
     ("tests.test_support_cells", "CASES"),
+    ("tests.test_auth_flow_cases", "CASES"),
 ]
 ALIASES = {"tsx": "typescript"}
 

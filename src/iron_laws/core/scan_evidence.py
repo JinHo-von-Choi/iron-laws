@@ -50,7 +50,7 @@ class ScanEvidenceBuilder:
         digests = {
             "code": self._code_digest(sources),
             "tool": f"{tool_version()}+{self._ruleset_info()['hash']}",
-            "config": hashlib.sha256(self.config.model_dump_json().encode()).hexdigest()[:16],
+            "config": hashlib.sha256(self.config.hash_json().encode()).hexdigest()[:16],
             "contract": contract_digest(self.contract),
             "spec": self._spec_digest(),
         }
@@ -81,7 +81,7 @@ class ScanEvidenceBuilder:
         loaded = current_spec()
         if loaded is None:
             return
-        entries = list(loaded.spec.sources) + list(loaded.spec.sinks) + list(loaded.spec.sanitizers)
+        entries = list(loaded.spec.sources) + list(loaded.spec.sinks) + list(loaded.spec.sanitizers) + list(loaded.spec.validators) + list(loaded.spec.summaries)
         outside = sorted({e.family for e in entries if e.family not in set(FAMILY_RULES)})
         if not outside:
             return
@@ -103,7 +103,7 @@ class ScanEvidenceBuilder:
     def _approval_policy(self) -> ApprovalPolicy:
         return ApprovalPolicy(
             contract_digest=contract_digest(self.contract),
-            config_hash=hashlib.sha256(self.config.model_dump_json().encode()).hexdigest()[:16],
+            config_hash=hashlib.sha256(self.config.hash_json().encode()).hexdigest()[:16],
             ruleset_hash=self._ruleset_info()["hash"],
             tool_version=tool_version(),
         )

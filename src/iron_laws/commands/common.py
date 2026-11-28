@@ -381,14 +381,15 @@ def _emit_report(
     report_format: ReportFormat,
     output: Path | None,
     limit: int,
+    standard: str | None = None,
 ) -> None:
     if report_format is ReportFormat.CONSOLE:
         print_console_report(report, limit)
         if output:
-            output.write_text(generate_markdown_report(report, scanner.rules), encoding="utf-8")
+            output.write_text(generate_markdown_report(report, scanner.rules, standard), encoding="utf-8")
             err.print(f"[bold green]보고서가 파일에 저장되었습니다: {output}[/bold green]")
     elif report_format is ReportFormat.MARKDOWN:
-        _write_or_print(generate_markdown_report(report, scanner.rules), output, "보고서")
+        _write_or_print(generate_markdown_report(report, scanner.rules, standard), output, "보고서")
     elif report_format is ReportFormat.JSON:
         _write_or_print(generate_json_report(report), output, "JSON 보고서")
     elif report_format is ReportFormat.SARIF:

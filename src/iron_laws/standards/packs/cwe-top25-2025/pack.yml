@@ -3,7 +3,7 @@ title: 2025 CWE Top 25 Most Dangerous Software Weaknesses
 edition: "2025"
 source_url: https://cwe.mitre.org/top25/archive/2025/2025_cwe_top25.html
 retrieved_at: "2026-10-12"
-sha256: cdbc113bff65a406b26ce32301e5254416ffb9da5b380fe4621f9e2c9e8f8833
+sha256: 4f7085a234631db61b9653be4ea7258af92fbbb767b82be5b9ea3ec7ef522bb4
 items:
   - {id: CWE-79, name: "Cross-site Scripting", rank: 1}
   - {id: CWE-89, name: "SQL Injection", rank: 2}
@@ -32,6 +32,11 @@ items:
   - {id: CWE-770, name: "Allocation of Resources Without Limits or Throttling", rank: 25}
 # 규칙의 행안부 항목 CWE와 같은 CWE, 또는 규칙이 직접 다루는 하위 CWE만 대응한다.
 mapping:
+  IL-534: [CWE-306]
+  AI-123: [CWE-200]
+  AI-124: [CWE-352]
+  AI-125: [CWE-770]
+  AI-129: [CWE-639, CWE-863]
   IL-505: [CWE-79]
   IL-501: [CWE-89]
   IL-510: [CWE-352]
@@ -55,4 +60,4 @@ mapping:
   IL-506: [CWE-918]
   AI-114: [CWE-770]
 verified_edition: "2025"
-verified_sha256: cdbc113bff65a406b26ce32301e5254416ffb9da5b380fe4621f9e2c9e8f8833
+verified_sha256: 4f7085a234631db61b9653be4ea7258af92fbbb767b82be5b9ea3ec7ef522bb4

@@ -151,15 +151,16 @@ class CrossFileMetrics:
         return [o for o in self.outcomes if (o.form == "risky" and o.verdict != "confirmed") or (o.form == "benign" and o.verdict == "confirmed")]
 
 
-def evaluate_cross_file(cases: list[ScanCase], tmp: TmpFactory) -> CrossFileMetrics:
-    """파일 경계를 넘는 변형으로 kill-rate를 잰다. 원본에서 이미 위험을 놓치거나 정상을 막는 사례는 변형의 효과가 아니므로 뺀다."""
+def evaluate_cross_file(cases: list[ScanCase], tmp: TmpFactory, operators: dict | None = None) -> CrossFileMetrics:
+    """파일 경계를 넘는 변형(기본) 또는 라이브러리 경계 변형(operators=LIBRARY_OPERATORS)으로 kill-rate를 잰다.
+    원본에서 이미 위험을 놓치거나 정상을 막는 사례는 변형의 효과가 아니므로 뺀다."""
     metrics = CrossFileMetrics()
     for case in cases:
         for form, code in (("benign", case.benign), ("risky", case.risky)):
             original, _ = _verdict(tmp(f"xf_{case.id}_{form}_original"), case, render(code, case.ext))
             if (form == "risky") != (original == "confirmed"):
                 continue
-            for operator, transform in CROSS_FILE_OPERATORS.items():
+            for operator, transform in (operators if operators is not None else CROSS_FILE_OPERATORS).items():
                 variant = transform(render(code, case.ext), case.ext)
                 if variant is None:
                     metrics.not_applicable += 1

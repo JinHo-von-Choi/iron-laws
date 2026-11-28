@@ -152,3 +152,82 @@ def test_llm_proposals_are_judged_by_their_own_examples(tmp_path: Path):
     sanitizer = next(e for e in draft["sanitizers"] if e["id"] == "clean-id")
     assert sanitizer["positive"] == "" and sanitizer["proposed_negative"]  # 정제 함수는 사람이 옮겨야 불러온다
     assert [e["id"] for e in draft["rejected"]] == ["wrong-example"] and "positive" in draft["rejected"][0]["why"]
+
+
+EXTENDED_SPEC = {
+    "version": 1,
+    "validators": [{
+        "id": "safe-name", "family": "path", "context": "path", "languages": ["python"], "name": r"(^|\.)is_safe_name$", "arg": 0,
+        "positive": "from flask import request\n\ndef f():\n    n = request.args['n']\n    return open('/srv/' + n).read()\n",
+        "negative": "from flask import request\nfrom tools import is_safe_name\n\ndef f():\n    n = request.args['n']\n    if not is_safe_name(n):\n        return 'no'\n    return open('/srv/' + n).read()\n",
+        "negative_expect": "none",
+    }],
+    "summaries": [
+        {
+            "id": "resolve-file", "family": "path", "languages": ["java"], "name": r"(^|\.)resolveFile$", "summary": "normalize",
+            "positive": "import java.io.File;\nimport javax.servlet.http.HttpServletRequest;\n\nclass P {\n    void a(HttpServletRequest request, File dir) throws Exception {\n        File f = FileUtils.resolveFile(dir, request.getParameter(\"n\"));\n        new java.io.FileInputStream(f).close();\n    }\n}\n",
+            "negative": "import java.io.File;\nimport javax.servlet.http.HttpServletRequest;\n\nclass P {\n    void a(HttpServletRequest request, File dir) throws Exception {\n        File f = FileUtils.resolveFile(dir, request.getParameter(\"n\"));\n        if (!f.getAbsolutePath().startsWith(dir.getAbsolutePath())) {\n            throw new Exception(\"bad\");\n        }\n        new java.io.FileInputStream(f).close();\n    }\n}\n",
+            "negative_expect": "review",
+        },
+        {
+            "id": "copy-into", "family": "command", "languages": ["python", "javascript"], "name": r"(^|\.)copy_into$|(^|\.)copyInto$",
+            "summary": "propagate", "from_arg": 0, "to": "1",
+            "positive": {
+                "python": "import os\nfrom flask import request\nfrom tools import copy_into\n\ndef f():\n    buf = []\n    copy_into(request.args['c'], buf)\n    os.system(buf)\n",
+                "javascript": "const { exec } = require('child_process');\nconst { copyInto } = require('./tools');\nfunction f(req) {\n  let buf = '';\n  copyInto(req.query.c, buf);\n  exec(buf);\n}\n",
+            },
+            "negative": {
+                "python": "import os\nfrom tools import copy_into\n\ndef f():\n    buf = []\n    copy_into('ls', buf)\n    os.system(buf)\n",
+                "javascript": "const { exec } = require('child_process');\nconst { copyInto } = require('./tools');\nfunction f() {\n  let buf = '';\n  copyInto('ls', buf);\n  exec(buf);\n}\n",
+            },
+        },
+    ],
+    "sinks": [{
+        "id": "run-query", "context": "sql", "languages": ["python"], "callee": r"(^|\.)run_query$", "arg": 0,
+        "positive": "from flask import request\nfrom db import run_query\n\ndef f():\n    run_query(\"SELECT * FROM t WHERE n = '\" + request.args['n'] + \"'\")\n",
+        "negative": "from db import run_query\n\ndef f():\n    run_query('SELECT 1')\n",
+    }],
+}
+
+
+def test_validators_summaries_and_sink_context_are_checked_and_applied(tmp_path: Path):
+    from iron_laws.core.custom_spec import example_results
+    from iron_laws.core.scanner import scan_examples
+
+    spec = _write_spec(tmp_path, EXTENDED_SPEC)
+    results = example_results(spec, scan_examples)
+    assert all(ok for _name, _form, ok, _why in results), [r for r in results if not r[2]]
+    assert {name for name, *_ in results} >= {"summaries.copy-into[python]", "summaries.copy-into[javascript]", "sinks.run-query"}
+    project = tmp_path / "p"
+    project.mkdir()
+    (project / "app.py").write_text(EXTENDED_SPEC["validators"][0]["negative"], encoding="utf-8")
+    plain = [v for v in AuditScanner(project).scan().violations if v.rule_id == "IL-502" and v.confidence.value == "CONFIRMED"]
+    with_spec = [v for v in AuditScanner(project, IronLawsConfig(policies=Policies(custom_spec=str(spec)))).scan().violations if v.rule_id == "IL-502"]
+    assert plain and not with_spec  # 선언한 검사 함수를 통과한 값만 싱크에 닿는다
+
+
+def test_multi_language_entry_needs_examples_for_every_language(tmp_path: Path):
+    from iron_laws.core.custom_spec import read_spec
+
+    entry = dict(EXTENDED_SPEC["summaries"][1])
+    entry["positive"] = entry["positive"]["python"]
+    spec = _write_spec(tmp_path, {"version": 1, "summaries": [entry]})
+    with pytest.raises(ConfigError, match="언어별로"):
+        read_spec(spec)
+
+
+def test_draft_collects_external_call_candidates_by_family(tmp_path: Path):
+    from iron_laws.core.spec_draft import build_draft
+
+    (tmp_path / "app.py").write_text(
+        "import os\nimport templater\nimport shellkit\nfrom flask import request\n\n\n"
+        "def a():\n    return templater.render_text(request.args['t'])\n\n\n"
+        "def b():\n    os.system(shellkit.join_args(request.args['c']))\n\n\n"
+        "def c():\n    return templater.render_text('fixed')\n",
+        encoding="utf-8",
+    )
+    draft = build_draft(AuditScanner(tmp_path)._read_sources())
+    candidates = {(family, item["callee"], item["reason"]) for family, items in draft["candidates"].items() for item in items}
+    assert ("code", "templater.render_text", "receives_input") in candidates
+    assert ("command", "shellkit.join_args", "feeds_sink") in candidates
+    assert draft["validators"] == [] and draft["summaries"] == []

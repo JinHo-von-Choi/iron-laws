@@ -10,7 +10,7 @@ from iron_laws.engine.source import SourceFile
 
 WEB_SOURCE_RE = re.compile(
     r"""(?x)
-    \brequest\.(args|form|values|json|data|files|cookies|headers|GET|POST|query_params|
+    \brequest\.(args|form|values|json|data|files|cookies|headers|GET|POST|query_params|query_string|
                 path_params|get_json|get_data|environ|META|FILES|body|query|params|url|path)\b
     | \b(?:request|req|\w+Request|\w+Req|p[A-Z]?[rR]eq\w*)\.(getParameter\w*|getHeader\w*|getQueryString|getCookies|getInputStream|getReader|getPart\w*|getPathInfo|getPathTranslated|getRequestURI|getRequestURL|getContentType|getRemoteHost)\b
     | \breq\.(query|body|params|cookies|headers|url|originalUrl|path|files|file|hostname)\b
@@ -160,11 +160,43 @@ def _source_in(text: str, cli: bool, lang: Lang | None = None, archive: bool = F
     return False
 
 
+_CS_REQUEST_MEMBERS = r"(?:Params|QueryString|Form|Cookies|Headers|ServerVariables|RawUrl|Url|Files|InputStream)"
+
+
+def _cs_request_source(src: SourceFile, at: Node | None) -> re.Pattern[str] | None:
+    """C#: 형식이 HttpRequest인 매개변수·변수와 HttpContext.Current.Request의 입력 속성, 콘솔 입력.
+    변수 이름이 아니라 선언한 형식으로 요청 객체를 정한다. 형식은 at을 감싼 함수 안에서 찾는다"""
+    if src.lang is not Lang.CSHARP:
+        return None
+    from iron_laws.engine.ast_tools import enclosing_function
+
+    scope = enclosing_function(at, src.lang) if at is not None else None
+
+    def build() -> re.Pattern[str]:
+        text = src.code_of(scope) if scope is not None else ""
+        names = set(re.findall(r"\bHttpRequest(?:Base)?\s+([A-Za-z_]\w*)", text))
+        names |= set(re.findall(r"([A-Za-z_]\w*)\s*=\s*HttpContext\.Current\.Request\b", text))
+        parts = [rf"\bHttpContext\.Current\.Request\.{_CS_REQUEST_MEMBERS}\b", r"\bConsole\.ReadLine\s*\("]
+        if names:
+            parts.append(rf"\b(?:{'|'.join(sorted(map(re.escape, names)))})\.{_CS_REQUEST_MEMBERS}\b")
+        return re.compile("|".join(parts))
+
+    return src.memo(f"cs_request_source:{scope.id if scope is not None else -1}", build)
+
+
+def file_source_in(src: SourceFile, text: str, cli: bool, at: Node | None = None) -> bool:
+    """파일 단위 정보까지 써서 text에 입력 원천이 있는지 본다(C# 요청 객체는 at을 감싼 함수의 선언 형식으로 정한다)"""
+    if _source_in(text, cli, src.lang, archive_file(src)):
+        return True
+    pattern = _cs_request_source(src, at)
+    return pattern is not None and pattern.search(text) is not None
+
+
 def expr_has_source(src: SourceFile, node: Node, cli: bool = False) -> bool:
     text = src.text_of(node)
-    if not _source_in(text, cli, src.lang, archive_file(src)):
+    if not file_source_in(src, text, cli, node):
         return False
     if src.root is None:
         return True
     # 원문에서 입력 원천처럼 보이는 글자가 보이면, 그것이 문자열 리터럴 안의 글자인지 코드인지 가려서 다시 본다
-    return _source_in(_text_without_plain_strings(src, node), cli, src.lang, archive_file(src))
+    return file_source_in(src, _text_without_plain_strings(src, node), cli, node)

@@ -193,7 +193,90 @@ def cost_section(report: AuditReport) -> list[str]:
     return md
 
 
-def generate_markdown_report(report: AuditReport, rules: list[BaseRule] | None = None) -> str:
+SCOPE_LABEL = {"code": "코드로 확인", "mixed": "일부 코드로 확인", "manual": "코드 밖 확인"}
+
+
+def _cell(text: object) -> str:
+    return str(text).replace("|", "\\|").replace("\n", " ")
+
+
+def _standard_section(report: AuditReport, rules: list[BaseRule], pack_id: str) -> list[str]:
+    """기준 팩 항목별 현황. 지적이 없는 항목은 점검했고 지적 없음, 해당 규칙 미탑재, 분석 불가, 코드 밖 확인을 나눠 쓴다."""
+    from iron_laws.standards.pack_registry import all_packs
+
+    pack = next((x for x in all_packs() if x.id == pack_id), None)
+    if pack is None:
+        return []
+    active = {r.rule_id for r in rules}
+    findings: dict[str, int] = {}
+    for v in report.violations:
+        findings[v.rule_id] = findings.get(v.rule_id, 0) + 1
+    by_item: dict[str, list[str]] = {}
+    for rule_id, items in pack.mapping.items():
+        if rule_id in active:
+            for item in items:
+                by_item.setdefault(item, []).append(rule_id)
+    complete = report.summary.scan_status == "complete"
+    md = [f"\n## 7. {pack.title}({pack.edition}) 항목별 점검 현황\n"]
+    md.append(f"대응표: {'항목 질문과 규칙을 대조해 확인함' if pack.mapping_verified else '미확인(오철칙이 정한 대응이며 이 판본으로 확인하지 않음)'}.\n")
+    md.append("| 항목 | 명칭 | 범위 | 대응 규칙 | 지적 | 상태 |")
+    md.append("|---|---|---|---|---|---|")
+    for item in pack.items:
+        scope = pack.item_scope.get(item.id, "")
+        mapped = sorted(by_item.get(item.id, []))
+        count = sum(findings.get(r, 0) for r in mapped)
+        if scope == "manual":
+            state = "코드 밖 확인 필요"
+        elif not mapped:
+            state = "해당 규칙 미탑재"
+        elif not complete:
+            state = "분석 불가(점검이 완전하지 않음)"
+        elif count:
+            state = f"지적 있음 {count}건"
+        else:
+            state = "점검했고 지적 없음"
+        if scope == "mixed" and state not in ("코드 밖 확인 필요",):
+            state += " · 코드 밖 부분은 따로 확인"
+        md.append(f"| {item.id} | {_cell(item.name)} | {SCOPE_LABEL.get(scope, '-')} | {', '.join(mapped) or '-'} | {count if mapped else '-'} | {state} |")
+    if pack.item_question:
+        md.append("\n점검 질문\n")
+        md.extend(f"- {i}. {_cell(q)}" for i, q in pack.item_question.items())
+    md.extend(_evidence_tables(report))
+    return md
+
+
+def _evidence_tables(report: AuditReport) -> list[str]:
+    md: list[str] = []
+    routes = (report.metadata.get("routes") or {}).get("rows") or []
+    if routes:
+        md.append("\n### 라우트 접근통제 (중요 기능·관리 라우트)\n")
+        md.append("| 메서드 | 경로 | 종류 | 인증 | 인가 | 위치 | 근거 |")
+        md.append("|---|---|---|---|---|---|---|")
+        for r in routes:
+            md.append(f"| {r['method']} | `{_cell(r['path'])}` | {r.get('kind', '')} | {r['auth']} | {r['authz']} | `{r['file']}:{r['line']}` | {_cell(r['auth_reason'])} |")
+    tenancy = (report.metadata.get("tenancy") or {}).get("rows") or []
+    if tenancy:
+        md.append("\n### 조회문별 소속 확인\n")
+        md.append("| 매퍼 문장 | 종류 | 테이블 | 소속 열 | 값 출처 | 호출 위치 | 판정 |")
+        md.append("|---|---|---|---|---|---|---|")
+        for r in tenancy:
+            md.append(f"| `{r['mapper']}.{r['statement']}` | {r['kind']} | {_cell(r['tables'])} | {r['key_column']} | {r['source']} | `{r['call']}` | {r['verdict']} |")
+    eol = report.metadata.get("eol") or {}
+    if eol:
+        data = eol.get("data") or {}
+        md.append("\n### 지원 종료 제품\n")
+        if data.get("error"):
+            md.append(f"지원 종료 자료를 읽지 못해 판정하지 않았습니다: {_cell(data['error'])}\n")
+        else:
+            md.append(f"지원 종료 자료 수집일 {data.get('fetched_at', '-')} · 내용 지문 {data.get('sha256', '-')}\n")
+            md.append("| 제품 | 쓰는 버전 | 주기 | 지원 종료일 | 위치 | 근거 |")
+            md.append("|---|---|---|---|---|---|")
+            for r in eol.get("rows") or []:
+                md.append(f"| {r['product']} | {r['version']} | {r['cycle']} | {r['eol']} | `{r['file']}:{r['line']}` | {r['url']} |")
+    return md
+
+
+def generate_markdown_report(report: AuditReport, rules: list[BaseRule] | None = None, standard: str | None = None) -> str:
     s = report.summary
     status_str = _status_text(report)
     md = _header_lines(report, status_str)
@@ -228,6 +311,8 @@ def generate_markdown_report(report: AuditReport, rules: list[BaseRule] | None =
         manual = [x for x in build_item_status(report, rules) if x.status == STATUS_MANUAL]
         if manual:
             md.append("\n정적 분석으로 판정할 수 없어 사람이 직접 확인해야 하는 항목: " + ", ".join(f"{m.item.id} {m.item.name}" for m in manual))
+        if standard is not None and standard != "mois-2021-impl":
+            md.extend(_standard_section(report, rules, standard))
     return "\n".join(md)
 
 

@@ -7,6 +7,9 @@ from tree_sitter import Node
 from iron_laws.core.models import Confidence, IronLaw, Severity, Violation
 from iron_laws.engine.ast_tools import (
     Call,
+    enclosing_function,
+    is_literal,
+    iter_calls,
     iter_functions,
 )
 from iron_laws.engine.languages import JS_FAMILY, Lang
@@ -15,14 +18,21 @@ from iron_laws.engine.python_call_kinds import is_regex_call
 from iron_laws.engine.source import SourceFile
 from iron_laws.engine.taint import (
     Ctx,
+    definitions,
+    is_tainted,
+    reaching_definitions,
 )
+from iron_laws.engine.taint.closed import is_closed_value
+from iron_laws.engine.xfile_python import qualified_name
 from iron_laws.rules.base import BaseRule
+from iron_laws.rules.guards import PassFacts
 from iron_laws.rules.injection_common import (
     LDAP_TEXT_RE,
     XPATH_TEXT_RE,
     SinkRule,
     _context_text,
     _csrf_missing,
+    quote_guard_verdict,
 )
 from iron_laws.rules.sinks import (
     CS,
@@ -33,12 +43,13 @@ from iron_laws.rules.sinks import (
     PY,
     Flow,
     Sink,
+    typed_names,
 )
 from iron_laws.standards import mois_ref
 
 
 class LdapInjectionRule(SinkRule):
-    version = 3
+    version = 4
     rule_id = "IL-508"
     taint_ctx = Ctx.LDAP
     name = "LDAP 삽입 탐지"
@@ -53,9 +64,21 @@ class LdapInjectionRule(SinkRule):
         Sink.of(JS, r"(^|\.)search$", None),
         Sink.of(JAVA, r"(^|\.)search$", None),
         Sink.of(CS, r"^newDirectorySearcher$", None),
+        Sink.assigned(CS, r"\.Filter$"),  # DirectorySearcher.Filter = 필터. select_args가 수신자 형식을 확인한다
         Sink.of(PHP, r"^ldap_(search|list|read)$", None),
         Sink.of(GO, r"^ldap\.NewSearchRequest$", None),
     ]
+
+    def select_args(self, src: SourceFile, call: Call, sink: Sink) -> list[Node]:
+        """C# `search.Filter = 필터`는 search가 DirectorySearcher일 때만 본다"""
+        if sink.prop:
+            receiver = call.callee.rsplit(".", 1)[0]
+            scope = enclosing_function(call.node, src.lang)
+            defs = definitions(src, scope, receiver) if scope is not None and re.fullmatch(r"[A-Za-z_]\w*", receiver) else []
+            if not defs or not all(re.match(r"new\s+(?:System\.DirectoryServices\.)?DirectorySearcher\b", src.text_of(d)) for d in defs):
+                if receiver not in typed_names(src, r"DirectorySearcher", call.node):
+                    return []
+        return super().select_args(src, call, sink)
 
     def skip_hit(self, src: SourceFile, call: Call, arg: Node, flow: Flow) -> bool:
         if is_regex_call(src, call):
@@ -67,6 +90,7 @@ class LdapInjectionRule(SinkRule):
 
 
 class XxeRule(BaseRule):
+    version = 2
     rule_id = "IL-509"
     name = "부적절한 XML 외부 개체 참조(XXE) 탐지"
     iron_law = IronLaw.LAW_5
@@ -160,10 +184,91 @@ class XxeRule(BaseRule):
             )
         return found
 
+    PY_PARSE_METHODS = frozenset({"parse", "feed", "parseString"})
+
+    def _python_parser_name(self, src: SourceFile, call: Call) -> str:
+        """외부 개체를 켜는 설정 호출이 바꾸는 파서 변수. `p.setFeature(...)`는 수신자, `p = XMLParser(...)`는 대입받는 변수"""
+        if call.callee.endswith(".setFeature"):
+            return call.callee.rsplit(".", 1)[0]
+        parent = call.node.parent
+        if parent is not None and parent.type == "assignment":
+            left = parent.child_by_field_name("left")
+            if left is not None and left.type == "identifier":
+                return src.text_of(left)
+        return ""
+
+    def _python_parse_inputs(self, src: SourceFile, setting: Call, parser: str) -> list[tuple[Call, Node]]:
+        """설정 뒤 같은 함수에서 그 파서로 파싱하는 호출과 파싱할 입력 식"""
+        scope = enclosing_function(setting.node, src.lang) or src.root
+        found = []
+        for call in iter_calls(src):
+            if call.node.start_byte < setting.node.end_byte or scope is None or call.node.end_byte > scope.end_byte:
+                continue
+            receiver, _, method = call.callee.rpartition(".")
+            if receiver == parser and method in self.PY_PARSE_METHODS and call.args:
+                found.append((call, call.args[0]))
+            elif any(src.text_of(a) == parser or src.text_of(a) == f"parser={parser}" for a in call.args):
+                data = next((a for a in call.args if a.type != "keyword_argument" and src.text_of(a) != parser), None)
+                if data is not None:
+                    found.append((call, data))
+        return found
+
+    @staticmethod
+    def _python_inline_parse(src: SourceFile, setting: Call) -> list[tuple[Call, Node]]:
+        """`etree.fromstring(데이터, etree.XMLParser(resolve_entities=True))`처럼 파서를 만들어 바로 넘기는 파싱 호출"""
+        holder = setting.node.parent
+        if holder is not None and holder.type == "keyword_argument":
+            holder = holder.parent
+        outer = holder.parent if holder is not None and holder.type == "argument_list" else None
+        if outer is None:
+            return []
+        for call in iter_calls(src):
+            if call.node.id == outer.id and call.args and call.args[0].id != setting.node.id:
+                return [(call, call.args[0])]
+        return []
+
+    def _public_param_reaches(self, src: SourceFile, uses: list[tuple[Call, Node]]) -> bool:
+        if self.config is None or self.config.policies.entry_points != "public_api":
+            return False
+        from iron_laws.engine.public_api import public_entries
+
+        for fn, params in public_entries(src):
+            if any(fn.node.start_byte <= use.node.start_byte < fn.node.end_byte and is_tainted(src, data, seeds=params) for use, data in uses):
+                return True
+        return False
+
+    def _check_python(self, src: SourceFile) -> list[Violation]:
+        """외부 개체를 켠 파서로 파싱하는 입력을 본다: 외부 입력이면 확정, 상수면 지적하지 않고, 출처를 모르거나 파싱 호출을 못 찾으면 확인 필요"""
+        found = []
+        pattern = self.insecure[Lang.PYTHON]
+        matched_lines: set[int] = set()
+        for call in iter_calls(src):
+            if not pattern.search(src.text_of(call.node)) or any(pattern.search(src.text_of(a)) for a in call.args if a.type in ("call",)):
+                continue
+            matched_lines.add(src.line_of(call.node))
+            parser = self._python_parser_name(src, call)
+            uses = self._python_parse_inputs(src, call, parser) if parser else self._python_inline_parse(src, call)
+            tainted = [(use, data) for use, data in uses if is_tainted(src, data)]
+            if tainted:
+                use = tainted[0][0]
+                found.append(self.at_node(src, use.node, f"외부 개체 처리를 켠 파서({parser + ', ' if parser else ''}{src.line_of(call.node)}행 설정)로 외부 입력 XML을 파싱합니다."))
+            elif uses and all(is_literal(data) or is_closed_value(src, data) for _use, data in uses):
+                continue  # 코드에 고정된 XML만 파싱한다
+            elif uses and self._public_param_reaches(src, uses):
+                found.append(self.at_node(src, uses[0][0].node, f"외부 개체 처리를 켠 파서({parser + ', ' if parser else ''}{src.line_of(call.node)}행 설정)로 공개 API 매개변수의 XML을 파싱합니다. 호출하는 쪽이 외부 입력을 넘기는지 확인하십시오.", confidence=Confidence.REVIEW))
+            else:
+                found.append(self.at_node(src, call.node, "XML 외부 개체 처리를 허용하는 설정이 있습니다. 이 파서로 파싱하는 XML의 출처를 확인하십시오.", confidence=Confidence.REVIEW))
+        for idx, line in enumerate(src.code_lines, start=1):
+            if idx not in matched_lines and pattern.search(line):
+                found.append(self.at_line(src, idx, "XML 외부 개체 처리를 허용하는 설정이 있습니다. 이 설정을 쓰는 파서로 파싱하는 XML의 출처를 확인하십시오.", confidence=Confidence.REVIEW))
+        return found
+
     def check(self, src: SourceFile) -> list[Violation]:
         found = []
         if src.lang is Lang.JAVA:
             found.extend(self._check_java(src))
+        elif src.lang is Lang.PYTHON and src.root is not None:
+            found.extend(self._check_python(src))
         elif src.lang in self.insecure:
             for idx, line in enumerate(src.code_lines, start=1):
                 if self.insecure[src.lang].search(line):
@@ -204,7 +309,7 @@ class CsrfDisabledRule(BaseRule):
 
 
 class XPathInjectionRule(SinkRule):
-    version = 2
+    version = 3
     rule_id = "IL-527"
     taint_ctx = Ctx.XPATH
     name = "XML(XPath) 삽입 탐지"
@@ -214,13 +319,69 @@ class XPathInjectionRule(SinkRule):
     how_to_fix = "XPath 변수 바인딩(XPathVariableResolver, lxml의 xpath 변수 인자)을 쓰거나, 값에서 따옴표와 특수문자를 제거·이스케이프하세요."
     tainted_message = "외부 입력이 XPath 식에 결합되어 {callee}로 실행됩니다. 변수 바인딩을 쓰십시오."
     dynamic_message = "XPath 식을 변수와 결합해 {callee}로 실행합니다. 외부 입력이 닿는지 확인하고 변수 바인딩을 쓰십시오."
+    PY_BARE_CALL = Sink.of(PY, r"^\w+$")  # import한 select, XPath 객체·평가기 호출. 실제 대상은 select_args가 고른다
     sinks = [
         Sink.of(PY, r"\.(xpath|find|findall|iterfind)$"),
+        Sink.of(PY, r"^elementpath\.(select|iter_select)$", 1),
+        PY_BARE_CALL,
         Sink.of(JS, r"(^|\.)(evaluate|select|select1|selectNodes|xpath)$"),
         Sink.of(JAVA, r"(?i:xp\w*|xpath\w*|path\w*)\.(evaluate|compile)$|\.(selectNodes|selectSingleNode)$"),
         Sink.of(CS, r"(^|\.)(SelectNodes|SelectSingleNode|Evaluate)$|XPathExpression\.Compile$"),
         Sink.of(PHP, r"(->|::)xpath$|^xpath_eval$"),
     ]
 
+    PY_SELECT_FUNCTIONS = frozenset({"elementpath.select", "elementpath.iter_select"})
+    # 식을 받아 XPath 객체를 만드는 생성자(객체를 부르면 그 식이 실행된다)와, 부를 때 식을 받는 평가기 생성자
+    PY_XPATH_OBJECTS = re.compile(r"^(?:(?:lxml\.)?etree\.)?(XPath|ETXPath)$")
+    PY_XPATH_EVALUATORS = re.compile(r"^(?:(?:lxml\.)?etree\.)?(XPathEvaluator|XPathDocumentEvaluator|XPathElementEvaluator)$")
+
+    def select_args(self, src: SourceFile, call: Call, sink: Sink) -> list[Node]:
+        if sink is not self.PY_BARE_CALL:
+            return super().select_args(src, call, sink)
+        if qualified_name(src, call.callee) in self.PY_SELECT_FUNCTIONS:
+            return call.args[1:2]
+        scope = enclosing_function(call.node, src.lang) or src.root
+        if scope is None:
+            return []
+        for d in reaching_definitions(src, scope, call.callee, call.node.start_byte):
+            if d.type != "call":
+                continue
+            ctor = d.child_by_field_name("function")
+            ctor_args = d.child_by_field_name("arguments")
+            name = src.text_of(ctor) if ctor is not None else ""
+            positional = [a for a in ctor_args.named_children if a.type != "keyword_argument"] if ctor_args is not None else []
+            if self.PY_XPATH_OBJECTS.match(name) and positional:
+                return positional[:1]  # run = etree.XPath(식); run(문서) — 실행되는 식은 생성자 인자다
+            if self.PY_XPATH_EVALUATORS.match(name):
+                return call.args[:1]  # ev = etree.XPathEvaluator(문서); ev(식)
+        return []
+
+    @staticmethod
+    def _assembled_text(src: SourceFile, arg: Node) -> str:
+        """`buf.write(조각)`으로 조립하고 `buf.getvalue()`로 꺼낸 질의는 쓴 조각까지 문맥에 넣는다"""
+        if arg.type != "identifier":
+            return ""
+        scope = enclosing_function(arg, src.lang) or src.root
+        if scope is None:
+            return ""
+        parts = []
+        for d in definitions(src, scope, src.text_of(arg)):
+            m = re.fullmatch(r"(\w+)\.getvalue\(\s*\)", src.text_of(d).strip())
+            if m is None:
+                continue
+            for c in iter_calls(src):
+                if c.callee == f"{m.group(1)}.write" and scope.start_byte <= c.node.start_byte < scope.end_byte:
+                    parts.append(src.text_of(c.node))
+        return "\n".join(parts)
+
+    def _query_text(self, src: SourceFile, arg: Node) -> str:
+        text = _context_text(src, arg)
+        if src.lang is Lang.PYTHON:
+            text += "\n" + self._assembled_text(src, arg)
+        return text
+
     def skip_hit(self, src: SourceFile, call: Call, arg: Node, flow: Flow) -> bool:
-        return not XPATH_TEXT_RE.search(_context_text(src, arg))
+        return not XPATH_TEXT_RE.search(self._query_text(src, arg))
+
+    def guard_verdict(self, src: SourceFile, call: Call, arg: Node, facts: dict[str, PassFacts]) -> str | None:
+        return quote_guard_verdict(self, facts, self._query_text(src, arg))

@@ -67,6 +67,10 @@
  },
  "AI-106": {
   "kind:properties": {
+   "negative": 1,
+   "positive": 2
+  },
+  "kind:yaml": {
    "negative": 0,
    "positive": 1
   },
@@ -215,6 +219,36 @@
   "java": {
    "negative": 1,
    "positive": 1
+  }
+ },
+ "AI-123": {
+  "java": {
+   "negative": 2,
+   "positive": 2
+  }
+ },
+ "AI-124": {
+  "java": {
+   "negative": 3,
+   "positive": 1
+  }
+ },
+ "AI-125": {
+  "java": {
+   "negative": 1,
+   "positive": 1
+  }
+ },
+ "AI-126": {
+  "java": {
+   "negative": 1,
+   "positive": 1
+  }
+ },
+ "AI-128": {
+  "java": {
+   "negative": 1,
+   "positive": 2
   }
  },
  "AIA-101": {
@@ -568,6 +602,10 @@
    "negative": 1,
    "positive": 1
   },
+  "java": {
+   "negative": 2,
+   "positive": 2
+  },
   "javascript": {
    "negative": 1,
    "positive": 1
@@ -852,6 +890,10 @@
    "negative": 1,
    "positive": 1
   },
+  "java": {
+   "negative": 1,
+   "positive": 1
+  },
   "javascript": {
    "negative": 1,
    "positive": 1
@@ -1052,6 +1094,10 @@
   }
  },
  "IL-532": {
+  "java": {
+   "negative": 1,
+   "positive": 2
+  },
   "javascript": {
    "negative": 1,
    "positive": 1
@@ -1073,6 +1119,22 @@
   "javascript": {
    "negative": 2,
    "positive": 3
+  }
+ },
+ "IL-534": {
+  "java": {
+   "negative": 3,
+   "positive": 3
+  },
+  "python": {
+   "negative": 1,
+   "positive": 1
+  }
+ },
+ "IL-535": {
+  "java": {
+   "negative": 1,
+   "positive": 2
   }
  },
  "PERF-101": {

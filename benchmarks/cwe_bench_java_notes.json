@@ -1,0 +1,11 @@
+{
+  "설명": "데이터셋 값과 실제 저장소 이력이 다른 사례. 측정기는 이 사례들의 판정 쌍을 noted로 따로 센다. 데이터셋 값은 바꾸지 않는다.",
+  "cases": {
+    "apache__uima-uimaj_CVE-2022-32287_3.3.0": {
+      "kind": "fixed_commit_lacks_fix",
+      "dataset_fixed_commit": "1088f615154b385dd163965b8d2ef78e87111ab1",
+      "actual_fix_commit": "9c99e071be79bdb6bbd1bcd3f20431d76ce5143e",
+      "evidence": "두 커밋 모두 파일 처리 코드 정리 커밋이다. extractFilesFromJar의 기준 폴더 검사(targetDir 정규 경로에 구분자를 붙인 접두사 비교)는 1088f615보다 두 커밋 뒤인 9c99e071에서 들어온다."
+    }
+  }
+}

@@ -5,6 +5,10 @@
 - 인증(auth) yes: 라우트 정의·미들웨어·핸들러 본문에 인증 표지가 있거나, 평가할 수 있는 전역 설정이 이 경로를 보호한다.
   no: 아무 근거가 없거나 전역 설정이 이 경로를 명시적으로 공개(permitAll·AllowAnonymous)한다.
   unknown: 전역 설정이 있지만 이 경로에 적용되는지 정할 수 없다(Spring 보안 체인의 일부 경로 규칙, Next.js 미들웨어 matcher 등).
+- 종류(kind): auth_flow(로그인·비밀번호·인증번호·SSO·세션 전환·토큰 발급), admin(관리 콘솔·문서·관리 경로), normal.
+  경로 조각과 핸들러 이름의 낱말로 정한다. 공개 경로 판정(PUBLIC_PATH)과는 독립이다.
+- 설정의 auth 절: 로그인 검사 예외 표지(exempt_markers)가 붙은 라우트는 no, 인터셉터가 보호한다고 설정하면(interceptor_protects)
+  addPathPatterns·excludePathPatterns를 읽어 그 범위 안의 표지 없는 라우트를 yes로 본다. 코드의 보안 설정 근거가 설정보다 우선한다.
 - 인가(authz)는 객체 식별자를 받는 라우트(`/users/{id}`, `/:id`, `<int:id>`)와 관리 경로에서만 본다.
   yes: 역할·권한 검사가 있거나, 데이터 조회보다 먼저 현재 사용자와 대상의 소유 관계를 비교한다.
   no: 식별자로 데이터를 조회하는데 그런 검사가 없다. unknown: 데이터 조회 여부를 정할 수 없다. 해당 없는 라우트는 n/a.
@@ -16,6 +20,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import PurePosixPath
 
+from iron_laws.core.config import AuthSettings
 from iron_laws.engine.ast_tools import iter_calls, iter_functions, string_value
 from iron_laws.engine.languages import JS_FAMILY, Lang
 from iron_laws.engine.source import SourceFile
@@ -32,6 +37,39 @@ OWNER_MARKER = re.compile(r"(?i)(owner|user_?id|author|created_by|userId|ownerId
 DATA_ACCESS = re.compile(r"(?i)\.(find\w*|get\w*|query|filter\w*|select\w*|fetch\w*|load\w*|objects\.get|findById|findOne|findUnique|first|execute)\s*\(|SELECT\s|get_object_or_404|repository\.|Repository\.")
 ID_PARAM = re.compile(r"(\{[^}]*\b(?:id|\w+_id|\w+Id)\}|/:\w*[iI]d\b|<(?:\w+:)?\w*id>|\[\w*[iI]d\])")
 PUBLIC_NAMES = re.compile(r"(?i)^/?(login|logout|register|signup|signin|auth|health|ping|webhook|callback|oauth|token|refresh|forgot|reset)\b")
+# 라우트 종류를 정하는 낱말. 경로 조각과 핸들러 이름을 낱말(camelCase·구분자)로 나눠 비교한다
+AUTH_FLOW_TOKENS = frozenset(
+    {"login", "logout", "signin", "signout", "password", "passwd", "pw", "pwd", "reset", "otp", "totp", "sms", "mfa", "2fa",
+     "certify", "certification", "verify", "verification", "sso", "switch", "token", "session"}
+)
+AUTH_FLOW_COMPACT = ("login", "logout", "signin", "signout", "password", "passwd")
+ADMIN_CONSOLE_COMPACT = ("actuator", "swagger", "apidocs", "h2console", "druid", "phpmyadmin")
+ADMIN_TOKENS = frozenset({"admin", "manage", "management", "manager"})
+
+
+def _tokens(text: str) -> list[str]:
+    spaced = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", text)
+    return [w.lower() for w in re.split(r"[^A-Za-z0-9]+", spaced) if w]
+
+
+def route_kind(path: str, handler: str = "") -> str:
+    """auth_flow·admin·normal. 관리 콘솔(actuator·swagger·api-docs 등)은 admin이 먼저다."""
+    compact = re.sub(r"[^a-z0-9]", "", path.lower())
+    if any(word in compact for word in ADMIN_CONSOLE_COMPACT):
+        return "admin"
+    words = set(_tokens(path)) | set(_tokens(handler))
+    if words & AUTH_FLOW_TOKENS or any(word in compact for word in AUTH_FLOW_COMPACT):
+        return "auth_flow"
+    if set(_tokens(path)) & ADMIN_TOKENS:
+        return "admin"
+    return "normal"
+
+
+def _marker_re(markers: list[str]) -> re.Pattern[str] | None:
+    names = [m.lstrip("@").strip() for m in markers if m.strip()]
+    if not names:
+        return None
+    return re.compile(r"(?<![\w.])@?(?:" + "|".join(re.escape(n) for n in names) + r")\b")
 
 
 @dataclass
@@ -48,9 +86,10 @@ class Route:
     authz: str
     authz_reason: str
     node: object = field(default=None, repr=False, compare=False)
+    kind: str = "normal"
 
     def as_row(self) -> dict:
-        return {k: getattr(self, k) for k in ("framework", "method", "path", "file", "line", "handler", "sensitive", "auth", "auth_reason", "authz", "authz_reason")}
+        return {k: getattr(self, k) for k in ("framework", "method", "path", "file", "line", "handler", "kind", "sensitive", "auth", "auth_reason", "authz", "authz_reason")}
 
 
 def is_sensitive(method: str, path: str) -> bool:
@@ -62,10 +101,10 @@ def is_sensitive(method: str, path: str) -> bool:
     return method.lower() in ("post", "put", "patch", "delete") or bool(SENSITIVE_PATH.search(path))
 
 
-def _authz(path: str, text: str, handler_body: str) -> tuple[str, str]:
+def _authz(path: str, text: str, handler_body: str, tenancy_keys: tuple[str, ...] = ()) -> tuple[str, str]:
     if ROLE_MARKER.search(text):
         return "yes", "역할·권한 검사가 있다"
-    needs = bool(ID_PARAM.search(path)) or bool(re.search(r"(?i)admin|manage|internal", path))
+    needs = bool(ID_PARAM.search(path)) or bool(re.search(r"(?i)admin|manage|internal", path)) or _has_key_param(path, tenancy_keys)
     if not needs:
         return "n/a", "객체 식별자·관리 경로가 아니다"
     owner = OWNER_MARKER.search(handler_body)
@@ -85,6 +124,9 @@ class _Globals:
     dotnet: bool = False
     next_middleware: str = ""  # all / matcher / ""
     django_default: bool = False  # DEFAULT_PERMISSION_CLASSES = IsAuthenticated
+    interceptor: bool = False  # WebMvcConfigurer.addInterceptors가 있다
+    interceptor_include: list[str] = field(default_factory=list)
+    interceptor_exclude: list[str] = field(default_factory=list)
 
 
 def _globals(files: list[SourceFile]) -> _Globals:
@@ -97,6 +139,11 @@ def _globals(files: list[SourceFile]) -> _Globals:
                 g.spring_public += re.findall(r"\"([^\"]+)\"", block)
             for block in re.findall(r"(?:requestMatchers|antMatchers|mvcMatchers)\(([^)]*)\)\s*\.\s*(?:authenticated|hasRole|hasAnyRole|hasAuthority|hasAnyAuthority|fullyAuthenticated)", text):
                 g.spring_protected += re.findall(r"\"([^\"]+)\"", block)
+        if f.lang is Lang.JAVA and re.search(r"\baddInterceptors\s*\(", text):
+            g.interceptor = True
+            for kind, target in (("addPathPatterns", g.interceptor_include), ("excludePathPatterns", g.interceptor_exclude)):
+                for block in re.findall(rf"\.{kind}\(([^)]*)\)", text):
+                    target += re.findall(r"\"([^\"]+)\"", block)
         if f.lang is Lang.CSHARP and re.search(r"FallbackPolicy|AuthorizeFilter|AddAuthorizationBuilder", text) and re.search(r"FallbackPolicy|AuthorizeFilter|RequireAuthorization\(\)|UseAuthorization", text):
             g.dotnet = True
         if f.lang in JS_FAMILY and PurePosixPath(f.path.as_posix()).stem == "middleware" and len(f.path.parts) <= 2 and AUTH_MARKER.search(text):
@@ -253,7 +300,59 @@ def _nextjs(src: SourceFile, g: _Globals) -> list[Route]:
     return routes
 
 
-def _spring(src: SourceFile, g: _Globals) -> list[Route]:
+SPRING_AUTH_EVIDENCE = re.compile(
+    r"@(PreAuthorize|Secured|RolesAllowed|AuthenticationPrincipal)\b|\bPrincipal\s+\w+\s*[,)]|\bAuthentication\s+\w+\s*[,)]|"
+    r"getAuthentication\(\)|getUserPrincipal\(\)|getRemoteUser\(\)"
+)
+
+
+def _spring_methods(name: str, args: str) -> list[str]:
+    if name != "Request":
+        return [name.upper()]
+    m = re.search(r"\bmethod\s*=\s*\{?([^}]*)", args)
+    found = re.findall(r"\b(GET|POST|PUT|PATCH|DELETE)\b", m.group(1)) if m else []
+    return list(dict.fromkeys(found)) or ["GET"]
+
+
+@dataclass(frozen=True)
+class _SpringScope:
+    """Spring 컨트롤러 한 파일의 인증 판정 문맥"""
+
+    class_head: str
+    class_secured: bool
+    g: _Globals
+    auth: AuthSettings
+    markers: re.Pattern[str] | None
+
+
+def _spring_auth(path: str, head: str, text: str, scope: _SpringScope) -> tuple[str, str]:
+    g, auth, markers = scope.g, scope.auth, scope.markers
+    if scope.class_secured or SPRING_AUTH_EVIDENCE.search(text):
+        return "yes", "메서드·클래스에 보안 애너테이션이나 인증 주체 사용이 있다"
+    if any(_ant_match(p, path) for p in g.spring_public):
+        return "no", "보안 설정이 이 경로를 permitAll로 공개한다"
+    if g.spring == "authenticated":
+        return "yes", "보안 설정의 anyRequest()가 인증을 요구한다"
+    if any(_ant_match(p, path) for p in g.spring_protected):
+        return "yes", "보안 설정의 경로 규칙이 이 경로에 인증을 요구한다"
+    if markers is not None and (markers.search(head) or markers.search(scope.class_head)):
+        return "no", "로그인 검사 예외 표지가 있다"
+    if auth.interceptor_protects:
+        if any(_ant_match(p, path) for p in [*auth.exempt_paths, *g.interceptor_exclude]):
+            return "no", "인터셉터의 예외 경로에 속한다"
+        if g.interceptor_include:
+            if any(_ant_match(p, path) for p in g.interceptor_include):
+                return "yes", "설정된 로그인 인터셉터의 적용 경로에 속한다"
+        elif g.interceptor:
+            return "unknown", "로그인 인터셉터가 있지만 적용 경로(addPathPatterns)를 읽지 못했다"
+        else:
+            return "unknown", "로그인 인터셉터를 쓴다고 설정했지만 addInterceptors를 찾지 못했다"
+    if g.spring == "partial":
+        return "unknown", "보안 설정이 있지만 이 경로에 적용되는 규칙을 정할 수 없다"
+    return "no", "보안 애너테이션·보안 설정이 없다"
+
+
+def _spring(src: SourceFile, g: _Globals, auth: AuthSettings, markers: re.Pattern[str] | None) -> list[Route]:
     routes = []
     if "@RestController" not in src.text and "@Controller" not in src.text:
         return routes
@@ -268,23 +367,12 @@ def _spring(src: SourceFile, g: _Globals) -> list[Route]:
         m = re.search(r"@(Get|Post|Put|Patch|Delete|Request)Mapping(?:\(([^)]*)\))?", head)
         if not m:
             continue
-        method = "GET" if m.group(1) in ("Get", "Request") else m.group(1).upper()
         path_m = re.search(r"\"([^\"]*)\"", m.group(2) or "")
         path = prefix + (path_m.group(1) if path_m else "")
-        if class_secured or re.search(r"@(PreAuthorize|Secured|RolesAllowed)|Principal|Authentication|SecurityContext", text):
-            auth = ("yes", "메서드·클래스에 보안 애너테이션이나 인증 주체 사용이 있다")
-        elif any(_ant_match(p, path) for p in g.spring_public):
-            auth = ("no", "보안 설정이 이 경로를 permitAll로 공개한다")
-        elif g.spring == "authenticated":
-            auth = ("yes", "보안 설정의 anyRequest()가 인증을 요구한다")
-        elif any(_ant_match(p, path) for p in g.spring_protected):
-            auth = ("yes", "보안 설정의 경로 규칙이 이 경로에 인증을 요구한다")
-        elif g.spring == "partial":
-            auth = ("unknown", "보안 설정이 있지만 이 경로에 적용되는 규칙을 정할 수 없다")
-        else:
-            auth = ("no", "보안 애너테이션·보안 설정이 없다")
+        auth_row = _spring_auth(path, head, text, _SpringScope(head_class, class_secured, g, auth, markers))
         authz = _authz(path, (head_class if class_secured else "") + text, text)
-        routes.append(Route("spring", method, path, src.path.as_posix(), src.line_of(fn.node), fn.name, is_sensitive(method, path), *auth, *authz, node=fn.node))
+        for method in _spring_methods(m.group(1), m.group(2) or ""):
+            routes.append(Route("spring", method, path, src.path.as_posix(), src.line_of(fn.node), fn.name, is_sensitive(method, path), *auth_row, *authz, node=fn.node))
     return routes
 
 
@@ -314,7 +402,40 @@ def _aspnet(src: SourceFile, g: _Globals) -> list[Route]:
     return routes
 
 
-def discover_routes(files: list[SourceFile]) -> list[Route]:
+def _apply_markers(routes: list[Route], files: dict[str, SourceFile], markers: re.Pattern[str] | None) -> None:
+    """Spring 밖의 프레임워크: 인증 근거가 yes가 아닌 라우트에 예외 표지가 있으면 no로 적는다."""
+    if markers is None:
+        return
+    for r in routes:
+        if r.framework == "spring" or r.auth == "yes" or r.node is None:
+            continue
+        node = r.node
+        if getattr(node, "parent", None) is not None and node.parent.type == "decorated_definition":
+            node = node.parent
+        if markers.search(files[r.file].code_of(node)):
+            r.auth, r.auth_reason = "no", "로그인 검사 예외 표지가 있다"
+
+
+def _has_key_param(path: str, keys: tuple[str, ...]) -> bool:
+    """소속 키(tenancy.keys)를 경로 변수로 받는가: /payout/{mid}, /payout/:mid, /payout/<mid>"""
+    if not keys:
+        return False
+    return re.search(r"(\{|/:|<(?:\w+:)?)(?:" + "|".join(re.escape(k) for k in keys) + r")\b", path) is not None
+
+
+def _tenancy_authz(routes: list[Route], files: dict[str, SourceFile], keys: list[str] | tuple[str, ...]) -> None:
+    """소속 키를 경로 변수로 받는 라우트도 인가 판정 대상으로 본다. 추출기가 n/a로 둔 라우트만 다시 판정한다."""
+    keys = tuple(keys)
+    for r in routes:
+        if r.authz != "n/a" or r.node is None or not _has_key_param(r.path, keys):
+            continue
+        text = files[r.file].code_of(r.node)
+        r.authz, r.authz_reason = _authz(r.path, text, text, keys)
+
+
+def discover_routes(files: list[SourceFile], auth: AuthSettings | None = None, tenancy_keys: list[str] | tuple[str, ...] = ()) -> list[Route]:
+    auth = auth or AuthSettings()
+    markers = _marker_re(auth.exempt_markers)
     code = [f for f in files if f.lang is not None]
     g = _globals(code)
     views: dict[str, tuple[SourceFile, object]] = {}
@@ -334,7 +455,93 @@ def discover_routes(files: list[SourceFile]) -> list[Route]:
         elif f.lang in JS_FAMILY:
             routes += _express(f) + _nextjs(f, g)
         elif f.lang is Lang.JAVA:
-            routes += _spring(f, g)
+            routes += _spring(f, g, auth, markers)
         elif f.lang is Lang.CSHARP:
             routes += _aspnet(f, g)
+    by_file = {f.path.as_posix(): f for f in code}
+    _apply_markers(routes, by_file, markers)
+    _tenancy_authz(routes, by_file, tenancy_keys)
+    for r in routes:
+        r.kind = route_kind(r.path, r.handler)
     return sorted(routes, key=lambda r: (r.file, r.line, r.method))
+
+
+FLASK_ROUTE_CALL = re.compile(r"^@\s*(\w+)\.(route|get|post|put|patch|delete)\s*\(")
+
+
+def _flask_object_prefix(src: SourceFile, obj: str) -> str | None:
+    """데코레이터 객체의 경로 접두사. Flask 앱(대입 `Flask(...)` 또는 함수 매개변수)은 빈 접두사,
+    Blueprint는 생성자의 url_prefix 리터럴. register_blueprint로 접두사를 다시 주거나 접두사를 정할 수 없으면 None"""
+    if re.search(rf"register_blueprint\(\s*{re.escape(obj)}\b[^)]*url_prefix", src.code_text):
+        return None
+    for call in iter_calls(src):
+        parent = call.node.parent
+        if parent is None or parent.type != "assignment" or src.text_of(parent.child_by_field_name("left") or parent) != obj:
+            continue
+        if re.search(r"(^|\.)Flask$", call.callee):
+            return ""
+        if re.search(r"(^|\.)Blueprint$", call.callee):
+            prefix = next((a.child_by_field_name("value") for a in call.args if a.type == "keyword_argument" and src.text_of(a.child_by_field_name("name")) == "url_prefix"), None)
+            if prefix is None:
+                return ""
+            return string_value(src, prefix) if prefix.type == "string" and "{" not in src.text_of(prefix) else None
+        return None
+    return ""  # 앱을 매개변수로 받아 라우트를 등록하는 init(app) 꼴
+
+
+def flask_handler_paths(src: SourceFile, fn, depth: int = 0) -> list[str] | None:
+    """Flask 핸들러 함수(fn: function_definition 노드)를 등록한 모든 경로. 데코레이터 전부, 같은 파일의 add_url_rule,
+    Blueprint 접두사를 모은다. 다른 핸들러가 이 함수를 그대로 부르면 그 핸들러의 경로도 더한다.
+    핸들러가 아닌 함수에서 불리거나 경로가 리터럴이 아니거나 등록을 다 모으지 못하면 None"""
+    if depth > 3 or fn is None or fn.type != "function_definition":
+        return None
+    name_node = fn.child_by_field_name("name")
+    name = src.text_of(name_node) if name_node is not None else ""
+    paths: list[str] = []
+    holder = fn.parent
+    for decorator in holder.named_children if holder is not None and holder.type == "decorated_definition" else []:
+        if decorator.type != "decorator":
+            continue
+        m = FLASK_ROUTE_CALL.match(src.text_of(decorator))
+        if m is None:
+            continue
+        call = next((c for c in iter_calls(src) if decorator.start_byte <= c.node.start_byte and c.node.end_byte <= decorator.end_byte), None)
+        rule = call.args[0] if call is not None and call.args else None
+        prefix = _flask_object_prefix(src, m.group(1))
+        if rule is None or rule.type != "string" or "{" in src.text_of(rule) or prefix is None:
+            return None
+        paths.append(prefix.rstrip("/") + string_value(src, rule))
+    for call in iter_calls(src):
+        if call.callee.endswith(".add_url_rule"):
+            view = next((a.child_by_field_name("value") for a in call.args if a.type == "keyword_argument" and src.text_of(a.child_by_field_name("name")) == "view_func"), None)
+            positional = [a for a in call.args if a.type != "keyword_argument"]
+            view = view if view is not None else (positional[2] if len(positional) > 2 else None)
+            if view is None or src.text_of(view) != name:
+                continue
+            prefix = _flask_object_prefix(src, call.callee.rsplit(".", 1)[0])
+            if not positional or positional[0].type != "string" or prefix is None:
+                return None
+            paths.append(prefix.rstrip("/") + string_value(src, positional[0]))
+        elif call.callee == name:
+            from iron_laws.engine.ast_tools import enclosing_function
+
+            caller = enclosing_function(call.node, src.lang)
+            caller_paths = flask_handler_paths(src, caller, depth + 1) if caller is not None and caller.id != fn.id else None
+            if caller_paths is None:
+                return None
+            paths.extend(caller_paths)
+    return paths or None
+
+
+def route_segment_value(src: SourceFile, fn, index: int) -> str | None:
+    """핸들러를 등록한 모든 경로에서 request.path.split('/')[index]가 같은 리터럴이면 그 값"""
+    paths = flask_handler_paths(src, fn)
+    if not paths:
+        return None
+    values = set()
+    for path in paths:
+        parts = path.split("/")
+        if not -len(parts) <= index < len(parts) or any("<path:" in p for p in parts[: index + 1] if index >= 0) or "<" in parts[index]:
+            return None
+        values.add(parts[index])
+    return values.pop() if len(values) == 1 else None

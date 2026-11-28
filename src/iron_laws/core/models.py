@@ -70,7 +70,7 @@ class StandardRef(BaseModel):
 class EvidenceStep(BaseModel):
     """판단 근거의 한 단계. 입력 유입 → 전파 → 싱크 순서로 위치와 변수 이름만 담는다 (코드 원문과 비밀값은 담지 않는다)"""
 
-    role: str = Field(..., description="source(입력 유입) / propagation(전파) / sink(위험 지점)")
+    role: str = Field(..., description="source(입력 유입) / propagation(전파) / guard(만난 검사 분기) / sink(위험 지점)")
     file_path: str
     line: int
     note: str = ""
@@ -211,6 +211,7 @@ class ScanCost(BaseModel):
     phase_seconds: dict[str, float] = Field(default_factory=dict)
     budget_seconds: float | None = None
     budget_exceeded: bool = False
+    counters: dict[str, int] = Field(default_factory=dict)  # 매퍼 문장 수·미해석 매퍼 호출 수 같은 분석 규모
 
 
 class ExecutionRecord(BaseModel):
@@ -228,6 +229,7 @@ class ExecutionRecord(BaseModel):
     error_diagnostics: int
     cross_file_limit_hits: int = 0
     cost: ScanCost | None = None
+    reference_data: dict[str, str] = Field(default_factory=dict)  # 판정에 쓴 외부 자료(지원 종료 자료 등)의 기준일과 지문
 
 
 class ApprovalCheck(BaseModel):
@@ -265,7 +267,7 @@ class CoverageLedger(BaseModel):
     limitations: list[str] = Field(default_factory=list)
 
 
-REPORT_SCHEMA_VERSION = "1.8"
+REPORT_SCHEMA_VERSION = "1.9"
 
 
 class AuditReport(BaseModel):

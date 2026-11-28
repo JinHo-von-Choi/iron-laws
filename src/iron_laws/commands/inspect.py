@@ -141,13 +141,14 @@ def index_build_command(
 
 @index_app.command("fetch")
 def index_fetch_command(
-    ecosystem: str = typer.Option(..., "--ecosystem", help="npm 또는 pypi"),
+    ecosystem: str | None = typer.Option(None, "--ecosystem", help="npm 또는 pypi"),
     out: Path = typer.Option(..., "--out", help="색인 폴더(manifest.json과 압축 목록을 쓴다)"),
     timeout: float = typer.Option(600, "--timeout", min=1, help="요청 제한 시간(초)"),
+    eol: bool = typer.Option(False, "--eol", help="패키지 이름 색인 대신 지원 종료 자료(endoflife.date 제품별 주기)를 받습니다. policies.eol_db에 이 폴더를 적습니다"),
 ):
     """
-    레지스트리의 전체 이름 목록을 내려받아 오프라인 색인으로 만듭니다. 이 명령만 네트워크를 씁니다(pypi는 수십 MB, npm은 수백 MB).
-    목록이 끝까지 오지 않았으면 색인을 만들지 않습니다. 코드와 의존성 정보는 보내지 않습니다.
+    레지스트리의 전체 이름 목록(또는 --eol이면 지원 종료 자료)을 내려받아 오프라인 자료로 만듭니다. 이 명령만 네트워크를 씁니다(pypi는 수십 MB, npm은 수백 MB).
+    목록이 끝까지 오지 않았으면 자료를 만들지 않습니다. 코드와 의존성 정보는 보내지 않습니다.
     """
     import tempfile
     from datetime import UTC, datetime
@@ -156,6 +157,19 @@ def index_fetch_command(
     from iron_laws.deps.package_index import PackageIndexError, build_index
 
     collected = datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    if eol:
+        from iron_laws.deps.eol import EolDataError, fetch_eol_data
+
+        try:
+            manifest = fetch_eol_data(out, collected, timeout=timeout)
+        except (OSError, ValueError, EolDataError) as e:
+            err.print(f"[bold red]지원 종료 자료를 만들지 못했습니다: {escape(str(e))}[/bold red]")
+            raise typer.Exit(2) from e
+        typer.echo(f"지원 종료 자료: 제품 {len(manifest['products'])}개, 수집 {collected}, sha256 {manifest['sha256'][:16]}")
+        return
+    if ecosystem is None:
+        err.print("[bold red]--ecosystem(npm 또는 pypi)이나 --eol 가운데 하나를 지정하세요.[/bold red]")
+        raise typer.Exit(2)
     with tempfile.TemporaryDirectory() as tmp:
         source = Path(tmp) / "names.txt"
         try:
@@ -186,42 +200,118 @@ def mcp_command(
         raise typer.Exit(2) from e
 
 
+ROUTE_COLUMNS = ("framework", "method", "path", "file", "line", "handler", "kind", "sensitive", "auth", "auth_reason", "authz", "authz_reason")
+
+
 @app.command("routes")
 def routes_command(
     path: Path = PathArg,
-    fmt: str = typer.Option("table", "--format", help="table 또는 json"),
+    fmt: str = typer.Option("table", "--format", help="table, json, csv"),
     sensitive_only: bool = typer.Option(False, "--sensitive", help="중요 기능 라우트(데이터 변경·관리·개인정보·결제)만 보입니다"),
+    auth_filter: str | None = typer.Option(None, "--auth", help="인증 판정이 이 값(yes·no·unknown)인 라우트만 보입니다"),
     config: Path | None = ConfigOpt,
 ):
     """
-    웹 라우트의 접근통제 행렬을 보여 줍니다: 프레임워크, 메서드, 경로, 인증(yes/no/unknown), 인가(yes/no/unknown/n/a)와 근거.
-    unknown은 안전하다는 뜻이 아니라 전역 설정이 이 경로에 적용되는지 정할 수 없다는 뜻입니다.
+    웹 라우트의 접근통제 행렬을 보여 줍니다: 프레임워크, 메서드, 경로, 종류(auth_flow·admin·normal), 인증(yes/no/unknown), 인가(yes/no/unknown/n/a)와 근거.
+    unknown은 안전하다는 뜻이 아니라 전역 설정이 이 경로에 적용되는지 정할 수 없다는 뜻입니다. 시험 파일의 라우트는 넣지 않습니다.
     """
+    import csv
+    import io
+
     from rich.table import Table
 
     from iron_laws.core.scanner import AuditScanner
     from iron_laws.engine.routes import discover_routes
 
-    if fmt not in ("table", "json"):
-        err.print("[bold red]--format은 table 또는 json이어야 합니다.[/bold red]")
+    if fmt not in ("table", "json", "csv"):
+        err.print("[bold red]--format은 table, json, csv 가운데 하나여야 합니다.[/bold red]")
+        raise typer.Exit(2)
+    if auth_filter is not None and auth_filter not in ("yes", "no", "unknown"):
+        err.print("[bold red]--auth는 yes, no, unknown 가운데 하나여야 합니다.[/bold red]")
         raise typer.Exit(2)
     try:
         scanner = AuditScanner(path, config_path=config) if config else AuditScanner(path)
     except ConfigError as e:
         err.print(f"[bold red]설정 오류: {escape(str(e))}[/bold red]")
         raise typer.Exit(2) from e
-    rows = [r.as_row() for r in discover_routes(scanner._read_sources()) if r.sensitive or not sensitive_only]
+    sources = [s for s in scanner._read_sources() if s.lang is not None and not s.is_test]
+    found = discover_routes(sources, scanner.config.auth, scanner.config.tenancy.keys)
+    rows = [r.as_row() for r in found if (r.sensitive or not sensitive_only) and (auth_filter is None or r.auth == auth_filter)]
     if fmt == "json":
         typer.echo(json.dumps(rows, ensure_ascii=False, indent=2))
         return
+    if fmt == "csv":
+        buffer = io.StringIO()
+        writer = csv.DictWriter(buffer, fieldnames=list(ROUTE_COLUMNS), lineterminator="\n")
+        writer.writeheader()
+        writer.writerows(rows)
+        typer.echo(buffer.getvalue(), nl=False)
+        return
     table = Table(title="[라우트 접근통제 행렬]", expand=True)
-    for column in ("메서드", "경로", "위치", "중요", "인증", "인가", "근거"):
+    for column in ("메서드", "경로", "위치", "종류", "중요", "인증", "인가", "근거"):
         table.add_column(column)
     style = {"yes": "green", "no": "red", "unknown": "yellow", "n/a": "dim"}
     for r in rows:
-        table.add_row(r["method"], escape(r["path"]), f"{escape(r['file'])}:{r['line']}", "예" if r["sensitive"] else "",
+        table.add_row(r["method"], escape(r["path"]), f"{escape(r['file'])}:{r['line']}", r["kind"], "예" if r["sensitive"] else "",
                       f"[{style[r['auth']]}]{r['auth']}[/{style[r['auth']]}]", f"[{style[r['authz']]}]{r['authz']}[/{style[r['authz']]}]",
                       escape(r["auth_reason"] + " / " + r["authz_reason"]))
+    from iron_laws.commands.common import console
+
+    console.print(table)
+
+
+TENANCY_COLUMNS = ("mapper", "statement", "kind", "tables", "key_column", "binding", "source", "call", "verdict")
+
+
+@app.command("tenancy")
+def tenancy_command(
+    path: Path = PathArg,
+    fmt: str = typer.Option("table", "--format", help="table, json, csv"),
+    config: Path | None = ConfigOpt,
+):
+    """
+    MyBatis 매퍼 문장(호출 위치)별 소속 확인 표를 보여 줍니다: 테이블, 소속 열 유무(where·optional·missing), 바인딩, 값의 출처(principal·request·unknown), 판정.
+    설정 파일의 tenancy 절(keys, principal, tables)이 있어야 판정합니다. 종료코드: 0 표 출력, 2 입력 오류 또는 tenancy 미설정.
+    """
+    import csv
+    import io
+
+    from rich.table import Table
+
+    from iron_laws.core.scanner import AuditScanner
+    from iron_laws.engine.project import ProjectContext
+    from iron_laws.rules.ai_code_tenancy import tenancy_rows
+
+    if fmt not in ("table", "json", "csv"):
+        err.print("[bold red]--format은 table, json, csv 가운데 하나여야 합니다.[/bold red]")
+        raise typer.Exit(2)
+    try:
+        scanner = AuditScanner(path, config_path=config) if config else AuditScanner(path)
+    except ConfigError as e:
+        err.print(f"[bold red]설정 오류: {escape(str(e))}[/bold red]")
+        raise typer.Exit(2) from e
+    if not scanner.config.tenancy.active:
+        err.print("[bold red]설정 파일에 tenancy.keys와 tenancy.principal을 적어야 소속 확인 표를 만들 수 있습니다.[/bold red]")
+        raise typer.Exit(2)
+    project = ProjectContext(root=scanner.root_path, files=scanner._read_sources(), config=scanner.config)
+    rows = [row.as_row() for row, _src, _node in tenancy_rows(project)]
+    if fmt == "json":
+        typer.echo(json.dumps(rows, ensure_ascii=False, indent=2))
+        return
+    if fmt == "csv":
+        buffer = io.StringIO()
+        writer = csv.DictWriter(buffer, fieldnames=list(TENANCY_COLUMNS), lineterminator="\n")
+        writer.writeheader()
+        writer.writerows(rows)
+        typer.echo(buffer.getvalue(), nl=False)
+        return
+    table = Table(title="[조회문별 소속 확인 표]", expand=True)
+    for column in ("매퍼 문장", "종류", "테이블", "소속 열", "바인딩", "값 출처", "호출 위치", "판정"):
+        table.add_column(column)
+    style = {"ok": "green", "violation": "red", "review": "yellow", "n/a": "dim"}
+    for r in rows:
+        table.add_row(escape(f"{r['mapper']}.{r['statement']}"), r["kind"], escape(r["tables"]), r["key_column"], escape(r["binding"]), r["source"],
+                      escape(r["call"]), f"[{style[r['verdict']]}]{r['verdict']}[/{style[r['verdict']]}]")
     from iron_laws.commands.common import console
 
     console.print(table)
@@ -311,9 +401,10 @@ def spec_draft_command(
     llm_cmd: str | None = typer.Option(None, "--llm-cmd", help="초안 보강에 쓸 LLM 명령(표준 입력으로 지시문을 받아 YAML을 출력). 예: \"claude -p\". 지정하지 않으면 코드 분석 후보만 씁니다"),
 ):
     """
-    코드에서 소스·싱크·정제 함수 후보를 찾아 명세 초안을 만듭니다. 코드에서 찾은 후보의 예제(positive·negative)는 비어 있으며,
+    코드에서 소스·싱크·정제 함수 후보와 외부 패키지 호출 후보(candidates)를 찾아 명세 초안을 만듭니다. 코드에서 찾은 후보의 예제(positive·negative)는 비어 있으며,
     사람이 검토해 채우고 `iron-laws spec check`가 통과해야 설정 policies.custom_spec으로 불러올 수 있습니다.
-    --llm-cmd의 제안은 LLM이 낸 예제로 바로 판정해, 어긋나면 rejected로 빼고 정제 함수는 예제가 맞아도 사람 확인을 남깁니다.
+    --llm-cmd는 외부 호출 후보가 있는 계열마다 따로 묻습니다. 제안은 LLM이 낸 예제로 바로 판정해, 어긋나면 rejected로 빼고
+    지적을 낮추는 항목(정제·검사 함수, 정규화 요약)은 예제가 맞아도 사람 확인을 남깁니다.
     """
     import shlex
     import subprocess
@@ -327,15 +418,19 @@ def spec_draft_command(
     draft = build_draft(sources)
     if llm_cmd:
         lessons = experience_lessons(families={"command", "path", "sql", "code"})
-        try:
-            done = subprocess.run(shlex.split(llm_cmd), input=llm_prompt(draft, sources, lessons=lessons), capture_output=True, text=True, timeout=600)
-        except (OSError, subprocess.SubprocessError) as e:
-            err.print(f"[bold red]LLM 명령을 실행하지 못했습니다: {escape(str(e))}[/bold red]")
-            raise typer.Exit(2) from e
-        added = merge_llm(draft, done.stdout)
+        # 외부 호출 후보가 있는 계열(CWE)마다 따로 묻고, 후보가 없으면 한 번만 묻는다
+        families = sorted(draft.get("candidates") or {}) or [None]
+        added = 0
+        for family in families:
+            try:
+                done = subprocess.run(shlex.split(llm_cmd), input=llm_prompt(draft, sources, lessons=lessons, family=family), capture_output=True, text=True, timeout=600)
+            except (OSError, subprocess.SubprocessError) as e:
+                err.print(f"[bold red]LLM 명령을 실행하지 못했습니다: {escape(str(e))}[/bold red]")
+                raise typer.Exit(2) from e
+            added += merge_llm(draft, done.stdout)
         checked = check_llm_entries(draft)
         err.print(
-            f"[dim]LLM 제안 {added}건: 예제 통과 {checked['passed']}, 정제 함수라 사람 확인 필요 {checked['needs_review']}, "
+            f"[dim]LLM 제안 {added}건: 예제 통과 {checked['passed']}, 지적을 낮추는 항목이라 사람 확인 필요 {checked['needs_review']}, "
             f"예제 불일치로 제외 {checked['rejected']}(rejected 목록). 통과한 항목도 사람이 검토해야 합니다.[/dim]"
         )
     text = "# 오철칙 사용자 명세 초안: 각 항목을 검토하고 positive(지적되어야 하는 코드)·negative(지적되지 않아야 하는 코드)를 채우십시오.\n"

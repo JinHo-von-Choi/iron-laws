@@ -3,6 +3,7 @@
 형식마다 알 수 있는 것이 다르다. 알 수 없으면 직접·전이를 None(불명)으로 둔다. 추정하지 않는다.
 - uv.lock, poetry.lock(+pyproject.toml), package-lock.json(v1~v3), pnpm-lock.yaml: 버전 + 직접·전이 + 그래프
 - requirements*.txt(`==`로 고정한 줄): 버전만(그래프 없음)
+- pom.xml, build.gradle(.kts), gradle/libs.versions.toml: Maven 직접 의존성의 버전만(잠금 파일이 없어 전이 의존성은 알 수 없다)
 작성자: 최진호
 작성일: 2026-10-05
 """
@@ -14,7 +15,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from iron_laws.deps.graph import build_graph
-from iron_laws.deps.manifests import REQ_LINE, pyproject_direct
+from iron_laws.deps.manifests import (
+    REQ_LINE,
+    parse_gradle,
+    parse_pom,
+    parse_version_catalog,
+    pyproject_direct,
+)
 from iron_laws.deps.versions import normalize_name
 
 LOCK_FILE_NAMES = ("uv.lock", "poetry.lock", "package-lock.json", "pnpm-lock.yaml")
@@ -98,6 +105,31 @@ def parse_requirements(path: Path) -> LockInfo:
     return LockInfo(path.as_posix(), "requirements", "PyPI", list(packages.values()), {"versions": True, "direct_transitive": False, "graph": False}, ["requirements 파일에는 의존 관계가 없어 직접·전이를 알 수 없습니다."])
 
 
+MAVEN_NOTE = "직접 의존성만 확인했습니다. 전이 의존성은 확인하지 않았습니다(Maven·Gradle은 잠금 파일이 없습니다)."
+MAVEN_MANIFESTS = ("pom.xml", "build.gradle", "build.gradle.kts", "libs.versions.toml")
+
+
+def parse_maven_manifest(path: Path) -> LockInfo:
+    text = path.read_text(encoding="utf-8", errors="replace")
+    if path.name == "pom.xml":
+        parent, deps = parse_pom(text)
+        if parent is not None:
+            deps = [parent, *deps]
+    elif path.name == "libs.versions.toml":
+        deps = parse_version_catalog(text)
+    else:
+        deps = parse_gradle(text)
+    packages: dict[str, Package] = {}
+    skipped = 0
+    for d in deps:
+        if not d.version:
+            skipped += 1
+            continue
+        packages.setdefault(f"{d.coordinate}@{d.version}", Package("Maven", d.coordinate, d.version, direct=True, dev=d.scope == "test", source_file=path.name))
+    notes = [MAVEN_NOTE] + ([f"버전을 정하지 못한 의존성 {skipped}개는 점검하지 않았습니다(BOM·플러그인이 관리하는 버전)."] if skipped else [])
+    return LockInfo(path.as_posix(), path.name, "Maven", list(packages.values()), {"versions": True, "direct_transitive": False, "graph": False}, notes)
+
+
 def _from_graph(path: Path, kind: str, caps: dict[str, bool], notes: list[str] | None = None) -> LockInfo:
     """버전 단위 그래프(graph.py)로 패키지 목록과 부모(이 패키지를 의존으로 가진 패키지 이름)를 만든다. 같은 이름의 여러 버전은 각각 둔다."""
     graph = build_graph(path)
@@ -136,7 +168,7 @@ def find_lock_files(root: Path) -> list[Path]:
     for path in sorted(root.rglob("*")):
         if any(part in SKIP_DIRS for part in path.relative_to(root).parts[:-1]) or not path.is_file():
             continue
-        if path.name in PARSERS or re.fullmatch(r"requirements.*\.txt", path.name):
+        if path.name in PARSERS or path.name in MAVEN_MANIFESTS or re.fullmatch(r"requirements.*\.txt", path.name):
             found.append(path)
     return found
 
@@ -146,4 +178,6 @@ def parse_lock(path: Path) -> LockInfo:
         return PARSERS[path.name](path)
     if re.fullmatch(r"requirements.*\.txt", path.name):
         return parse_requirements(path)
+    if path.name in MAVEN_MANIFESTS:
+        return parse_maven_manifest(path)
     raise ValueError(f"지원하지 않는 파일입니다: {path.name}")

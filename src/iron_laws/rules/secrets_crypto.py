@@ -18,7 +18,9 @@ from iron_laws.engine.ast_tools import (
     iter_functions,
     string_value,
 )
+from iron_laws.engine.java_config import config_values, properties_index, property_defaults
 from iron_laws.engine.languages import Lang
+from iron_laws.engine.project import ProjectContext
 from iron_laws.engine.source import SourceFile
 from iron_laws.rules.base import BaseRule
 from iron_laws.rules.sinks import CS, GO, JAVA, JS, PHP, PY, Sink
@@ -302,7 +304,7 @@ class LineRegexRule(BaseRule):
 
 
 class InsecureCryptoRule(BaseRule):
-    version = 2
+    version = 3
     rule_id = "IL-102"
     name = "취약한 암호 알고리즘 사용 금지"
     iron_law = IronLaw.LAW_1
@@ -334,10 +336,24 @@ class InsecureCryptoRule(BaseRule):
                 best = fn.name
         return best
 
+    @staticmethod
+    def _blank_nodes(lines: list[str], nodes: list) -> list[str]:
+        """한 줄짜리 노드들의 글자를 공백으로 지운 줄 목록"""
+        out = list(lines)
+        for n in nodes:
+            row, (c0, c1) = n.start_point[0], (n.start_point[1], n.end_point[1])
+            if row < len(out):
+                raw = out[row].encode("utf-8")
+                out[row] = (raw[:c0] + b" " * (c1 - c0) + raw[c1:]).decode("utf-8", errors="replace")
+        return out
+
     def check(self, src: SourceFile) -> list[Violation]:
         found = []
         lines = src.code_lines
         bare_lines = src.code_text_without_strings.splitlines() if src.root is not None else lines
+        if src.lang is Lang.JAVA and src.root is not None:
+            # getProperty(키, 기본값)의 기본값은 쓰이는 알고리즘이 아니다. 실제 값은 getInstance 인자를 설정 파일로 풀어 check_project가 판정한다
+            lines = self._blank_nodes(lines, property_defaults(src))
         for idx, line in enumerate(lines, start=1):
             if self.skip_line.search(line):
                 continue
@@ -359,6 +375,50 @@ class InsecureCryptoRule(BaseRule):
                             confidence=Confidence.REVIEW,
                         )
                     )
+        return found
+
+
+    ALGORITHM_CALL_RE = re.compile(r"^(?:javax\.crypto\.|java\.security\.)?(Cipher|MessageDigest|Mac|KeyGenerator|SecretKeyFactory|Signature)\.getInstance$")
+
+    def _weak_kind(self, value: str) -> str | None:
+        if self.cipher_re.search(value) or self.quoted_cipher_re.search(f'"{value}"'):
+            return "cipher"
+        if self.ecb_re.search(value):
+            return "ecb"
+        if self.hash_re.search(value):
+            return "hash"
+        return None
+
+    def check_project(self, project: ProjectContext) -> list[Violation]:
+        """Java의 getInstance 알고리즘 인자가 설정 파일 값(Properties, Spring @Value)이면 실제 값을 찾아 판정한다.
+        저장소의 리소스 파일과 코드로 값이 정해지면 확정, 기본값인지 알 수 없거나 외부 설정이 덮어쓸 수 있으면 확인 필요"""
+        java = [f for f in project.source_files(include_tests=self.include_tests) if f.lang is Lang.JAVA]
+        if not java:
+            return []
+        props = properties_index(project.files)
+        found = []
+        for src in java:
+            if src.root is None:
+                continue
+            for call in iter_calls(src):
+                if not self.ALGORITHM_CALL_RE.match(call.callee) or not call.args or call.args[0].type == "string_literal":
+                    continue
+                values = config_values(src, call.args[0], props)
+                weak = [(v, kind) for v in values or [] if (kind := self._weak_kind(v.value))]
+                if not weak:
+                    continue
+                confirmed = all(v.confirmed for v, _ in weak) and len(values or []) == len(weak)
+                value, kind = weak[0]
+                line = src.line_of(call.node)
+                where = ", ".join(sorted({f"{v.origin}={v.value}" for v, _ in weak}))
+                if kind == "hash" and not self.security_context.search(src.code_lines[line - 1] + " " + self._function_name_at(src, line)):
+                    confirmed = False
+                subject = {"cipher": "취약한 대칭키 암호", "ecb": "ECB 운용 모드", "hash": "취약한 해시(MD4/MD5/SHA-1)"}[kind]
+                found.append(self.at_node(
+                    src, call.node, f"{call.callee}에 설정 값으로 {subject}가 쓰입니다({where}). 설정 파일의 값을 AES-GCM·SHA-256 이상으로 바꾸십시오.",
+                    confidence=Confidence.CONFIRMED if confirmed else Confidence.REVIEW,
+                    severity=Severity.CRITICAL if confirmed else Severity.MEDIUM,
+                ))
         return found
 
 

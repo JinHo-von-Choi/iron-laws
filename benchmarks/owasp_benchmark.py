@@ -3,8 +3,10 @@ OWASP Benchmark(Java) 정확도 측정 도구
 
 사용법:
     git clone --depth 1 https://github.com/OWASP-Benchmark/BenchmarkJava.git
-    uv run python benchmarks/owasp_benchmark.py BenchmarkJava [all|confirmed] [원시결과.json]
+    uv run python benchmarks/owasp_benchmark.py BenchmarkJava [all|confirmed] [원시결과.json] [--testcode-only]
 
+저장소 루트를 점검해 도우미 클래스(helpers)와 설정 파일(src/main/resources)까지 분석하고, 채점은 testcode 아래 사례 파일만 한다.
+--testcode-only는 예전 측정 방식(testcode 폴더만 점검)이다. 두 방식의 사례별 결과를 비교할 때 쓴다.
 confirmed는 외부 입력 도달이 코드에서 확인된 지적(확정)만, all은 확인 필요 지적까지 포함한다.
 사례 대응과 집계는 bench_common.py를 따른다. 분석하지 못한 파일은 TN·FN이 아니라 분석 불가로 따로 센다.
 벤치마크 코드는 저장소에 포함하지 않는다.
@@ -62,10 +64,14 @@ def load_expected(root: Path) -> dict[str, tuple[str, bool]]:
     return expected
 
 
-def load_cases(root: Path) -> list[Case]:
-    """벤치마크 사례 하나는 파일 하나다(BenchmarkTestNNNNN.java)."""
+TESTCODE = "src/main/java/org/owasp/benchmark/testcode"
+
+
+def load_cases(root: Path, prefix: str = TESTCODE) -> list[Case]:
+    """벤치마크 사례 하나는 파일 하나다(BenchmarkTestNNNNN.java). prefix는 점검 루트에서 사례 폴더까지의 상대 경로다"""
+    folder = f"{prefix}/" if prefix else ""
     return [
-        Case(test, f"{test}.java", category, real, frozenset(CATEGORY_RULES.get(category, set())), CATEGORY_CWE.get(category, ""))
+        Case(test, f"{folder}{test}.java", category, real, frozenset(CATEGORY_RULES.get(category, set())), CATEGORY_CWE.get(category, ""))
         for test, (category, real) in load_expected(root).items()
     ]
 
@@ -77,21 +83,23 @@ def dataset_commit(root: Path) -> str:
         return "(git 정보 없음)"
 
 
-def main(root: Path, mode: str, raw_output: Path | None = None) -> None:
-    code = root / "src/main/java/org/owasp/benchmark/testcode"
-    report = AuditScanner(code).scan()
-    scored = score(load_cases(root), report, code, confirmed_only=mode == "confirmed")
+def main(root: Path, mode: str, raw_output: Path | None = None, testcode_only: bool = False) -> None:
+    scan_root = root / TESTCODE if testcode_only else root
+    report = AuditScanner(scan_root).scan()
+    scored = score(load_cases(root, "" if testcode_only else TESTCODE), report, scan_root, confirmed_only=mode == "confirmed")
 
     commit = dataset_commit(root)
     print(f"도구 {tool_version()} · 벤치마크 커밋 {commit}")
-    print(f"파일 {report.summary.total_files_scanned}개, 모드 {mode}")
+    print(f"파일 {report.summary.total_files_scanned}개, 모드 {mode}, 점검 루트 {'testcode' if testcode_only else '저장소'}")
     raw: dict = {
         "tool_version": tool_version(),
         "dataset_commit": commit,
         "mode": mode,
-        "command": f"benchmarks/owasp_benchmark.py <BenchmarkJava 폴더> {mode}",
+        "command": f"benchmarks/owasp_benchmark.py <BenchmarkJava 폴더> {mode}" + (" --testcode-only" if testcode_only else ""),
+        "scan_root": TESTCODE if testcode_only else ".",
         "files": report.summary.total_files_scanned,
         "categories": scored.table(),
+        "outcomes": dict(sorted(scored.outcomes.items())),
     }
     for category, row in raw["categories"].items():
         tpr, fpr = row["TPR"], row["FPR"]
@@ -104,4 +112,5 @@ def main(root: Path, mode: str, raw_output: Path | None = None) -> None:
 
 
 if __name__ == "__main__":
-    main(Path(sys.argv[1]), sys.argv[2] if len(sys.argv) > 2 else "confirmed", Path(sys.argv[3]) if len(sys.argv) > 3 else None)
+    args = [a for a in sys.argv[1:] if a != "--testcode-only"]
+    main(Path(args[0]), args[1] if len(args) > 1 else "confirmed", Path(args[2]) if len(args) > 2 else None, "--testcode-only" in sys.argv)

@@ -17,9 +17,9 @@ import shlex
 import subprocess
 from pathlib import Path
 
-from iron_laws.core.masking import mask_secrets
+from iron_laws.core.masking import mask_code_secrets, mask_secrets
 from iron_laws.core.models import AuditReport, Confidence, Violation
-from iron_laws.core.redaction import redact_text
+from iron_laws.core.redaction import collect_named_secrets, redact_text
 from iron_laws.engine.taint.sanitizers import SANITIZER_FN_RE
 
 VERDICTS = {"likely_true", "likely_false", "unsure"}
@@ -34,6 +34,12 @@ MAX_FINDINGS = 30
 WINDOW = 8
 
 
+def _with_named_secrets(body: str, secrets: set[str]) -> set[str]:
+    """스캐너가 비밀로 판정한 값에 더해, 보낼 코드 안에서 비밀 이름(password·token·api_key 등)에 대입된 따옴표 값"""
+    named = {value for line in body.splitlines() for value in collect_named_secrets(line)}
+    return secrets | named if named else secrets
+
+
 def _window(root: Path, rel: str, line: int, secrets: set[str]) -> str:
     try:
         lines = (root / rel).read_text(encoding="utf-8", errors="replace").splitlines()
@@ -41,7 +47,7 @@ def _window(root: Path, rel: str, line: int, secrets: set[str]) -> str:
         return ""
     start, end = max(0, line - 1 - WINDOW), min(len(lines), line + WINDOW)
     body = "\n".join(f"{i + 1:5d}| {lines[i]}" for i in range(start, end))
-    return mask_secrets(redact_text(body, secrets))
+    return mask_code_secrets(redact_text(body, _with_named_secrets(body, secrets)))
 
 
 CRITERIA: dict[int, str] = {
@@ -54,6 +60,13 @@ CRITERIA: dict[int, str] = {
     94: "코드 삽입: 값이 `eval`·`exec`·동적 코드 평가에 들어가면 위험이다. 값이 상수이거나 `ast.literal_eval` 같은 안전한 해석기를 쓰면 오탐이다.",
     95: "코드 삽입: 값이 `eval`·`exec`·동적 코드 평가에 들어가면 위험이다. 값이 상수이거나 `ast.literal_eval` 같은 안전한 해석기를 쓰면 오탐이다.",
     90: "LDAP 삽입: 값이 LDAP 필터·DN 문자열에 들어가면 위험이다. LDAP 이스케이프 함수를 거치거나 값이 상수이면 오탐이다. 정규식 검색(`re.search`)처럼 LDAP과 무관한 호출이면 오탐이다.",
+    306: "인증 누락: 로그인하지 않은 요청이 로그인 상태를 만들거나 중요 기능을 실행하면 위험이다. 세션 저장 앞의 모든 갈래에서 비밀번호 대조·서명 토큰 검증이 성공해야 하고, 그 검증이 저장하는 사용자와 같은 사용자에 대한 것이어야 오탐이다.",
+    287: "부적절한 인증: 아이디나 재사용 가능한 토큰만으로 사용자를 확정하면 위험이다. 비밀번호·서명·만료·1회 사용을 확인하면 오탐이다.",
+    307: "인증 시도 제한: 실패 횟수·잠금이 없거나, 다른 주소가 실패 기록을 초기화하면 위험이다. 초기화가 비밀번호 대조 성공 분기나 권한을 확인한 관리자 잠금 해제 안에만 있으면 오탐이다.",
+    639: "사용자가 정한 키로 우회: 요청 값으로 다른 사용자·소속의 데이터를 고르면 위험이다. 조회 조건이 로그인 사용자의 식별자·소속으로 고정되면 오탐이다.",
+    200: "민감 정보 노출: 비밀번호·비밀키·연동키 원문이 응답이나 화면에 담기면 위험이다. 마스킹했거나 발급 직후 한 번만 보여 주는 흐름이면 오탐이다.",
+    352: "요청 위조(CSRF): GET 요청이나 CSRF 토큰 없는 요청이 상태를 바꾸면 위험이다. POST·PUT·DELETE이고 CSRF 토큰을 확인하면 오탐이다.",
+    770: "자원 한도 없음: 요청 값이 조회 건수·반복 횟수를 정하는데 상한이 없으면 위험이다. 서버가 정한 상한으로 자른 값이 쓰이면 오탐이다.",
     502: "역직렬화: 신뢰할 수 없는 바이트를 `pickle`·`yaml.load`·`ObjectInputStream`으로 읽으면 위험이다. `yaml.safe_load`, 서명 검증된 데이터, 자기 프로세스가 만든 데이터이면 오탐이다.",
 }
 
@@ -68,6 +81,37 @@ def _cwes(violation: Violation) -> list[int]:
     return list(dict.fromkeys(found))
 
 
+# 인증 흐름·소속 경계 지적은 위험 호출 한 줄보다 핸들러 전체가 판단 근거다
+HANDLER_CONTEXT_RULES = frozenset({"IL-534", "IL-535", "IL-512", "AI-129", "AI-123"})
+RULE_QUESTIONS = {
+    "IL-534": "이 핸들러가 로그인 상태를 만들기 전에 무엇(비밀번호 대조, 서명 토큰 검증, 2단계 인증)을 확인하는가? 확인하는 호출이 있으면 그 줄 번호를 basis.line에 적어라.",
+    "IL-535": "실패 횟수·잠금 초기화가 비밀번호 대조 성공 뒤에만 실행되는가?",
+    "IL-512": "인증번호를 받는 사용자가 1단계 로그인을 마친 세션의 사용자인가, 요청 값인가?",
+    "AI-129": "조회 조건의 소속 값이 로그인 사용자에게서 오는가, 요청 값에서 오는가?",
+}
+MAX_HANDLER_LINES = 120
+
+
+def handler_context(root: Path, rel: str, line: int, secrets: set[str]) -> str:
+    """지적 줄을 감싼 함수 전체(최대 120줄). 함수를 찾지 못하면 빈 글이다."""
+    from iron_laws.engine.ast_tools import enclosing_function
+    from iron_laws.engine.source import SourceFile
+
+    try:
+        text = (root / rel).read_text(encoding="utf-8", errors="replace")
+    except OSError:  # iron-laws: ignore[IL-301] 읽을 수 없는 파일은 주변 줄만 보낸다
+        return ""
+    src = SourceFile(Path(rel), text)
+    target = next((n for n in src.nodes if n.start_point[0] + 1 == line and n.named_child_count == 0), None)
+    fn = enclosing_function(target, src.lang) if target is not None else None
+    if fn is None:
+        return ""
+    start, end = fn.start_point[0], min(fn.end_point[0], fn.start_point[0] + MAX_HANDLER_LINES - 1)
+    lines = text.splitlines()
+    body = "\n".join(f"{i + 1:5d}| {lines[i]}" for i in range(start, min(end + 1, len(lines))))
+    return mask_code_secrets(redact_text(body, _with_named_secrets(body, secrets)))
+
+
 def criteria_for(violation: Violation) -> str:
     """지적의 CWE에 맞는 판정 기준. 기준이 없는 규칙은 빈 글이다."""
     for cwe in _cwes(violation):
@@ -80,7 +124,7 @@ def flow_lines(violation: Violation) -> str:
     """엔진이 확인한 입력 유입 → 전파 → 싱크 위치. 코드 원문은 담지 않는다."""
     if not violation.evidence:
         return ""
-    labels = {"source": "입력", "propagation": "전파", "sink": "싱크"}
+    labels = {"source": "입력", "propagation": "전파", "guard": "검사", "sink": "싱크"}
     steps = [f"{labels.get(s.role, s.role)} {s.file_path}:{s.line}" + (f"({s.note})" if s.note else "") for s in violation.evidence[:8]]
     return " → ".join(steps)
 
@@ -108,13 +152,33 @@ def precedent_notes(root: Path, rule_ids: set[str], lessons: dict[str, list[str]
     return notes
 
 
+PER_RULE_SAMPLE = 2
+
+
+def select_findings(report: AuditReport) -> list[Violation]:
+    """검토 의견을 물을 확인 필요 지적: 앞의 MAX_FINDINGS건에 규칙마다 고른 표본(앞에 들지 못한 규칙의 지적 최대 PER_RULE_SAMPLE건)을 더한다.
+    한 규칙의 지적이 많아도 다른 규칙이 표본에서 빠지지 않게 하려는 것이다"""
+    review = [v for v in report.violations if v.confidence is Confidence.REVIEW]
+    picks = review[:MAX_FINDINGS]
+    chosen = {id(v) for v in picks}
+    per_rule: dict[str, int] = {}
+    for v in picks:
+        per_rule[v.rule_id] = per_rule.get(v.rule_id, 0) + 1
+    for v in review[MAX_FINDINGS:]:
+        if id(v) not in chosen and per_rule.get(v.rule_id, 0) < PER_RULE_SAMPLE:
+            picks.append(v)
+            chosen.add(id(v))
+            per_rule[v.rule_id] = per_rule.get(v.rule_id, 0) + 1
+    return picks
+
+
 def build_prompt(report: AuditReport, root: Path, secrets: set[str], lessons: dict[str, list[str]] | None = None) -> tuple[str, list]:
-    picks = [v for v in report.violations if v.confidence is Confidence.REVIEW][:MAX_FINDINGS]
+    picks = select_findings(report)
     parts = [
         "다음은 정적 분석 도구가 '확인 필요'로 남긴 지적이다. 각 지적이 실제 위험일 가능성을 코드만 보고 판단하라. "
         "JSON 배열만 출력하라: [{\"index\": 번호, \"verdict\": \"likely_true\"|\"likely_false\"|\"unsure\", \"reason\": \"한두 문장\", \"basis\": {...}}]. "
         "likely_false에는 basis를 반드시 넣어라: {\"kind\": \"constant\"(값이 상수다)|\"sanitized_by\"(정제 함수를 거친다)|\"unreachable\"(실행되지 않는 분기다)|\"not_external\"(외부 입력이 아니다), "
-        "\"line\": 근거가 있는 줄 번호, \"name\": 변수 또는 정제 함수 이름}. 근거를 댈 수 없으면 unsure로 답하라. 확실하지 않으면 unsure로 답하라.\n"
+        "\"line\": 근거가 있는 줄 번호, \"name\": 변수 또는 정제 함수 이름, \"file\": 근거가 지적과 다른 파일에 있으면 그 파일 경로}. 근거를 댈 수 없으면 unsure로 답하라. 확실하지 않으면 unsure로 답하라.\n"
         "각 지적에 '판정 기준'(그 결함 종류에서 위험인 경우와 오탐인 경우)과 '엔진이 확인한 흐름'(입력이 들어와 위험 호출에 닿기까지의 위치), "
         "사람이 같은 규칙에 남긴 판단이 있으면 함께 준다. 이 정보는 참고이며, 코드가 이와 다르면 코드를 따르라. 판단 이력에 있는 사례와 코드 모양이 다르면 그 이력은 쓰지 마라.\n"
     ]
@@ -128,8 +192,11 @@ def build_prompt(report: AuditReport, root: Path, secrets: set[str], lessons: di
             extra.append(f"엔진이 확인한 흐름: {flow}")
         for note in history.get(v.rule_id, []):
             extra.append(f"사람이 남긴 판단: {mask_secrets(redact_text(note, secrets))}")
+        if question := RULE_QUESTIONS.get(v.rule_id):
+            extra.append(f"물음: {question}")
         detail = "".join(f"{line}\n" for line in extra)
-        parts.append(f"## {i}. {v.rule_id} {v.rule_name} — {v.file_path.as_posix()}:{v.line_number}\n지적: {v.message}\n{detail}```\n{_window(base, v.file_path.as_posix(), v.line_number, secrets)}\n```\n")
+        code = handler_context(base, v.file_path.as_posix(), v.line_number, secrets) if v.rule_id in HANDLER_CONTEXT_RULES else ""
+        parts.append(f"## {i}. {v.rule_id} {v.rule_name} — {v.file_path.as_posix()}:{v.line_number}\n지적: {v.message}\n{detail}```\n{code or _window(base, v.file_path.as_posix(), v.line_number, secrets)}\n```\n")
     return "\n".join(parts), picks
 
 
@@ -155,14 +222,23 @@ def parse_opinions(text: str, count: int) -> dict[int, dict]:
                     "line": line if isinstance(line, int) and not isinstance(line, bool) else None,
                     "name": str(basis.get("name", ""))[:80],
                 }
+                if isinstance(basis.get("file"), str) and basis["file"].strip():
+                    opinions[index]["basis"]["file"] = basis["file"].strip()[:200]
     return opinions
 
 
-def check_basis(lines: list[str], violation: Violation, basis: dict | None) -> dict:
-    """오탐이라는 의견의 근거를 코드와 엔진 근거 경로로 대조한다. 판정은 바꾸지 않는다."""
+def check_basis(lines: list[str], violation: Violation, basis: dict | None, read=None) -> dict:
+    """오탐이라는 의견의 근거를 코드와 엔진 근거 경로로 대조한다. 판정은 바꾸지 않는다.
+    basis의 file이 지적 파일과 다르면, 엔진 근거 경로에 있는 파일일 때만 그 파일의 줄로 대조한다(read: 파일 경로 → 줄 목록)"""
     if basis is None:
         return {"status": "unsupported", "why": "근거(basis)를 대지 않았다"}
     kind, line, name = basis["kind"], basis["line"], basis["name"]
+    other = basis.get("file")
+    if other and other != violation.file_path.as_posix():
+        evidence_files = {s.file_path for s in violation.evidence}
+        if other not in evidence_files or read is None:
+            return {"status": "unsupported", "why": f"{other}은(는) 엔진이 따라간 근거 경로에 없는 파일이다"}
+        lines = read(other)
     sources = [s for s in violation.evidence if s.role == "source"]
     if kind in ("constant", "not_external") and sources:
         where = ", ".join(f"{s.file_path}:{s.line}" for s in sources[:3])
@@ -207,7 +283,7 @@ def apply_triage(report: AuditReport, root: Path, command: str, secrets: set[str
     for index, opinion in opinions.items():
         violation = picks[index]
         if opinion["verdict"] == "likely_false":
-            opinion["check"] = check_basis(_lines(base, violation.file_path.as_posix()), violation, opinion.get("basis"))
+            opinion["check"] = check_basis(_lines(base, violation.file_path.as_posix()), violation, opinion.get("basis"), lambda rel: _lines(base, rel))
         violation.review_opinion = {"source": model, **opinion}
     return len(opinions)
 

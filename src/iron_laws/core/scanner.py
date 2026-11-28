@@ -40,6 +40,7 @@ from iron_laws.core.models import (
     ScanCost,
     Violation,
 )
+from iron_laws.core.project_reports import collect_project_reports
 from iron_laws.core.redaction import (
     MAX_MESSAGE_LENGTH,
     MAX_SNIPPET_LENGTH,
@@ -227,6 +228,9 @@ class AuditScanner(ScanFileReader, ScanEvidenceBuilder, ScanResultBuilder):
         self._phases: dict[str, float] = {}
         self._cost: ScanCost | None = None
         self._routes: list[dict] = []
+        self._counters: dict[str, int] = {}
+        self._eol = None
+        self._tenancy: list[dict] | None = None
         self._suppression_rows: list[dict] = []
         self._secrets: set[str] = set()
         self._suppressed_lines: set[tuple[str, int, str]] = set()
@@ -374,13 +378,16 @@ class AuditScanner(ScanFileReader, ScanEvidenceBuilder, ScanResultBuilder):
             config=self.config,
             all_paths=self._all_paths,
             gitignore_patterns=self._load_gitignore(),
+            baseline_routes=self.baseline.routes if self.baseline is not None else None,
         )
         for rule in self.rules:
             project_findings, diagnostics = _check_project_rule(rule, project)
             violations.extend(project_findings)
             self._diagnostics.extend(diagnostics)
         self._phases["project_rules"] = time.monotonic() - project_started
-        self._routes = next((list(getattr(r, "last_routes", [])) for r in self.rules if r.rule_id == "IL-525"), [])
+        reports = collect_project_reports(project, self.baseline is not None)
+        self._routes, self._tenancy, self._eol, self._counters = reports.routes, reports.tenancy, reports.eol, reports.counters
+        self._diagnostics.extend(reports.diagnostics)
         for src in sources:
             src.release()
         return violations
@@ -543,6 +550,7 @@ class AuditScanner(ScanFileReader, ScanEvidenceBuilder, ScanResultBuilder):
             phase_seconds={k: round(v, 3) for k, v in phases.items()},
             budget_seconds=budget,
             budget_exceeded=bool(budget is not None and wall > budget),
+            counters=dict(self._counters),
         )
         if cost.budget_exceeded:
             self._diagnostics.append(

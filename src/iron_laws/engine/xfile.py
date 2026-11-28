@@ -133,6 +133,26 @@ class ProjectIndex:
         return targets
 
 
+    def resolve_method(self, src: SourceFile, class_ref: str, method: str, argc: int) -> list[tuple[SourceFile, object]]:
+        """지역 객체의 클래스(class_ref)가 정해졌을 때 그 클래스의 인스턴스 메서드. 캐시 키에 클래스를 넣는다:
+        같은 파일 안에 이름이 같은 지역 객체가 서로 다른 클래스를 가리킬 수 있다"""
+        resolver = RESOLVERS.get(src.lang) if src.lang else None
+        if resolver is None or not hasattr(resolver, "resolve_method"):
+            return []
+        callee = f"{class_ref}#{method}"
+        if not self.spend(where=(src.path.as_posix(), argc, "budget:" + callee)):
+            return []
+        key = (src.path.as_posix(), callee, argc)
+        if key in self._resolve_cache:
+            entries, _gap = self._resolve_cache[key]
+            return _materialize(self.files, entries)
+        targets = resolver.resolve_method(self, src, class_ref, method, argc)
+        if targets:
+            self.resolved_keys.add(key)
+        self._resolve_cache[key] = ([(s.path.as_posix(), fn.node.start_byte) for s, fn in targets], None)
+        return targets
+
+
 def _materialize(files: dict[str, SourceFile], entries: list[tuple[str, int]]) -> list[tuple[SourceFile, object]]:
     from iron_laws.engine.ast_tools import iter_functions
 
@@ -159,6 +179,12 @@ def set_index(index: ProjectIndex | None) -> None:
 
 def get_index() -> ProjectIndex | None:
     return _INDEX
+
+
+def resolve_method(src: SourceFile, class_ref: str, method: str, argc: int) -> list[tuple[SourceFile, object]]:
+    if _INDEX is None or src.lang not in RESOLVERS:
+        return []
+    return _INDEX.resolve_method(src, class_ref, method, argc)
 
 
 def resolve_external(src: SourceFile, callee: str, argc: int) -> list[tuple[SourceFile, object]]:

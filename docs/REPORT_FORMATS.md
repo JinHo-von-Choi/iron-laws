@@ -7,13 +7,14 @@
 최상위 키: `schema_version`, `document_id`, `title`, `auditor`, `audit_date`, `target_path`, `summary`, `violations`, `diagnostics`, `coverage_ledger`, `execution`, `approval_checks`, `metadata`.
 
 ### 버전 정책
-- `schema_version`은 `주.부` 형식이다. 현재 `1.8`이다.
+- `schema_version`은 `주.부` 형식이다. 현재 `1.9`이다.
 - 키를 **추가**하면 부 버전을 올린다. 소비하는 쪽은 모르는 키를 무시해야 한다.
 - 키를 **삭제하거나 의미를 바꾸면** 주 버전을 올리고 CHANGELOG에 알린다. 주 버전이 같으면 기존 키는 유지된다.
 - 판마다 무엇을 추가했는지:
 
   | 판 | 추가한 것 |
   |---|---|
+  | 1.9 | `metadata.routes.rows[].kind`(라우트 종류 auth_flow·admin·normal, 관리 라우트 행 포함), `metadata.tenancy`(조회문별 소속 확인 표), `metadata.eol`(지원 종료 판정 표와 자료 출처), `execution.reference_data`(판정에 쓴 외부 자료의 기준일과 지문), `execution.cost.counters`(매퍼 문장 수·미해석 매퍼 호출 수) |
   | 1.8 | `metadata.file_coverage`(외부 파일 목록과 분석한 파일의 대조), `review_opinion`의 `basis`(오탐 의견의 근거)·`check`(근거 대조 결과) |
   | 1.7 | `execution.cost`(점검에 쓴 시간과 메모리) |
   | 1.6 | 장부 `digests.spec`(적용된 사용자 명세의 지문), 장부 지점의 근거 종류 `declared_sanitizer`, `metadata.custom_spec` |
@@ -22,8 +23,8 @@
   | 1.3 | 지적의 `finding_id`, `execution`·`approval_checks`, 장부 근거 필드 |
 
   `gov_standard`는 그대로 둔다.
-- 독립 검증기는 1.3·1.4·1.5·1.6·1.7·1.8을 확인하며, 그 밖의 버전은 통과가 아니라 `판정 불가`로 끝낸다([EVIDENCE_VERIFICATION.md](EVIDENCE_VERIFICATION.md)).
-- 기준선 파일(`.iron-laws-baseline.json`)은 별도의 `schema_version`(정수)을 가진다. 형식이 바뀌면 이전 기준선은 읽지 않고 다시 만들도록 안내한다.
+- 독립 검증기는 1.3·1.4·1.5·1.6·1.7·1.8·1.9를 확인하며, 그 밖의 버전은 통과가 아니라 `판정 불가`로 끝낸다([EVIDENCE_VERIFICATION.md](EVIDENCE_VERIFICATION.md)).
+- 기준선 파일(`.iron-laws-baseline.json`)은 별도의 `schema_version`(정수)을 가진다. 형식이 바뀌면 이전 기준선은 읽지 않고 다시 만들도록 안내한다. 선택 키 `routes`(기준선 시점의 라우트 목록)가 없는 기준선도 그대로 읽으며, 이때는 공격 표면 비교(AI-127)를 하지 않는다.
 
 ### `summary`
 | 키 | 의미 |
@@ -45,7 +46,7 @@
 - `scope_name`: 지적이 속한 함수 이름(구문 분석 언어)
 - `verification_grade`(1.4): 이 지적의 (규칙, 언어) 조합 검증 등급. `verified`(양성·음성 시험이 모두 있음) / `unverified`. 구문 분석 언어가 아닌 파일의 지적은 빈 값이다.
 - `rule_version`: 규칙 판정 의미의 버전. 올라가면 기준선의 기존 지적이 `review`로 바뀐다.
-- `evidence[]`: 외부 입력이 들어온 곳 → 전달 → 위험 호출(싱크)의 `role`·`file_path`·`line`·`note`. **코드 원문과 값은 담지 않는다.** 외부 입력 흐름을 추적하는 규칙에서만 채워진다.
+- `evidence[]`: 외부 입력이 들어온 곳 → 전달 → 위험 호출(싱크)의 `role`·`file_path`·`line`·`note`. `role`은 `source`·`propagation`·`guard`(만난 검사 분기와 확인 필요 사유)·`sink`다. **코드 원문과 값은 담지 않는다.** 외부 입력 흐름을 추적하는 규칙에서만 채워지며, 확인 필요 지적에도 싱크 인자까지 실제로 이어진 대입과 검사 분기를 담는다. `source`는 싱크 인자까지 이어진 정의에서 찾은 곳이라, 찾지 못하면 비어 있을 수 있다.
 - `baseline_status`: `new` / `existing` / `review` (기준선을 쓸 때만)
 - `approval_status`: `approved` / `needs_review` / `expired` / `revoked` / `invalid`(승인 기록의 무결성·형식 검증에 실패) / `none` (승인 기록을 쓸 때만), `approval_id`, `approval_reasons`(승인을 유지할 수 없는 이유)
 - `snippet`: 비밀값이 있을 수 있는 규칙(IL-101, IL-108, IL-111, AI-101~104)은 값을 `****`로 가린 줄이다.
@@ -57,9 +58,11 @@
 상태 계산 순서: 차단 사유가 하나라도 있으면 `unmet`(비적용·충족보다 먼저), 정책 변경이 있으면 `policy_change_review`, 차단 사유가 없고 분석한 파일이 없을 때만 `not_applicable`, 그 밖에는 `met`.
 
 ### `execution`(1.3)
-`run_id`, `tool_version`, `ruleset_hash`, `config_hash`, `contract_digest`, `code_digest`, `scan_status`, `files_scanned`, `files_skipped`, `error_diagnostics`, `cross_file_limit_hits`. 이 보고서를 만든 점검 실행의 식별과 범위이며, 지적·장부·승인이 같은 실행의 근거인지 확인하는 기준이다. `code_digest`는 `(경로, 본문의 sha256)`을 경로순으로 sha256한 앞 16자다.
+`run_id`, `tool_version`, `ruleset_hash`, `config_hash`, `contract_digest`, `code_digest`, `scan_status`, `files_scanned`, `files_skipped`, `error_diagnostics`, `cross_file_limit_hits`, `reference_data`(1.9). 이 보고서를 만든 점검 실행의 식별과 범위이며, 지적·장부·승인이 같은 실행의 근거인지 확인하는 기준이다. `code_digest`는 `(경로, 본문의 sha256)`을 경로순으로 sha256한 앞 16자다.
 
-`cost`(1.7)는 이 점검에 쓴 비용이다. `wall_seconds`(벽시계 초), `cpu_seconds`(이 프로세스와 작업 프로세스가 함께 쓴 CPU 초), `peak_rss_mb`(최대 메모리), `files_per_second`(초당 점검 파일 수), `workers`(작업 프로세스 수), `phase_seconds`(단계별 초: `file_rules`·`project_rules`·`ledger`), `budget_seconds`(설정한 시간 상한), `budget_exceeded`(상한 초과 여부)다. 실행마다 달라지므로 같은 코드의 두 보고서를 비교할 때 제외된다. `budget_exceeded`가 참이면 `scan_status`는 `incomplete`이고 종료코드는 2다.
+`cost`(1.7)는 이 점검에 쓴 비용이다. `wall_seconds`(벽시계 초), `cpu_seconds`(이 프로세스와 작업 프로세스가 함께 쓴 CPU 초), `peak_rss_mb`(최대 메모리), `files_per_second`(초당 점검 파일 수), `workers`(작업 프로세스 수), `phase_seconds`(단계별 초: `file_rules`·`project_rules`·`ledger`), `budget_seconds`(설정한 시간 상한), `budget_exceeded`(상한 초과 여부), `counters`(1.9, `mapper_statements`·`mapper_unresolved_calls` 같은 분석 규모)다. 실행마다 달라지므로 같은 코드의 두 보고서를 비교할 때 제외된다. `budget_exceeded`가 참이면 `scan_status`는 `incomplete`이고 종료코드는 2다.
+
+`reference_data`(1.9)는 판정에 쓴 외부 자료의 식별이다. 지원 종료 자료를 쓰면 `eol`에 `수집일:내용 지문`, 자료를 쓰지 않으면 `내장 목록`, 지정한 자료를 읽지 못했으면 `읽기 실패`가 들어간다. 같은 코드라도 이 값이 다르면 판정이 다를 수 있다.
 
 `metadata.file_coverage`(1.8)는 `--build-manifest`를 줬을 때만 있다. `source`(쓴 목록: `git`·`tsc`·`go`·`file:<이름>`), `listed`(목록의 파일 수), `counts`(상태별 수: `analyzed`·`skipped`·`excluded`·`unsupported`·`outside_root`·`missing`·`unexplained`), `unexplained`(사유 없이 빠진 파일, 최대 200개), `examples`(상태·사유별 예 5개)다. `unexplained`가 있으면 `coverage` 진단이 함께 나오며, `--require-full-coverage`면 그 진단이 오류라서 `scan_status`가 `incomplete`다.
 
@@ -67,11 +70,11 @@
 `approval_id`, `status`(`valid` / `needs_review` / `invalid` / `revoked` / `resolved` / `unobserved`), `reasons`, `rule_id`, `path`, `approved_fingerprint`, `finding_id`(이번 실행에서 맺어진 지적), `expires`, `policy`(승인 당시 계약·설정·규칙·도구 지문). `valid`는 승인한 지적과 같은 코드 모양의 지적이 지금도 있다는 뜻이다. 승인 기록 파일의 해시 연결이나 기록 형식이 틀리면 그 승인은 `invalid`이며 유효한 승인으로 쓰지 않는다.
 
 ### `diagnostics[]`
-`kind`(read, encoding, parse, rule_error, worker, analysis_limit, suppression, baseline, approval, consistency), `severity`(info, warning, error), `message`, `file_path`, `line`.
+`kind`(read, encoding, parse, rule_error, worker, analysis_limit, suppression, baseline, approval, consistency, eol_data), `severity`(info, warning, error), `message`, `file_path`, `line`.
 `error`가 하나라도 있으면 `scan_status`가 `incomplete`다. `consistency`는 보고서를 내보내기 전에 독립 검증기가 찾은 내부 모순이며, 있으면 통과로 내보내지 않고 `incomplete`로 표시한다.
 
 ### `metadata`
-`tool_version`, `ruleset`(규칙 수·해시·규칙별 버전), `config`·`config_source`·`config_hash`·`fail_on_source`, `files_by_language`, `skipped_files`, `excluded_summary`(제외 패턴별 파일·폴더 수), `unscanned_by_extension`(지원하지 않는 확장자 파일 수), `cross_file`(파일 간 해석 횟수, 한도에 걸린 위치 수, 호출한 파일의 언어별 `resolved_calls`·`resolution_gaps`·`limit_hits`·`resolution_gap_rate` = 공백 / (해석 + 공백)), `repo_relative_prefix`, `routes`(웹 라우트 수, 중요 기능 라우트의 인증·인가 yes/no/unknown 건수와 행), `suppressions`(적용된 억제 주석의 규칙·위치·사유·만료일·범위), `standard_packs`(1.5, 기준 팩 목록), `custom_spec`(1.6, 적용한 사용자 명세의 경로·지문·장부 반영 여부), `scope`(`--changed-since` 사용 시: `mode`·`ref`·`changed_files`·`changed_paths`·`renames`(이름이 바뀐 파일의 `from`·`to`)·`full_findings`), `baseline`. `ruleset`에는 `support_manifest`(규칙 검증 등급의 근거 지문)가 있으며 규칙 집합 `hash`에 포함된다.
+`tool_version`, `ruleset`(규칙 수·해시·규칙별 버전), `config`·`config_source`·`config_hash`·`fail_on_source`, `files_by_language`, `skipped_files`, `excluded_summary`(제외 패턴별 파일·폴더 수), `unscanned_by_extension`(지원하지 않는 확장자 파일 수), `cross_file`(파일 간 해석 횟수, 한도에 걸린 위치 수, 호출한 파일의 언어별 `resolved_calls`·`resolution_gaps`·`limit_hits`·`resolution_gap_rate` = 공백 / (해석 + 공백)), `repo_relative_prefix`, `routes`(웹 라우트 수, 중요 기능 라우트의 인증·인가 yes/no/unknown 건수와, 중요 기능·관리 라우트의 행. 행의 `kind`(1.9)는 `auth_flow`·`admin`·`normal`), `tenancy`(1.9, 설정의 `tenancy`가 있을 때 매퍼 호출마다 `mapper`·`statement`·`kind`·`tables`·`key_column`(where·optional·missing·n/a)·`binding`·`source`(principal·request·unknown)·`call`·`verdict`(ok·violation·review·n/a)), `eol`(1.9, `policies.eol_db`를 줬을 때 자료 설명 `data`와 판정 행 `rows`: `product`·`version`·`cycle`·`eol`·`url`·`file`·`line`·`source`), `suppressions`(적용된 억제 주석의 규칙·위치·사유·만료일·범위), `standard_packs`(1.5, 기준 팩 목록), `custom_spec`(1.6, 적용한 사용자 명세의 경로·지문·장부 반영 여부), `scope`(`--changed-since` 사용 시: `mode`·`ref`·`changed_files`·`changed_paths`·`renames`(이름이 바뀐 파일의 `from`·`to`)·`full_findings`), `baseline`. `ruleset`에는 `support_manifest`(규칙 검증 등급의 근거 지문)가 있으며 규칙 집합 `hash`에 포함된다.
 
 ## SARIF (`audit --format sarif`)
 - 버전 2.1.0. 결과 위치는 **저장소 루트(`.git`이 있는 가장 가까운 상위 폴더) 기준 상대 경로**이고 `uriBaseId`는 `%SRCROOT%`, 경로 구간은 URI 인코딩된다.

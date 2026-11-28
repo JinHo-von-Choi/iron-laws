@@ -3,7 +3,7 @@ CWEval(기능과 보안을 함께 평가하는 LLM 코드 생성 평가 세트) 
 
 사용법:
     git clone --depth 1 https://github.com/Co1lin/CWEval.git <폴더>
-    uv run python benchmarks/cweval.py <폴더> [--langs py,js,go] [-o docs/benchmark_results/cweval.json]
+    uv run python benchmarks/cweval.py <폴더> [--langs py,js,go] [--entry-points web|public_api] [-o docs/benchmark_results/cweval.json]
 
 사례(CWEval의 Apache-2.0 데이터. 저장소에 복사하지 않고 내려받은 폴더에서 읽는다):
 - 취약 사례: Python은 `*_test.py`의 `*_unsafe` 함수, JavaScript·Go는 `*_unsafe.*` 파일. 정답은 사례의 CWE와 같은 CWE가 붙은 지적이다.
@@ -11,6 +11,7 @@ CWEval(기능과 보안을 함께 평가하는 LLM 코드 생성 평가 세트) 
 결과는 같은 CWE의 지적(확정·확인 필요 전체)과 확정 지적을 따로 세고, 같은 CWE의 지적은 없지만 다른 규칙의 지적이 있는 취약 사례 수(`unsafe_only_other_cwe`)도 남긴다.
 CWE 번호는 지적의 기준 팩 항목과 행안부 항목 설명의 `(CWE-n)` 표기에서 읽는다. 사례는 함수 하나짜리라 프레임워크 연결이 빠져 있고,
 CWEval이 재는 기능·보안 동시 통과율(Func-Sec)은 오철칙이 재는 대상이 아니므로 쓰지 않는다.
+--entry-points public_api는 공개 함수의 매개변수를 입력으로 보는 모드(policies.entry_points)로 잰다. 기본 설정 결과와 따로 기록한다.
 작성자: 최진호
 작성일: 2026-11-10
 """
@@ -104,11 +105,13 @@ def cwes_of(violation) -> set[int]:
     return found
 
 
-def scan_case(case: dict, work: Path) -> dict:
+def scan_case(case: dict, work: Path, entry_points: str = "web") -> dict:
+    from iron_laws.core.config import IronLawsConfig, Policies
+
     folder = work / f"{case['kind']}-{case['id']}"
     folder.mkdir(parents=True, exist_ok=True)
     (folder / f"app{case['extension']}").write_text(case["source"], encoding="utf-8")
-    report = AuditScanner(folder).scan()
+    report = AuditScanner(folder, IronLawsConfig(policies=Policies(entry_points=entry_points))).scan()
     same = [v for v in report.violations if case["cwe"] in cwes_of(v)]
     return {
         "id": case["id"],
@@ -143,6 +146,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[1])
     parser.add_argument("dataset", type=Path, help="내려받은 CWEval 폴더")
     parser.add_argument("--langs", default="py,js,go", help="쉼표로 구분한 언어(py, js, go)")
+    parser.add_argument("--entry-points", default="web", choices=["web", "public_api"], help="입력으로 볼 진입점(policies.entry_points)")
     parser.add_argument("-o", "--output", type=Path, default=ROOT / "docs" / "benchmark_results" / "cweval.json")
     args = parser.parse_args()
     languages = [name.strip() for name in args.langs.split(",") if name.strip() in EXTENSIONS]
@@ -152,8 +156,8 @@ def main() -> int:
         return 2
     commit = subprocess.run(["git", "-C", str(args.dataset), "rev-parse", "HEAD"], capture_output=True, text=True, check=False).stdout.strip()  # noqa: S603, S607
     with tempfile.TemporaryDirectory() as tmp:
-        results = [scan_case(case, Path(tmp)) for case in cases]
-    payload = {"dataset": "CWEval", "dataset_commit": commit, "tool_version": tool_version(), "summary": summarize(results), "cases": results}
+        results = [scan_case(case, Path(tmp), args.entry_points) for case in cases]
+    payload = {"dataset": "CWEval", "dataset_commit": commit, "tool_version": tool_version(), "entry_points": args.entry_points, "summary": summarize(results), "cases": results}
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(json.dumps(payload["summary"], ensure_ascii=False, indent=2))

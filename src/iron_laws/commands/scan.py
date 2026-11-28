@@ -142,10 +142,17 @@ def audit_command(
     max_wall_seconds: float | None = MaxWallSecondsOpt,
     package_index: Path | None = PackageIndexOpt,
     triage_model: str | None = TriageOpt,
+    standard: str | None = typer.Option(None, "--standard", help="markdown 보고서에 이 기준 팩(예: fin-selfcheck-2026, owasp-top10-2025)의 항목별 현황과 증빙 표를 더합니다"),
 ):
     """
     점검을 수행하고 보고서를 발행합니다. markdown 보고서에는 행안부 구현단계 49개 항목별 점검 현황이 포함됩니다.
     """
+    if standard is not None:
+        from iron_laws.standards.pack_registry import all_packs
+
+        if standard not in {p.id for p in all_packs()}:
+            err.print(f"[bold red]기준 팩을 찾을 수 없습니다: {escape(standard)} (있는 팩: {', '.join(p.id for p in all_packs())})[/bold red]")
+            raise typer.Exit(2)
     scanner = _build_scanner(ScanRequest(path, config=config, search_parents=search_parents, baseline=baseline, changed_since=changed_since, respect_gitignore=respect_gitignore, contract=contract, contract_mode=contract_mode, approvals=approvals, gates=_gates(max_unknown, max_unverified), package_index=package_index, max_wall_seconds=max_wall_seconds, allowed_signers=allowed_signers, require_signed_approvals=require_signed_approvals, build_manifest=build_manifest, require_full_coverage=require_full_coverage))
     report = _timed_scan(scanner, metrics, "audit")
     if triage_model:
@@ -158,7 +165,7 @@ def audit_command(
             err.print(f"[yellow]{escape(str(e))} 검토 의견 없이 계속합니다.[/yellow]")
     if report.summary.scan_status == "empty" and not allow_empty:
         _check_completion(report, allow_empty)
-    _emit_report(report, scanner, report_format, output, limit)
+    _emit_report(report, scanner, report_format, output, limit, standard)
     if report.summary.scan_status == "incomplete":
         _check_completion(report, allow_empty)
     if report.summary.scan_status == "empty" and allow_empty:

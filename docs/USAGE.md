@@ -16,6 +16,9 @@ iron-laws deps . --advisory-db ./osv       # 취약한 의존성과 올릴 버�
 iron-laws architecture .                   # 프로젝트 전체 구조 진단
 iron-laws support                          # 언어·규칙별 구현·시험 현황
 iron-laws routes .                         # 웹 주소(라우트)별 로그인·권한 검사 여부
+iron-laws routes . --auth no --format csv   # 로그인 검사가 없는 라우트 목록(CSV)
+iron-laws tenancy .                        # 매퍼 문장별 소속(테넌트) 조건 확인 표(설정의 tenancy 필요)
+iron-laws audit . --format markdown --standard fin-selfcheck-2026 -o report.md   # 금융권 자체점검 12개 항목별 현황과 증빙 표
 iron-laws init                             # 기본 설정 파일 .iron-laws.yml 만들기
 iron-laws guidelines export -o 지침.md      # 코딩 에이전트 지침(CLAUDE.md용)
 iron-laws check . --build-manifest git     # git 추적 파일과 대조해 빠진 파일과 이유 보기
@@ -94,6 +97,8 @@ excludes: [".git", "node_modules", "dist"]
 disabled_rules: ["ARC-206"]
 policies:
   ledger_include_spec_points: false   # 켜면 사용자 명세의 싱크를 근거 장부에도 반영
+  # session_timeout_max: 10m                  # 세션 제한시간 상한(AI-126)
+  # eol_db: ./eol                             # 지원 종료 자료 폴더(iron-laws index fetch --eol, AI-121)
   # protected_paths: ["deploy/*.yml"]         # 에이전트 훅이 편집을 알릴 경로를 더함
   # protected_paths_exclude: ["CLAUDE.md"]    # 기본 보호 경로에서 뺌
 limits:
@@ -113,7 +118,7 @@ limits:
 - 압축·생성 파일은 점검하지 않고 보고서의 `skipped_files`에 이유와 함께 남깁니다.
 - `limits.max_wall_seconds`를 넘으면 `scan_status`가 `incomplete`가 되고 종료코드는 2입니다. 명령행에서는 `--max-wall-seconds`로 덮어씁니다.
 - `.gitignore`에 걸리는 파일도 기본으로 점검합니다. `.env`처럼 비밀값이 들어가는 파일을 놓치지 않기 위해서입니다. 빼려면 `respect_gitignore: true`를 씁니다.
-- 프로젝트 구조 계약은 [ARCHITECTURE.md](ARCHITECTURE.md), 사용자 명세는 [CUSTOMIZATION.md](CUSTOMIZATION.md)에 있습니다.
+- 프로젝트 구조 계약은 [ARCHITECTURE.md](ARCHITECTURE.md), 사용자 명세와 로그인 검사 구조(`auth`)·소속 경계(`tenancy`)·감사 기록(`audit`)·기준선 비교(`baseline`) 설정은 [CUSTOMIZATION.md](CUSTOMIZATION.md)에 있습니다.
 
 ## CI 연결
 

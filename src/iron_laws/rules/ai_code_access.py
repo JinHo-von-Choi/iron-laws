@@ -14,7 +14,6 @@ from iron_laws.engine.ast_tools import (
 )
 from iron_laws.engine.languages import JS_FAMILY, Lang
 from iron_laws.engine.project import ProjectContext
-from iron_laws.engine.routes import discover_routes
 from iron_laws.engine.source import SourceFile
 from iron_laws.engine.taint import is_tainted
 from iron_laws.rules.ai_code_common import (
@@ -200,6 +199,7 @@ class DatabaseAccessPolicyRule(AiRule):
 
 
 class UnauthenticatedEndpointRule(BaseRule):
+    version = 2
     rule_id = "IL-525"
     name = "인증 확인이 보이지 않는 중요 기능 엔드포인트 탐지"
     iron_law = IronLaw.LAW_5
@@ -208,19 +208,16 @@ class UnauthenticatedEndpointRule(BaseRule):
     plain = "데이터를 바꾸거나 관리자·사용자 정보를 다루는 API에 '로그인 확인'이 없으면 로그인하지 않은 누구나 그 기능을 호출할 수 있습니다. AI는 화면 기능만 만들고 서버 쪽 인증을 빼먹는 경우가 많습니다."
     how_to_fix = "쓰기·관리·개인정보 API에는 인증 미들웨어/데코레이터를 붙이고, 서버에서 사용자와 권한을 확인하세요. 예: @login_required / app.post('/x', authenticate, handler) / @PreAuthorize / [Authorize]"
     languages = None
-    last_routes: list[dict] = []
 
     def check(self, src: SourceFile) -> list[Violation]:
         return []
 
     def check_project(self, project: ProjectContext) -> list[Violation]:
-        """라우트 접근통제 행렬(engine/routes.py)에서 중요 기능 라우트의 인증 근거가 없거나(no) 정할 수 없는(unknown) 것을 알린다."""
+        """라우트 접근통제 행렬(engine/routes.py)에서 중요 기능·관리 라우트의 인증 근거가 없거나(no) 정할 수 없는(unknown) 것을 알린다."""
         found = []
         by_path = {f.path.as_posix(): f for f in project.source_files()}
-        routes = discover_routes(list(project.source_files()))
-        self.last_routes = [r.as_row() for r in routes]
-        for route in routes:
-            if not route.sensitive or route.auth == "yes":
+        for route in project.routes():
+            if route.auth == "yes" or not (route.sensitive or route.kind == "admin"):
                 continue
             src = by_path[route.file]
             where = f"{route.method} {route.path} 라우트"
@@ -325,4 +322,41 @@ class CookieFlagsRule(AiRule):
                 found.append(
                     self.at_node(src, call.node, f"쿠키에 {', '.join(missing)} 설정이 보이지 않습니다.", confidence=Confidence.REVIEW)
                 )
+        return found
+
+
+class AttackSurfaceDriftRule(AiRule):
+    rule_id = "AI-127"
+    name = "기준선에 없던 공개 라우트·관리 라우트 탐지"
+    iron_law = IronLaw.LAW_5
+    severity = Severity.MEDIUM
+    plain = "쓰지 않는 구버전 주소나 관리 콘솔이 로그인 없이 열린 채 새로 생기면 공격 표면이 늘어납니다. 기준선과 비교하면 새로 열린 문을 바로 알 수 있습니다."
+    how_to_fix = "새 공개 라우트가 꼭 필요한지 확인하고, 필요 없으면 지우거나 로그인 검사를 거치게 하세요. 관리 라우트는 인증과 접근 IP 제한 뒤에 두세요."
+
+    def check_project(self, project: ProjectContext) -> list[Violation]:
+        if project.baseline_routes is None:
+            return []
+        from iron_laws.core.baseline import normalize_route_path
+
+        base = {(r.method, r.path): r for r in project.baseline_routes}
+        patterns = [re.compile(p) for p in (project.config.baseline.route_name_patterns or [])]
+        by_path = {f.path.as_posix(): f for f in project.source_files()}
+        found = []
+        for route in project.routes():
+            src = by_path.get(route.file)
+            if src is None or route.node is None:
+                continue
+            key = (route.method, normalize_route_path(route.path))
+            where = f"{route.method} {route.path} 라우트"
+            old = base.get(key)
+            if old is not None:
+                if old.auth == "yes" and route.auth == "no":
+                    found.append(self.at_node(src, route.node, f"{where}는 기준선에서 인증 근거가 있었는데 지금은 없습니다({route.auth_reason}).", confidence=Confidence.REVIEW))
+                continue
+            if route.auth == "no":
+                found.append(self.at_node(src, route.node, f"{where}가 기준선에 없던 공개 라우트입니다({route.auth_reason}).", confidence=Confidence.REVIEW))
+            elif route.kind == "admin":
+                found.append(self.at_node(src, route.node, f"{where}가 기준선에 없던 관리 라우트입니다. 접근 제한 뒤에 있는지 확인하십시오.", severity=Severity.LOW, confidence=Confidence.REVIEW))
+            elif any(p.search(route.path) for p in patterns):
+                found.append(self.at_node(src, route.node, f"{where}가 기준선에 없던 라우트이고 경로가 설정한 이름 패턴과 맞습니다.", severity=Severity.LOW, confidence=Confidence.REVIEW))
         return found

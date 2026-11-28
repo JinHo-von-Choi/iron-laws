@@ -15,6 +15,8 @@ from iron_laws.engine.ast_tools import iter_calls
 from iron_laws.engine.languages import JS_FAMILY, Lang
 from iron_laws.engine.source import SourceFile
 
+UNDETERMINED = "undetermined"
+
 
 @dataclass
 class Reach:
@@ -58,8 +60,10 @@ def _aliases(src: SourceFile, ecosystem: str, package: str, symbols: list[str]) 
 
 
 def reachability(sources: list[SourceFile], ecosystem: str, package: str, symbols: list[str]) -> Reach:
+    if ecosystem not in ("PyPI", "npm"):
+        return Reach(UNDETERMINED, f"{ecosystem} 패키지의 도달성 판정은 지원하지 않는다")
     if not symbols:
-        return Reach("undetermined", "권고에 영향 함수 정보가 없다")
+        return Reach(UNDETERMINED, "권고에 영향 함수 정보가 없다")
     wanted = {s.rsplit(".", 1)[-1].rsplit("::", 1)[-1] for s in symbols}
     locations: list[str] = []
     imported = False

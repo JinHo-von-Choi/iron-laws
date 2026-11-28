@@ -74,6 +74,8 @@ iron-laws explain IL-501
 | GitHub Code Scanning에 올리기 | `iron-laws audit . --format sarif -o iron-laws.sarif` |
 | 취약한 의존성 찾기 | `iron-laws deps . --advisory-db ./osv` |
 | 프로젝트 구조 진단 | `iron-laws architecture .` |
+| 로그인 검사가 없는 웹 주소 목록 | `iron-laws routes . --auth no` |
+| 금융권 자체점검 12개 항목별 보고서 | `iron-laws audit . --format markdown --standard fin-selfcheck-2026 -o report.md` |
 | 기존 지적은 두고 새로 생긴 것만 보기 | `iron-laws baseline create .` 후 `iron-laws check . --baseline .iron-laws-baseline.json` |
 | 설정 파일 만들기 | `iron-laws init` |
 

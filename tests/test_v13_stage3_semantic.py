@@ -112,3 +112,16 @@ def test_cross_file_variants_are_all_killed_without_blocking_benign_code(tmp_fac
         assert summary["variants"]["risky"] > 0 and summary["variants"]["benign"] > 0
         assert summary["kill_rate"] == 1.0, failures
         assert summary["benign_blocked"] == 0, failures
+
+
+def test_library_boundary_variants_are_all_killed_without_blocking_benign_code(tmp_factory):
+    """외부 입력을 다른 파일 클래스의 메서드로 읽거나, 사전에 넣었다 꺼내거나, 분리·결합으로 다시 만든 위험 변형을 모두 잡고 정상 변형은 막지 않는다."""
+    from tests.semantic_corpus import LIBRARY_OPERATORS
+
+    for cases in (DEV_SCAN, HOLDOUT_SCAN):
+        metrics = evaluate_cross_file(cases, tmp_factory, LIBRARY_OPERATORS)
+        summary = metrics.summary()
+        failures = [(o.case_id, o.form, o.operator, o.verdict) for o in metrics.failures()]
+        assert set(summary["by_operator"]) == set(LIBRARY_OPERATORS)
+        assert summary["kill_rate"] == 1.0, failures
+        assert summary["benign_blocked"] == 0, failures

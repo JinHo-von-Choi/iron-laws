@@ -374,9 +374,7 @@
       "same_cwe": [
         "IL-515"
       ],
-      "same_cwe_confirmed": [
-        "IL-515"
-      ]
+      "same_cwe_confirmed": []
     },
     {
       "cwe": 643,
@@ -1305,6 +1303,7 @@
   ],
   "dataset": "CWEval",
   "dataset_commit": "e9a2a124c8c53679b6d8d27adfd2f6c40e7576d7",
+  "entry_points": "web",
   "summary": {
     "go": {
       "safe_cases": 19,
@@ -1329,10 +1328,10 @@
       "safe_flagged_confirmed": 0,
       "safe_flagged_same_cwe": 0,
       "unsafe_cases": 21,
-      "unsafe_detected_confirmed": 4,
+      "unsafe_detected_confirmed": 3,
       "unsafe_detected_same_cwe": 6,
       "unsafe_only_other_cwe": 5
     }
   },
-  "tool_version": "1.11.1"
+  "tool_version": "1.12.1"
 }

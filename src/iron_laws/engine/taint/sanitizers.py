@@ -32,7 +32,7 @@ _GENERIC = "sanitiz\\w*|validat\\w*|whitelist\\w*|allowlist\\w*|is_?safe\\w*"
 
 
 _BY_CONTEXT: dict[Ctx, str] = {
-    Ctx.HTML: "escape\\w*|encode_?for_?html\\w*|encode_?html\\w*|for_?html\\w*|htmlspecialchars|htmlentities|esc_html\\w*|dompurify|bleach|clean",
+    Ctx.HTML: "escape\\w*|html_?escape\\w*|encode_?for_?html\\w*|encode_?html\\w*|for_?html\\w*|htmlspecialchars|htmlentities|esc_html\\w*|dompurify|bleach|clean",
     Ctx.SQL: "escape\\w*|quote\\w*|encode_?for_?sql\\w*|addslashes|real_escape\\w*|format_?sql",
     Ctx.SHELL: "quote\\w*|escapeshell\\w*|shellescape|shellwords|escape\\w*",
     Ctx.PATH: "secure_filename|basename|getname|filepath\\.base|getfilename|sanitize_?filename|safe_?join|safe_?path|clean",
@@ -40,7 +40,7 @@ _BY_CONTEXT: dict[Ctx, str] = {
     Ctx.LDAP: "escape\\w*|encode_?for_?ldap\\w*|escape_filter_chars",
     Ctx.XPATH: "escape\\w*|encode_?for_?xpath\\w*|quote\\w*",
     Ctx.CODE: "",
-    Ctx.HEADER: "escape\\w*|encode\\w*|quote\\w*|clean",
+    Ctx.HEADER: "escape\\w*|encode\\w*|url_?encode\\w*|quote\\w*|clean",
 }
 
 
@@ -65,7 +65,7 @@ _BASE_SANITIZERS = _fn_re(f"{_UNIVERSAL}|{_GENERIC}")
 
 
 _HTML_ONLY_RE = re.compile(
-    r"(?i)(?:^|\.)(?:html|cgi|markupsafe|saxutils|bleach|dompurify|xml)\.|escape_?html|htmlspecialchars|htmlentities|encode_?for_?html|esc_html|for_?html"
+    r"(?i)(?:^|\.)(?:html|cgi|markupsafe|saxutils|bleach|dompurify|xml)\.|escape_?html|html_?escape|htmlspecialchars|htmlentities|encode_?for_?html|esc_html|for_?html"
 )
 
 
@@ -78,17 +78,51 @@ CUSTOM_SANITIZERS: dict[tuple[Lang, Ctx], re.Pattern[str]] = {}
 CUSTOM_KIND = ""
 
 
+# 사용자 명세의 검사 함수: 언어 → [(호출 이름 정규식, 대상 인자 위치, 참이면 안전한지, 막는 문맥)]
+CUSTOM_VALIDATORS: dict[Lang, list[tuple[re.Pattern[str], int, bool, "Ctx"]]] = {}
+# 사용자 명세의 정규화 요약: 언어 → 호출 이름 정규식. 정제가 아니라 범위 검사의 정규화 근거로만 쓴다
+CUSTOM_NORMALIZERS: dict[Lang, re.Pattern[str]] = {}
+# 사용자 명세의 전달 요약: 언어 → [(호출 이름 정규식, 원본 인자 위치, 대상: "return" 또는 인자 위치)]
+CUSTOM_PROPAGATORS: dict[Lang, list[tuple[re.Pattern[str], int, str]]] = {}
+
+
 _SANITIZER_HITS: dict[tuple[str, "Ctx"], bool] = {}
 
 
-def set_custom_spec(sources: dict, sanitizers: dict, kind: str) -> None:
+def set_custom_spec(sources: dict, sanitizers: dict, kind: str, validators: dict | None = None, normalizers: dict | None = None, propagators: dict | None = None) -> None:
     global CUSTOM_KIND
     # 다른 모듈이 이 객체를 참조하고 있으므로 갈아끼우지 않고 내용만 바꾼다
-    CUSTOM_SOURCES.clear()
-    CUSTOM_SOURCES.update(sources)
-    CUSTOM_SANITIZERS.clear()
-    CUSTOM_SANITIZERS.update(sanitizers)
+    for table, values in ((CUSTOM_SOURCES, sources), (CUSTOM_SANITIZERS, sanitizers), (CUSTOM_VALIDATORS, validators or {}),
+                          (CUSTOM_NORMALIZERS, normalizers or {}), (CUSTOM_PROPAGATORS, propagators or {})):
+        table.clear()
+        table.update(values)
     CUSTOM_KIND = kind
+
+
+def custom_validator(callee: str, lang: Lang | None) -> tuple[int, bool, "Ctx"] | None:
+    """사용자 명세가 선언한 검사 함수이면 (대상 인자 위치, 참이면 안전한지, 막는 문맥)"""
+    for pattern, arg, success, ctx in CUSTOM_VALIDATORS.get(lang, []) if lang is not None else []:
+        if pattern.search(callee):
+            return arg, success, ctx
+    return None
+
+
+_CALL_NAME_RE = re.compile(r"([A-Za-z_$][\w$]*(?:\s*\.\s*[A-Za-z_$][\w$]*)*)\s*\(")
+
+
+def custom_normalizer(text: str, lang: Lang | None) -> bool:
+    """식 원문 안의 호출 가운데 사용자 명세가 정규화로 요약한 함수가 있는지(명세는 호출 이름 정규식이다)"""
+    pattern = CUSTOM_NORMALIZERS.get(lang) if lang is not None else None
+    if pattern is None:
+        return False
+    return any(pattern.search(re.sub(r"\s+", "", name)) for name in _CALL_NAME_RE.findall(text))
+
+
+def custom_propagation(callee: str, lang: Lang | None) -> tuple[int, str] | None:
+    for pattern, source, target in CUSTOM_PROPAGATORS.get(lang, []) if lang is not None else []:
+        if pattern.search(callee):
+            return source, target
+    return None
 
 
 def custom_sanitizer_match(callee: str, ctx: Ctx, lang: Lang | None = None) -> bool:

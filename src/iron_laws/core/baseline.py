@@ -41,6 +41,27 @@ class BaselineCost(BaseModel):
     workers: int = 1
 
 
+class BaselineRoute(BaseModel):
+    """기준선 시점의 라우트 한 줄. 공격 표면 비교(AI-127)에 쓴다."""
+
+    method: str
+    path: str  # 정규화한 경로(경로 변수 이름을 지운 것)
+    kind: str = "normal"
+    auth: str = "unknown"
+    file: str = ""
+
+
+def normalize_route_path(path: str) -> str:
+    """경로 변수 표기를 하나로 맞춘다: /users/{id}·/users/:id·/users/<int:id> → /users/{}"""
+    path = re.sub(r"\{[^}]*\}|<[^>]*>|(?<=/):\w+|\[\w+\]", "{}", path.strip())
+    return "/" + path.strip("/") if path else "/"
+
+
+def baseline_routes(rows: list[dict]) -> list[BaselineRoute]:
+    routes = {(r["method"], normalize_route_path(r["path"])): BaselineRoute(method=r["method"], path=normalize_route_path(r["path"]), kind=r.get("kind", "normal"), auth=r["auth"], file=r["file"]) for r in rows}
+    return [routes[k] for k in sorted(routes)]
+
+
 class Baseline(BaseModel):
     """기존 지적 관리 데이터(승인된 부채의 목록). 사람의 검토 승인이 아니다. 승인은 ApprovalRecord로 따로 기록한다."""
 
@@ -51,6 +72,7 @@ class Baseline(BaseModel):
     created: str = ""
     entries: list[BaselineEntry] = Field(default_factory=list)
     cost: BaselineCost | None = None
+    routes: list[BaselineRoute] | None = None  # 없으면(옛 기준선) 공격 표면 비교를 하지 않는다
 
 
 def _digest(*parts: object) -> str:
@@ -71,7 +93,7 @@ def loose_key(rule_id: str, scope: str, shape: str) -> str:
     return _digest(rule_id, scope, shape)
 
 
-def build_baseline(report: AuditReport, tool_version: str) -> Baseline:
+def build_baseline(report: AuditReport, tool_version: str, routes: list[dict] | None = None) -> Baseline:
     entries = [
         BaselineEntry(
             fingerprint=v.fingerprint,
@@ -99,6 +121,7 @@ def build_baseline(report: AuditReport, tool_version: str) -> Baseline:
         created=datetime.now(UTC).strftime("%Y-%m-%d"),
         entries=entries,
         cost=cost,
+        routes=baseline_routes(routes) if routes is not None else None,
     )
 
 
@@ -274,5 +297,6 @@ def migrate_baseline(old: Baseline, violations: list[Violation], tool_version: s
         tool_version=tool_version,
         created=datetime.now(UTC).strftime("%Y-%m-%d"),
         entries=entries,
+        routes=old.routes,
     )
     return MigrationReport(new, migrated, unmatched)

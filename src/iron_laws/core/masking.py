@@ -18,3 +18,23 @@ def mask_secrets(text: str, keep: frozenset[str] | set[str] = frozenset()) -> st
     masked = QUOTED_RE.sub(lambda m: m.group(0) if m.group("body") in keep else f"{m.group('q')}{MASK}{m.group('q')}", text)
     masked = ASSIGN_RE.sub(lambda m: f"{m.group('head')}{MASK}{m.group('tail')}", masked)
     return TOKEN_RE.sub(MASK, masked)
+
+
+CODE_TOKEN_RE = re.compile(r"(?<![\w\-+/=])[A-Za-z0-9_\-+/=]{20,}(?![\w\-+/=])")
+QUOTED_TOKEN_RE = re.compile(r"[^\s\"'`]{8,}")
+
+
+def _token_like(value: str) -> bool:
+    """숫자와 영문자가 섞인 값. 비밀 토큰·해시·키는 거의 언제나 숫자를 담고, 함수·형식 이름은 그렇지 않다"""
+    return sum(c.isdigit() for c in value) >= 2 and sum(c.isalpha() for c in value) >= 2
+
+
+def mask_code_secrets(text: str) -> str:
+    """코드 조각을 밖으로 보낼 때 쓴다. mask_secrets와 달리 식별자와 평범한 문자열(SQL·경로·형식 문자열)은 남기고,
+    공백 없이 숫자와 영문자가 섞인 따옴표 값과 20자 넘는 토큰 모양 값만 가린다.
+    비밀로 판정된 값·비밀 이름에 대입된 값·알려진 토큰 형식은 redact_text가 먼저 가린다"""
+    masked = QUOTED_RE.sub(
+        lambda m: f"{m.group('q')}{MASK}{m.group('q')}" if QUOTED_TOKEN_RE.fullmatch(m.group("body")) and _token_like(m.group("body")) else m.group(0),
+        text,
+    )
+    return CODE_TOKEN_RE.sub(lambda m: MASK if _token_like(m.group(0)) else m.group(0), masked)

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="demo.MemberMapper">
+  <select id="selectMember" resultType="demo.Member">
+    SELECT * FROM member WHERE user_id = #{userId}
+  </select>
+  <update id="resetLoginFailCount">
+    UPDATE member SET login_fail_cnt = 0, lock_yn = 'N' WHERE user_id = #{userId}
+  </update>
+</mapper>

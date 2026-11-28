@@ -157,6 +157,11 @@ class Policies(BaseModel):
         default=None,
         description="사용자 명세 파일(소스·싱크·정제 함수). 모든 항목의 양성·음성 예제가 기대대로 판정될 때만 불러온다",
     )
+    entry_points: Literal["web", "public_api"] = Field(
+        default="web",
+        description="외부 입력으로 볼 진입점. public_api면 시험이 아닌 코드의 공개 함수 매개변수(문자열·바이트·스트림·경로·URL)도 "
+        "입력으로 보고, 그 입력만 닿는 경로·명령·코드·XPath·XXE·XSS 지적은 확인 필요로 낸다",
+    )
     ledger_include_spec_points: bool = Field(
         default=False,
         description="사용자 명세의 싱크를 검사 공백 장부에도 반영합니다. 켜면 명세가 더한 싱크가 장부 지점으로 나타나고 장부 상태가 바뀔 수 있습니다",
@@ -172,6 +177,64 @@ class Policies(BaseModel):
     protected_paths_exclude: list[str] = Field(
         default_factory=list,
         description="기본 보호 경로에서 뺄 패턴. 설정 파일과 승인·기준선 기록은 뺄 수 없다",
+    )
+    session_timeout_max: str | None = Field(
+        default=None,
+        description="세션 제한시간 상한. 예: '10m', '600s', 'PT10M'. 있으면 세션 설정값이 이보다 길 때 알린다",
+    )
+    eol_db: str | None = Field(
+        default=None,
+        description="지원 종료 자료 폴더(iron-laws index fetch --eol로 만든 것). 지정했는데 읽을 수 없으면 판정을 대체하지 않고 오류 진단을 낸다",
+    )
+
+
+class AuthSettings(BaseModel):
+    """로그인 검사 구조. 코드에서 읽은 근거(보안 애너테이션, permitAll, anyRequest)가 이 설정보다 우선한다."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    interceptor_protects: bool = Field(
+        default=False,
+        description="true면 인터셉터·필터가 로그인을 요구한다고 본다. 인터셉터의 addPathPatterns를 읽으면 그 범위만 보호로 본다",
+    )
+    exempt_markers: list[str] = Field(
+        default_factory=list, description="로그인 검사 예외 표지(애너테이션, 데코레이터, 미들웨어 이름). 예: ['@SessionExclude']"
+    )
+    exempt_paths: list[str] = Field(default_factory=list, description="코드에서 읽지 못한 로그인 검사 예외 경로(ant 패턴). 예: ['/login/**']")
+    fail_columns: list[str] = Field(default_factory=list, description="로그인 실패 횟수·잠금 상태를 담는 열·필드 이름을 기본 목록에 더한다")
+
+
+class TenancySettings(BaseModel):
+    """소속(테넌트) 경계. keys와 principal을 모두 적어야 소속 격리 판정(AI-129)을 한다."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    keys: list[str] = Field(default_factory=list, description="소속을 나타내는 열·파라미터 이름. 예: ['merchant_id', 'mid']")
+    principal: list[str] = Field(default_factory=list, description="로그인 사용자의 소속을 읽는 표현식. 예: ['getLoginUser().getMid()']")
+    tables: list[str] = Field(default_factory=list, description="소속 격리 대상 테이블. 비우면 매퍼 SQL과 DDL에서 keys 열이 있는 테이블")
+
+    @property
+    def active(self) -> bool:
+        return bool(self.keys and self.principal)
+
+
+class AuditSettings(BaseModel):
+    """보안 이벤트 기록(AI-128)의 대상과 근거"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    critical_routes: list[str] = Field(default_factory=list, description="감사 기록이 있어야 할 라우트의 경로·핸들러 이름 정규식을 기본 목록에 더한다")
+    markers: list[str] = Field(default_factory=list, description="감사 기록 호출 이름을 기본 목록(audit, securityEvent, security 로거)에 더한다")
+    event_types: list[str] = Field(default_factory=list, description="감사 근거로 인정할 보안 이벤트 타입 이름. 이 타입을 publishEvent로 발행해야 인정한다")
+
+
+class BaselineSettings(BaseModel):
+    """기준선 비교 옵션"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    route_name_patterns: list[str] = Field(
+        default_factory=list, description="기준선에 없던 라우트 가운데 경로가 이 정규식과 맞으면 알린다. 예: ['(?i)/(legacy|old|bak)/', '/v1/']"
     )
 
 
@@ -229,12 +292,22 @@ class IronLawsConfig(BaseModel):
     limits: Limits = Field(default_factory=Limits)
     policies: Policies = Field(default_factory=Policies)
     architecture: ArchitectureContract = Field(default_factory=ArchitectureContract)
+    auth: AuthSettings = Field(default_factory=AuthSettings)
+    tenancy: TenancySettings = Field(default_factory=TenancySettings)
+    audit: AuditSettings = Field(default_factory=AuditSettings)
+    baseline: BaselineSettings = Field(default_factory=BaselineSettings)
     respect_gitignore: bool = Field(
         default=False,
         description="true면 .gitignore에 걸리는 파일과 폴더를 점검하지 않는다 (기본은 점검)",
     )
     enabled_rules: list[str] | None = None
     disabled_rules: list[str] = Field(default_factory=list)
+
+    def hash_json(self) -> str:
+        """설정 지문용 직렬화. 나중에 더한 선택 항목은 기본값일 때 빼서, 그 항목을 쓰지 않는 프로젝트의 지문이 바뀌지 않게 한다"""
+        if self.policies.entry_points == "web":
+            return self.model_dump_json(exclude={"policies": {"entry_points"}})
+        return self.model_dump_json()
 
 
 CONFIG_NAMES = (".iron-laws.yml", ".iron-laws.yaml")

@@ -23,6 +23,7 @@ from iron_laws.rules.ai_code_common import (
     MAX_PER_FILE,
     AiRule,
 )
+from iron_laws.rules.ai_code_session import flat_settings, spring_profile
 from iron_laws.rules.secrets_crypto import SECRET_NAME, LineRegexRule
 
 OPENVEX_NAMESPACE = "https://openvex.dev/ns/"
@@ -292,11 +293,28 @@ class InsecureSettingsRule(LineRegexRule, AiRule):
         (re.compile(r"""app\.disable\(\s*['"]x-powered-by['"]\s*\)\s*;?\s*//\s*TODO|trust\s+proxy['"]?\s*,\s*true"""), "프록시 신뢰 설정을 무조건 켜 두었습니다.", Severity.LOW),
     ]
     confidence = Confidence.REVIEW
+    version = 2
 
     def check(self, src: SourceFile) -> list[Violation]:
         if src.is_test:
             return []
-        return super().check(src)
+        return super().check(src) + self._api_docs(src)
+
+    def _api_docs(self, src: SourceFile) -> list[Violation]:
+        """springdoc·swagger 문서 화면 활성화. 운영 프로필 파일은 HIGH, 기본 설정 파일은 MEDIUM 확인 필요, 개발·로컬 프로필은 보지 않는다"""
+        if src.kind not in ("properties", "yaml"):
+            return []
+        profile = spring_profile(src.path.name)
+        if profile is None or re.match(r"(?i)(dev|local|test)", profile):
+            return []
+        found = []
+        for line, key, value in flat_settings(src):
+            if re.fullmatch(r"springdoc\.(api-docs|swagger-ui)\.enabled", key) and value.lower() == "true":
+                if re.match(r"(?i)prod|live|real|op", profile):
+                    found.append(self.at_line(src, line, "운영 프로필에서 API 문서 화면(springdoc)이 켜져 있습니다.", severity=Severity.HIGH, confidence=Confidence.REVIEW))
+                else:
+                    found.append(self.at_line(src, line, "기본 설정 파일에서 API 문서 화면(springdoc)이 켜져 있습니다. 운영 프로필에서 끄는지 확인하십시오.", severity=Severity.MEDIUM, confidence=Confidence.REVIEW))
+        return found
 
 
 class DevOpsConfigRule(AiRule):

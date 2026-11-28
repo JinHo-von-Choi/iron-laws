@@ -1,3 +1,5 @@
+import re
+
 from tree_sitter import Node
 
 from iron_laws.engine import xfile, xfile_js
@@ -14,13 +16,24 @@ from iron_laws.engine.languages import JS_FAMILY, Lang
 from iron_laws.engine.source import SourceFile
 
 
+class CallParts(tuple):
+    """(피호출자 문자열, 인자 노드 목록). 호출 노드는 node 속성에 둔다(지역 객체의 클래스를 찾을 위치)"""
+
+    node: Node
+
+    def __new__(cls, callee: str, args: list[Node], node: Node) -> "CallParts":
+        parts = super().__new__(cls, (callee, args))
+        parts.node = node
+        return parts
+
+
 def _call_parts(src: SourceFile, node: Node):
     """호출 노드의 (피호출자 문자열, 인자 노드 목록)을 반환한다. 호출이 아니면 None."""
     if src.lang is None or node.type not in CALL_TYPES.get(src.lang, set()):
         return None
     index = src.memo("call_by_id", lambda: {c.node.id: c for c in iter_calls(src)})
     call = index.get(node.id)
-    return (call.callee, call.args) if call is not None else None
+    return CallParts(call.callee, call.args, call.node) if call is not None else None
 
 
 def _function_index(src: SourceFile) -> dict[str, list]:
@@ -132,10 +145,58 @@ def _module_rebound_names(src: SourceFile) -> set[str]:
     return src.memo("module_rebound_names", find)
 
 
-def resolve_any(src: SourceFile, callee: str, argc: int) -> list[tuple[SourceFile, object]]:
-    """호출 대상 함수 후보. Python은 이름의 바인딩을 먼저 본다: import로 묶인 이름이면 import 대상,
+_RECEIVER_RE = re.compile(r"[A-Za-z_$][\w$]*")
+
+
+def _local_object_class(src: SourceFile, receiver: str, at: Node) -> str | None:
+    """at 위치의 지역 변수 receiver에 도달하는 정의가 하나이고 그 정의가 객체 생성이면 클래스 이름(식)"""
+    # 도달 정의 모듈이 이 모듈의 호출 해석을 쓰므로 함수 안에서 가져온다
+    from iron_laws.engine.taint.definitions import reaching_definitions
+
+    scope = enclosing_function(at, src.lang)
+    if scope is None:
+        return None
+    defs = reaching_definitions(src, scope, receiver, at.start_byte)
+    if len(defs) != 1:
+        return None  # 분기마다 다른 클래스를 대입하면 정할 수 없다
+    d = defs[0]
+    if src.lang is Lang.JAVA and d.type == "object_creation_expression":
+        type_node = d.child_by_field_name("type")
+        return src.text_of(type_node).split("<", 1)[0].strip() if type_node is not None else None
+    if src.lang is Lang.PYTHON and d.type == "call":
+        function = d.child_by_field_name("function")
+        if function is not None and function.type in ("identifier", "attribute") and _DOTTED_RE.fullmatch(src.text_of(function)):
+            return src.text_of(function)
+    return None
+
+
+_DOTTED_RE = re.compile(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*")
+
+
+_CONSTRUCTED_RE = re.compile(r"^(?:new\s*)?([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)\(.*\)$", re.S)
+
+
+def _local_object_methods(src: SourceFile, callee: str, argc: int, at: Node) -> list[tuple[SourceFile, object]]:
+    """지역 객체(`w = Cls(...)` 뒤 `w.method()`)나 그 자리에서 만든 객체(`Cls(...).method()`)의 메서드"""
+    receiver, method = callee.rsplit(".", 1)
+    constructed = _CONSTRUCTED_RE.match(receiver)
+    if constructed is not None and src.lang is Lang.PYTHON:
+        return xfile.resolve_method(src, constructed.group(1), method, argc)
+    if not _RECEIVER_RE.fullmatch(receiver) or receiver in ("self", "this", "cls"):
+        return []
+    class_ref = _local_object_class(src, receiver, at)
+    return xfile.resolve_method(src, class_ref, method, argc) if class_ref else []
+
+
+def resolve_any(src: SourceFile, callee: str, argc: int, at: Node | None = None) -> list[tuple[SourceFile, object]]:
+    """호출 대상 함수 후보. 지역 객체의 메서드 호출(`w = mod.Cls(...)`·`Cls w = new Cls(...)` 뒤의 `w.method(...)`)은
+    at(호출 노드)이 주어지면 그 대입으로 클래스를 정해 그 클래스의 메서드를 찾는다. Python은 이름의 바인딩을 먼저 본다: import로 묶인 이름이면 import 대상,
     같은 파일 정의면 그 함수, 둘 다 있으면 양쪽을 모두 후보로 둔다(어느 쪽이든 오염을 돌려주면 오염).
     모듈 최상위에서 이름을 다시 대입하면 대상을 정할 수 없어 후보를 내지 않는다. 다른 언어는 같은 파일 함수가 우선이다."""
+    if at is not None and src.lang in (Lang.PYTHON, Lang.JAVA) and "." in callee:
+        methods = _local_object_methods(src, callee, argc, at)
+        if methods:
+            return methods
     local = [(src, fn) for fn in resolve_helper(src, callee, argc)]
     if src.lang is Lang.JAVA and "." in callee:
         receiver = callee.rsplit(".", 1)[0]

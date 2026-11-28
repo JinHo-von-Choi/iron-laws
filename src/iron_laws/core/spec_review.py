@@ -112,9 +112,13 @@ def _scan(root: Path, config: IronLawsConfig, contract: Contract, contract_sourc
 
 
 def _sanitizer_ids(loaded: LoadedSpec, family: str | None) -> list[str]:
+    """그 계열의 지적을 없애거나 낮출 수 있는 선언 항목: 정제 함수, 검사 함수, 정규화 요약"""
     if family is None:
         return []
-    return [f"sanitizers.{e.id}" for e in loaded.spec.sanitizers if e.family == family]
+    found = [f"sanitizers.{e.id}" for e in loaded.spec.sanitizers if e.family == family]
+    found += [f"validators.{e.id}" for e in loaded.spec.validators if e.family == family]
+    found += [f"summaries.{e.id}" for e in loaded.spec.summaries if e.family == family and e.summary == "normalize"]
+    return found
 
 
 def review_spec(
@@ -179,8 +183,8 @@ def _compare_findings(result: SpecReview, reference: AuditReport, candidate: Aud
         where = f"{violation.rule_id} {violation.file_path.as_posix()}:{violation.line_number}"
         if cause:
             result.review.append(
-                f"{where} — 선언한 정제 함수({', '.join(cause)}) 때문에 사라진 지적입니다. "
-                "그 정제 함수가 값을 실제로 안전하게 바꾸는지 확인하십시오."
+                f"{where} — 선언한 정제·검사 함수나 정규화 요약({', '.join(cause)}) 때문에 사라진 지적입니다. "
+                "그 함수가 값을 실제로 안전하게 바꾸거나 막는지 확인하십시오."
             )
         else:
             result.blocking.append(f"{where} — 선언하지 않은 이유로 사라진 지적입니다. 명세를 적용하기 전에 확인하십시오.")
@@ -290,7 +294,7 @@ def _add_limitations(result: SpecReview, spec: LoadedSpec, contract: Contract) -
     families = sorted(contract.families)
     result.limitations.append(f"검사 공백 대조 범위: 언어 {', '.join(contract.languages)} · 계열 {', '.join(families)}")
     ledger_families = {"command", "path", "sql"}
-    entries = list(spec.spec.sources) + list(spec.spec.sinks) + list(spec.spec.sanitizers)
+    entries = list(spec.spec.sources) + list(spec.spec.sinks) + list(spec.spec.sanitizers) + list(spec.spec.validators) + list(spec.spec.summaries)
     outside = sorted({e.family for e in entries if e.family not in ledger_families})
     if outside:
         result.limitations.append(

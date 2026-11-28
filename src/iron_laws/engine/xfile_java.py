@@ -248,3 +248,12 @@ def resolve(index, src: SourceFile, callee: str, argc: int):
     if len(found) > 1:
         return ResolveResult([], "overloaded")
     return ResolveResult(found)
+
+
+def resolve_method(index, src: SourceFile, type_name: str, method: str, argc: int):
+    """`T v = new T(...)`로 만든 지역 객체의 인스턴스 메서드. 클래스가 하나로 정해지고 같은 인자 수의 메서드가 하나일 때만"""
+    declared = _owner_candidates(index, src, type_name)
+    if len(declared) != 1:
+        return []
+    found = _instance_methods(index, declared[0], method, argc)
+    return found if found is not None and len(found) == 1 else []

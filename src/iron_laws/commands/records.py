@@ -49,9 +49,9 @@ def baseline_create_command(
         for d in [d for d in report.diagnostics if d.severity == "error"][:10]:
             err.print(f"  - {escape(d.file_path + ': ' if d.file_path else '')}{escape(d.message)}")
         raise typer.Exit(2)
-    baseline = build_baseline(report, _tool_version())
+    baseline = build_baseline(report, _tool_version(), routes=scanner._routes)
     save_baseline(baseline, output)
-    err.print(f"[bold green]기준선 저장 완료: {output} (지적 {len(baseline.entries)}건)[/bold green]")
+    err.print(f"[bold green]기준선 저장 완료: {output} (지적 {len(baseline.entries)}건, 라우트 {len(baseline.routes or [])}개)[/bold green]")
     err.print("[dim]기준선의 지적은 승인된 부채로 기록됩니다. 이후 `--baseline`으로 새로 생긴 지적만 판정하십시오.[/dim]")
 
 

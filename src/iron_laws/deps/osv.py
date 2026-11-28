@@ -14,7 +14,7 @@ from typing import Any
 
 from iron_laws.deps.versions import normalize_name, parse_version
 
-SUPPORTED_ECOSYSTEMS = ("PyPI", "npm")
+SUPPORTED_ECOSYSTEMS = ("PyPI", "npm", "Maven")
 
 
 @dataclass

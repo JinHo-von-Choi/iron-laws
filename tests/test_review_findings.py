@@ -63,7 +63,7 @@ FLOW_CASES = [
     (
         "abspath-with-prefix-check",
         "IL-502",
-        {"a.py": "import os\n" + PY_WEB + "def h():\n    p = os.path.abspath(os.path.join('/srv', request.args['p']))\n    if not p.startswith('/srv'):\n        abort(400)\n    return open(p).read()\n"},
+        {"a.py": "import os\n" + PY_WEB + "def h():\n    p = os.path.abspath(os.path.join('/srv', request.args['p']))\n    if not p.startswith('/srv/'):\n        abort(400)\n    return open(p).read()\n"},
         {},
     ),
     # SSRF는 접속 대상 인자만 본다

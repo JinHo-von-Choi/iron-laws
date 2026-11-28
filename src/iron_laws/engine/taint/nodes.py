@@ -14,7 +14,9 @@ from iron_laws.engine.ast_tools import NESTING_TYPES
 MAX_HELPER_DEPTH = 4  # 도우미 함수를 따라가는 깊이 상한
 
 MUTATING_METHODS = frozenset(
-    {"add", "append", "put", "push", "extend", "insert", "offer", "addAll", "putAll", "setdefault", "update", "set", "write", "concat"}
+    {"add", "append", "put", "push", "extend", "insert", "offer", "addAll", "putAll", "setdefault", "update", "set", "write", "concat",
+     # C#: StringBuilder·List·Queue
+     "Append", "AppendLine", "AppendFormat", "Insert", "Add", "AddRange", "Enqueue", "Push"}
 )
 
 
@@ -114,10 +116,18 @@ class Analysis:
     returns: list[tuple[Node, frozenset[str]]]
 
 
+IF_FIELDS = ("condition", "consequence", "alternative")  # 조건식·if 문의 구문 트리 필드 이름
+
+
 def ternary_parts(node: Node) -> tuple[Node, Node, Node] | None:
     """(조건, 참일 때 값, 거짓일 때 값). Python 조건식(a if 조건 else b)은 필드 이름이 없어 자식 순서로 찾는다."""
     if node.type == "conditional_expression":
         named = [c for c in node.named_children if "comment" not in c.type]
         return (named[1], named[0], named[2]) if len(named) == 3 else None
-    parts = tuple(node.child_by_field_name(k) for k in ("condition", "consequence", "alternative"))
+    parts = tuple(node.child_by_field_name(k) for k in IF_FIELDS)
     return parts if all(p is not None for p in parts) else None
+
+
+def if_parts(node: Node) -> tuple[Node | None, Node | None]:
+    """if 문의 (조건, 참일 때 실행하는 본문)"""
+    return node.child_by_field_name(IF_FIELDS[0]), node.child_by_field_name(IF_FIELDS[1])

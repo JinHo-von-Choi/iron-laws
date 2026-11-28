@@ -63,7 +63,7 @@ class LlmOutputExecutionRule(AiAttackRule):
             for rule in (CodeInjectionRule(), CommandInjectionRule(), SqlInjectionRule()):
                 if self.config is not None:
                     rule.configure(self.config)
-                for call, arg, flow, via in sink_hits(src, rule.sinks, False, rule.select_args, rule.taint_ctx, rule.skip_hit):
+                for call, arg, flow, via, _guard in sink_hits(src, rule.sinks, False, rule.select_args, rule.taint_ctx, rule.skip_hit):
                     if flow is not Flow.TAINTED or call.node.id in seen or (via is None and rule.skip_hit(src, call, arg, flow)):
                         continue
                     seen.add(call.node.id)

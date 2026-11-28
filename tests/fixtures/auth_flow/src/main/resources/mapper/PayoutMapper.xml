@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="demo.PayoutMapper">
+  <select id="selectPayoutList" resultType="map">
+    SELECT * FROM payout WHERE mid = #{mid} LIMIT #{size}
+  </select>
+  <select id="selectMerchant" resultType="demo.Merchant">
+    SELECT * FROM merchant WHERE mid = #{mid}
+  </select>
+</mapper>

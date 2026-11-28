@@ -48,7 +48,7 @@ def openvex(data: dict[str, Any], decisions: list[dict[str, Any]], tool_version:
     statements = []
     for lock in data["locks"]:
         for f in lock["findings"]:
-            product = purl("npm" if f["ecosystem"] == "npm" else "PyPI", f["package"], f["version"])
+            product = purl(f["ecosystem"], f["package"], f["version"])
             for adv in f["advisories"]:
                 names = [adv["id"], *adv.get("aliases", [])]
                 decision = next((human[(n, product)] for n in names if (n, product) in human), None)

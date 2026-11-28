@@ -1,5 +1,5 @@
 """
-오철칙 정보 노출·전송 규칙: 평문 전송(IL-109), 약한 비밀번호 정책(IL-110), 주석 속 민감 정보(IL-111), 쿠키 보안 속성(IL-112), 내려받아 실행(IL-113), 과도한 권한(IL-114)
+오철칙 정보 노출·전송 규칙: 평문 전송(IL-109), 약한 비밀번호 정책(IL-110), 주석 속 민감 정보(IL-111), 쿠키 보안 속성(IL-112), 내려받아 실행(IL-113), 과도한 권한(IL-114), 응답·화면의 비밀값(AI-123)
 작성자: 최진호
 작성일: 2026-11-12
 """
@@ -7,12 +7,14 @@
 
 import re
 
-from iron_laws.core.models import Confidence, IronLaw, Severity, Violation
+from iron_laws.core.models import Confidence, IronLaw, RuleLayer, Severity, Violation
 from iron_laws.engine.ast_tools import (
     is_literal,
     iter_calls,
     string_value,
 )
+from iron_laws.engine.languages import JS_FAMILY, Lang
+from iron_laws.engine.project import ProjectContext
 from iron_laws.engine.source import SourceFile
 from iron_laws.rules.base import BaseRule
 from iron_laws.rules.secrets_crypto import SECRET_NAME, SIGNATURES, LineRegexRule, _is_placeholder
@@ -185,3 +187,122 @@ class PermissionRule(LineRegexRule):
         (re.compile(r"""\bACL['"]?\s*[:=]\s*['"]public-read(-write)?['"]|\ballUsers\b|\bAllUsers\b|public-read-write"""), "저장소 객체를 누구나 읽을 수 있게 공개합니다.", Severity.HIGH),
         (re.compile(r"mkdir\s+-m\s+0?777|install\s+-m\s+0?777"), "디렉터리를 777 권한으로 만듭니다.", Severity.HIGH),
     ]
+
+
+# 응답·화면으로 나가면 안 되는 값의 이름. 로그인 응답의 접근 토큰처럼 내보내는 것이 정상인 토큰 계열은 넣지 않는다
+RESPONSE_SECRET_NAME = re.compile(
+    r"(?i)pass(?:word|wd)|\bpwd|secret|api_?key|access_?key|private_?key|signing_?key|encryption_?key|"
+    r"\btotp|otp_?(?:key|seed)|mfa_?(?:key|seed)|auth_?key|merchant_?key|sign_?key|conn(?:ection)?_?str"
+)
+NOT_SECRET_NAME = re.compile(r"(?i)csrf|policy|length|hint|expir|url|type|label|form|field|required|pattern|reset|change|confirm|rule|regex|min|max|enabled|yn$|flag|masked|masking")
+MASK_CALL = re.compile(r"(?i)mask|redact|obfuscat|\*{3,}")
+ISSUE_WORDS = frozenset({"issue", "create", "register", "generate", "new", "enroll", "regist", "reissue"})
+JAVA_HIDDEN_FIELD = re.compile(r"@JsonIgnore\b|access\s*=\s*(?:JsonProperty\.)?Access\.WRITE_ONLY|@JsonProperty\([^)]*WRITE_ONLY|\btransient\b")
+
+
+def _secret_name(name: str) -> bool:
+    bare = re.sub(r"^(?:get|is)(?=[A-Z])", "", name)
+    return bool(RESPONSE_SECRET_NAME.search(bare)) and not NOT_SECRET_NAME.search(bare)
+
+
+class ResponseSecretRule(BaseRule):
+    rule_id = "AI-123"
+    name = "비밀값(OTP 비밀키·연동키·비밀번호)을 응답·화면으로 보내는 코드 탐지"
+    iron_law = IronLaw.LAW_1
+    severity = Severity.HIGH
+    gov_standard = None
+    layer = RuleLayer.AI_CODE
+    plain = "OTP 비밀키나 가맹점 연동키를 응답이나 화면에 그대로 담으면, 그 화면을 볼 수 있는 사람(또는 세션을 가로챈 공격자)이 키를 복사해 인증을 통과하거나 결제 API를 직접 부를 수 있습니다."
+    how_to_fix = (
+        "비밀값은 응답 DTO에서 빼거나 @JsonIgnore·WRITE_ONLY로 막고, 화면에는 앞뒤 몇 글자만 남긴 마스킹 값을 보여 주세요. "
+        "새로 발급한 키는 발급 직후 한 번만 보여 주고 다시 조회할 수 없게 하세요."
+    )
+
+    def _java_classes(self, project: ProjectContext) -> dict[str, list[tuple[str, int, bool]]]:
+        """단순 클래스 이름 → [(필드 이름, 줄, 숨김 여부)]"""
+        classes: dict[str, list[tuple[str, int, bool]]] = {}
+        for src in project.by_lang(Lang.JAVA, Lang.KOTLIN):
+            for node in src.nodes:
+                if node.type not in ("class_declaration", "record_declaration"):
+                    continue
+                name = node.child_by_field_name("name")
+                body = node.child_by_field_name("body")
+                if name is None or body is None:
+                    continue
+                fields = []
+                for child in body.named_children:
+                    if child.type != "field_declaration":
+                        continue
+                    hidden = bool(JAVA_HIDDEN_FIELD.search(src.text_of(child)))
+                    for decl in child.children_by_field_name("declarator"):
+                        field_name = decl.child_by_field_name("name")
+                        if field_name is not None:
+                            fields.append((src.text_of(field_name), src.line_of(child), hidden))
+                classes.setdefault(src.text_of(name), []).extend(fields)
+        return classes
+
+    def _issue_route(self, route) -> bool:
+        from iron_laws.engine.routes import _tokens
+
+        return bool((set(_tokens(route.path)) | set(_tokens(route.handler))) & ISSUE_WORDS)
+
+    def _emit(self, src: SourceFile, node, route, message: str) -> Violation:
+        if self._issue_route(route):
+            return self.at_node(src, node, message + " 발급 직후 한 번만 보여 주는 흐름인지 확인하십시오.", severity=Severity.LOW, confidence=Confidence.REVIEW)
+        return self.at_node(src, node, message)
+
+    def check_project(self, project: ProjectContext) -> list[Violation]:
+        found: list[Violation] = []
+        classes: dict[str, list[tuple[str, int, bool]]] | None = None
+        by_path = {f.path.as_posix(): f for f in project.source_files()}
+        for route in project.routes():
+            src = by_path.get(route.file)
+            if src is None or route.node is None:
+                continue
+            if route.framework == "spring":
+                if classes is None:
+                    classes = self._java_classes(project)
+                found.extend(self._spring(src, route, classes))
+            elif src.lang is Lang.PYTHON or src.lang in JS_FAMILY:
+                found.extend(self._dict_response(src, route))
+        return found
+
+    def _spring(self, src: SourceFile, route, classes: dict[str, list[tuple[str, int, bool]]]) -> list[Violation]:
+        found: list[Violation] = []
+        fn = route.node
+        for call in iter_calls(src):
+            if not (fn.start_byte <= call.node.start_byte and call.node.end_byte <= fn.end_byte):
+                continue
+            if not re.search(r"(?:^|\.)(addAttribute|addObject)$", call.callee) or len(call.args) < 2:
+                continue
+            key, value = src.text_of(call.args[0]), src.text_of(call.args[1])
+            getter = re.findall(r"\.(\w+)\(\)", value)
+            named = _secret_name(key.strip("\"'")) or any(_secret_name(g) for g in getter)
+            if named and not MASK_CALL.search(value) and not is_literal(call.args[1]):
+                found.append(self._emit(src, call.node, route, f"비밀값({key.strip(chr(34))})을 화면 모델에 원문으로 담습니다."))
+        head_class = src.text.split("class ", 1)[0]
+        method_head = src.data[fn.start_byte : (fn.child_by_field_name("body") or fn).start_byte].decode("utf-8", "replace")
+        rest = "@RestController" in head_class or "@ResponseBody" in method_head
+        type_node = fn.child_by_field_name("type")
+        if not rest or type_node is None:
+            return found
+        for type_name in re.findall(r"[A-Z]\w*", src.text_of(type_node)):
+            for field_name, _line, hidden in classes.get(type_name, []):
+                if hidden or not _secret_name(field_name):
+                    continue
+                body = fn.child_by_field_name("body")
+                anchor = next((n for n in (body.named_children if body is not None else []) if n.type == "return_statement"), fn)
+                found.append(self._emit(src, anchor, route, f"응답 객체 {type_name}의 비밀값 필드 {field_name}이(가) 그대로 응답으로 나갑니다."))
+        return found
+
+    def _dict_response(self, src: SourceFile, route) -> list[Violation]:
+        found: list[Violation] = []
+        text = src.code_of(route.node)
+        base = src.line_of(route.node)
+        for m in re.finditer(r"""(?:jsonify|JSONResponse|res\.json|res\.send|return)\s*\(?\s*\{?[^\n]*?["']?(\w+)["']?\s*[:=]\s*(?!["'])([^,}\n)]+)""", text):
+            name, value = m.group(1), m.group(2)
+            if not _secret_name(name) or MASK_CALL.search(value):
+                continue
+            line = base + text.count("\n", 0, m.start())
+            found.append(self.at_line(src, line, f"비밀값({name})을 응답에 원문으로 담습니다.", severity=Severity.LOW if self._issue_route(route) else None, confidence=Confidence.REVIEW))
+        return found

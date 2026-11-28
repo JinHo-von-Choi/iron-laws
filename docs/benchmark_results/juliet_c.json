@@ -1,5 +1,5 @@
 {
-  "tool_version": "1.6.0 출시 전 개발 판",
+  "tool_version": "1.12.1",
   "dataset": "Juliet Test Suite for C/C++ 1.3",
   "dataset_sha256": "ada9d7e1c323d283446df3f55bdee0d00bda1fed786785fe98764d58688f38eb",
   "command": "benchmarks/juliet.py c <압축.zip> <푼 폴더>",
@@ -152,30 +152,75 @@
   "categories": {
     "CWE121_Stack_Based_Buffer_Overflow": {
       "files": 8204,
-      "TP": 912,
-      "FN": 4032,
-      "FP": 912,
-      "TN": 4032,
-      "TPR": 0.1845,
-      "FPR": 0.1845
+      "TP": 364,
+      "FN": 4580,
+      "FP": 0,
+      "TN": 4944,
+      "TPR": 0.0736,
+      "FPR": 0.0,
+      "with_review": {
+        "TP": 904,
+        "FN": 4040,
+        "FP": 540,
+        "TN": 4404,
+        "TPR": 0.1828,
+        "FPR": 0.1092
+      },
+      "by_kind": {
+        "copy": {
+          "bad": 364,
+          "bad_review": 540,
+          "good_review": 540
+        }
+      }
     },
     "CWE122_Heap_Based_Buffer_Overflow": {
       "files": 10149,
-      "TP": 1008,
-      "FN": 4914,
-      "FP": 1008,
-      "TN": 4914,
-      "TPR": 0.1702,
-      "FPR": 0.1702
+      "TP": 80,
+      "FN": 5842,
+      "FP": 0,
+      "TN": 5922,
+      "TPR": 0.0135,
+      "FPR": 0.0,
+      "with_review": {
+        "TP": 1004,
+        "FN": 4918,
+        "FP": 924,
+        "TN": 4998,
+        "TPR": 0.1695,
+        "FPR": 0.156
+      },
+      "by_kind": {
+        "copy": {
+          "bad": 80,
+          "bad_review": 924,
+          "good_review": 924
+        }
+      }
     },
     "CWE124_Buffer_Underwrite": {
       "files": 3467,
-      "TP": 352,
-      "FN": 1696,
-      "FP": 352,
-      "TN": 1696,
-      "TPR": 0.1719,
-      "FPR": 0.1719
+      "TP": 68,
+      "FN": 1980,
+      "FP": 0,
+      "TN": 2048,
+      "TPR": 0.0332,
+      "FPR": 0.0,
+      "with_review": {
+        "TP": 352,
+        "FN": 1696,
+        "FP": 284,
+        "TN": 1764,
+        "TPR": 0.1719,
+        "FPR": 0.1387
+      },
+      "by_kind": {
+        "copy": {
+          "bad": 68,
+          "bad_review": 284,
+          "good_review": 284
+        }
+      }
     },
     "CWE126_Buffer_Overread": {
       "files": 2396,
@@ -184,25 +229,66 @@
       "FP": 0,
       "TN": 1452,
       "TPR": 0.0,
-      "FPR": 0.0
+      "FPR": 0.0,
+      "with_review": {
+        "TP": 0,
+        "FN": 1452,
+        "FP": 0,
+        "TN": 1452,
+        "TPR": 0.0,
+        "FPR": 0.0
+      },
+      "by_kind": {}
     },
     "CWE127_Buffer_Underread": {
       "files": 3467,
-      "TP": 352,
-      "FN": 1696,
-      "FP": 352,
-      "TN": 1696,
-      "TPR": 0.1719,
-      "FPR": 0.1719
+      "TP": 68,
+      "FN": 1980,
+      "FP": 0,
+      "TN": 2048,
+      "TPR": 0.0332,
+      "FPR": 0.0,
+      "with_review": {
+        "TP": 352,
+        "FN": 1696,
+        "FP": 284,
+        "TN": 1764,
+        "TPR": 0.1719,
+        "FPR": 0.1387
+      },
+      "by_kind": {
+        "copy": {
+          "bad": 68,
+          "bad_review": 284,
+          "good_review": 284
+        }
+      }
     },
     "CWE134_Uncontrolled_Format_String": {
       "files": 5175,
-      "TP": 1000,
-      "FN": 1880,
-      "FP": 2880,
-      "TN": 0,
-      "TPR": 0.3472,
-      "FPR": 1.0
+      "TP": 960,
+      "FN": 1920,
+      "FP": 630,
+      "TN": 2250,
+      "TPR": 0.3333,
+      "FPR": 0.2188,
+      "with_review": {
+        "TP": 960,
+        "FN": 1920,
+        "FP": 925,
+        "TN": 1955,
+        "TPR": 0.3333,
+        "FPR": 0.3212
+      },
+      "by_kind": {
+        "copy": {
+          "good_review": 420
+        },
+        "format": {
+          "bad": 960,
+          "good": 630
+        }
+      }
     },
     "CWE190_Integer_Overflow": {
       "files": 6681,
@@ -211,16 +297,38 @@
       "FP": 0,
       "TN": 3960,
       "TPR": 0.0,
-      "FPR": 0.0
+      "FPR": 0.0,
+      "with_review": {
+        "TP": 0,
+        "FN": 3960,
+        "FP": 0,
+        "TN": 3960,
+        "TPR": 0.0,
+        "FPR": 0.0
+      },
+      "by_kind": {}
     },
     "CWE23_Relative_Path_Traversal": {
       "files": 4112,
-      "TP": 0,
-      "FN": 2400,
+      "TP": 400,
+      "FN": 2000,
       "FP": 0,
       "TN": 2400,
-      "TPR": 0.0,
-      "FPR": 0.0
+      "TPR": 0.1667,
+      "FPR": 0.0,
+      "with_review": {
+        "TP": 400,
+        "FN": 2000,
+        "FP": 0,
+        "TN": 2400,
+        "TPR": 0.1667,
+        "FPR": 0.0
+      },
+      "by_kind": {
+        "IL-502": {
+          "bad": 400
+        }
+      }
     },
     "CWE242_Use_of_Inherently_Dangerous_Function": {
       "files": 21,
@@ -229,7 +337,20 @@
       "FP": 0,
       "TN": 18,
       "TPR": 1.0,
-      "FPR": 0.0
+      "FPR": 0.0,
+      "with_review": {
+        "TP": 18,
+        "FN": 0,
+        "FP": 0,
+        "TN": 18,
+        "TPR": 1.0,
+        "FPR": 0.0
+      },
+      "by_kind": {
+        "IL-524": {
+          "bad": 18
+        }
+      }
     },
     "CWE247_Reliance_on_DNS_Lookups_in_Security_Decision": {
       "files": 20,
@@ -238,7 +359,16 @@
       "FP": 0,
       "TN": 18,
       "TPR": 0.0,
-      "FPR": 0.0
+      "FPR": 0.0,
+      "with_review": {
+        "TP": 0,
+        "FN": 18,
+        "FP": 0,
+        "TN": 18,
+        "TPR": 0.0,
+        "FPR": 0.0
+      },
+      "by_kind": {}
     },
     "CWE259_Hard_Coded_Password": {
       "files": 166,
@@ -247,7 +377,16 @@
       "FP": 0,
       "TN": 96,
       "TPR": 0.0,
-      "FPR": 0.0
+      "FPR": 0.0,
+      "with_review": {
+        "TP": 0,
+        "FN": 96,
+        "FP": 0,
+        "TN": 96,
+        "TPR": 0.0,
+        "FPR": 0.0
+      },
+      "by_kind": {}
     },
     "CWE319_Cleartext_Tx_Sensitive_Info": {
       "files": 346,
@@ -256,7 +395,16 @@
       "FP": 0,
       "TN": 192,
       "TPR": 0.0,
-      "FPR": 0.0
+      "FPR": 0.0,
+      "with_review": {
+        "TP": 0,
+        "FN": 192,
+        "FP": 0,
+        "TN": 192,
+        "TPR": 0.0,
+        "FPR": 0.0
+      },
+      "by_kind": {}
     },
     "CWE321_Hard_Coded_Cryptographic_Key": {
       "files": 166,
@@ -265,7 +413,16 @@
       "FP": 0,
       "TN": 96,
       "TPR": 0.0,
-      "FPR": 0.0
+      "FPR": 0.0,
+      "with_review": {
+        "TP": 0,
+        "FN": 96,
+        "FP": 0,
+        "TN": 96,
+        "TPR": 0.0,
+        "FPR": 0.0
+      },
+      "by_kind": {}
     },
     "CWE327_Use_Broken_Crypto": {
       "files": 56,
@@ -274,7 +431,16 @@
       "FP": 0,
       "TN": 54,
       "TPR": 0.0,
-      "FPR": 0.0
+      "FPR": 0.0,
+      "with_review": {
+        "TP": 0,
+        "FN": 54,
+        "FP": 0,
+        "TN": 54,
+        "TPR": 0.0,
+        "FPR": 0.0
+      },
+      "by_kind": {}
     },
     "CWE328_Reversible_One_Way_Hash": {
       "files": 56,
@@ -283,7 +449,16 @@
       "FP": 0,
       "TN": 54,
       "TPR": 0.0,
-      "FPR": 0.0
+      "FPR": 0.0,
+      "with_review": {
+        "TP": 0,
+        "FN": 54,
+        "FP": 0,
+        "TN": 54,
+        "TPR": 0.0,
+        "FPR": 0.0
+      },
+      "by_kind": {}
     },
     "CWE338_Weak_PRNG": {
       "files": 20,
@@ -292,7 +467,16 @@
       "FP": 0,
       "TN": 18,
       "TPR": 0.0,
-      "FPR": 0.0
+      "FPR": 0.0,
+      "with_review": {
+        "TP": 0,
+        "FN": 18,
+        "FP": 0,
+        "TN": 18,
+        "TPR": 0.0,
+        "FPR": 0.0
+      },
+      "by_kind": {}
     },
     "CWE367_TOC_TOU": {
       "files": 39,
@@ -301,16 +485,38 @@
       "FP": 0,
       "TN": 36,
       "TPR": 0.0,
-      "FPR": 0.0
+      "FPR": 0.0,
+      "with_review": {
+        "TP": 0,
+        "FN": 36,
+        "FP": 0,
+        "TN": 36,
+        "TPR": 0.0,
+        "FPR": 0.0
+      },
+      "by_kind": {}
     },
     "CWE36_Absolute_Path_Traversal": {
       "files": 4112,
-      "TP": 0,
-      "FN": 2400,
+      "TP": 400,
+      "FN": 2000,
       "FP": 0,
       "TN": 2400,
-      "TPR": 0.0,
-      "FPR": 0.0
+      "TPR": 0.1667,
+      "FPR": 0.0,
+      "with_review": {
+        "TP": 400,
+        "FN": 2000,
+        "FP": 0,
+        "TN": 2400,
+        "TPR": 0.1667,
+        "FPR": 0.0
+      },
+      "by_kind": {
+        "IL-502": {
+          "bad": 400
+        }
+      }
     },
     "CWE390_Error_Without_Action": {
       "files": 93,
@@ -319,7 +525,21 @@
       "FP": 0,
       "TN": 90,
       "TPR": 0.0,
-      "FPR": 0.0
+      "FPR": 0.0,
+      "with_review": {
+        "TP": 18,
+        "FN": 72,
+        "FP": 18,
+        "TN": 72,
+        "TPR": 0.2,
+        "FPR": 0.2
+      },
+      "by_kind": {
+        "IL-301": {
+          "bad_review": 18,
+          "good_review": 18
+        }
+      }
     },
     "CWE401_Memory_Leak": {
       "files": 2821,
@@ -328,7 +548,16 @@
       "FP": 0,
       "TN": 1658,
       "TPR": 0.0,
-      "FPR": 0.0
+      "FPR": 0.0,
+      "with_review": {
+        "TP": 0,
+        "FN": 1658,
+        "FP": 0,
+        "TN": 1658,
+        "TPR": 0.0,
+        "FPR": 0.0
+      },
+      "by_kind": {}
     },
     "CWE404_Improper_Resource_Shutdown": {
       "files": 659,
@@ -337,7 +566,21 @@
       "FP": 0,
       "TN": 384,
       "TPR": 0.0,
-      "FPR": 0.0
+      "FPR": 0.0,
+      "with_review": {
+        "TP": 90,
+        "FN": 294,
+        "FP": 48,
+        "TN": 336,
+        "TPR": 0.2344,
+        "FPR": 0.125
+      },
+      "by_kind": {
+        "IL-518": {
+          "bad_review": 90,
+          "good_review": 48
+        }
+      }
     },
     "CWE416_Use_After_Free": {
       "files": 523,
@@ -346,7 +589,21 @@
       "FP": 40,
       "TN": 419,
       "TPR": 0.8671,
-      "FPR": 0.0871
+      "FPR": 0.0871,
+      "with_review": {
+        "TP": 398,
+        "FN": 61,
+        "FP": 40,
+        "TN": 419,
+        "TPR": 0.8671,
+        "FPR": 0.0871
+      },
+      "by_kind": {
+        "IL-528": {
+          "bad": 398,
+          "good": 40
+        }
+      }
     },
     "CWE457_Use_of_Uninitialized_Variable": {
       "files": 1085,
@@ -355,7 +612,21 @@
       "FP": 0,
       "TN": 948,
       "TPR": 0.0,
-      "FPR": 0.0
+      "FPR": 0.0,
+      "with_review": {
+        "TP": 211,
+        "FN": 737,
+        "FP": 62,
+        "TN": 886,
+        "TPR": 0.2226,
+        "FPR": 0.0654
+      },
+      "by_kind": {
+        "IL-529": {
+          "bad_review": 211,
+          "good_review": 62
+        }
+      }
     },
     "CWE476_NULL_Pointer_Dereference": {
       "files": 547,
@@ -364,7 +635,20 @@
       "FP": 18,
       "TN": 330,
       "TPR": 0.0,
-      "FPR": 0.0517
+      "FPR": 0.0517,
+      "with_review": {
+        "TP": 0,
+        "FN": 348,
+        "FP": 18,
+        "TN": 330,
+        "TPR": 0.0,
+        "FPR": 0.0517
+      },
+      "by_kind": {
+        "IL-519": {
+          "good": 18
+        }
+      }
     },
     "CWE615_Info_Exposure_by_Comment": {
       "files": 20,
@@ -373,7 +657,16 @@
       "FP": 0,
       "TN": 18,
       "TPR": 0.0,
-      "FPR": 0.0
+      "FPR": 0.0,
+      "with_review": {
+        "TP": 0,
+        "FN": 18,
+        "FP": 0,
+        "TN": 18,
+        "TPR": 0.0,
+        "FPR": 0.0
+      },
+      "by_kind": {}
     },
     "CWE676_Use_of_Potentially_Dangerous_Function": {
       "files": 21,
@@ -382,7 +675,16 @@
       "FP": 0,
       "TN": 18,
       "TPR": 0.0,
-      "FPR": 0.0
+      "FPR": 0.0,
+      "with_review": {
+        "TP": 0,
+        "FN": 18,
+        "FP": 0,
+        "TN": 18,
+        "TPR": 0.0,
+        "FPR": 0.0
+      },
+      "by_kind": {}
     },
     "CWE775_Missing_Release_of_File_Descriptor_or_Handle": {
       "files": 249,
@@ -391,16 +693,43 @@
       "FP": 0,
       "TN": 144,
       "TPR": 0.0,
-      "FPR": 0.0
+      "FPR": 0.0,
+      "with_review": {
+        "TP": 45,
+        "FN": 99,
+        "FP": 24,
+        "TN": 120,
+        "TPR": 0.3125,
+        "FPR": 0.1667
+      },
+      "by_kind": {
+        "IL-518": {
+          "bad_review": 45,
+          "good_review": 24
+        }
+      }
     },
     "CWE78_OS_Command_Injection": {
       "files": 8222,
-      "TP": 0,
-      "FN": 4800,
+      "TP": 1200,
+      "FN": 3600,
       "FP": 0,
       "TN": 4800,
-      "TPR": 0.0,
-      "FPR": 0.0
+      "TPR": 0.25,
+      "FPR": 0.0,
+      "with_review": {
+        "TP": 1200,
+        "FN": 3600,
+        "FP": 0,
+        "TN": 4800,
+        "TPR": 0.25,
+        "FPR": 0.0
+      },
+      "by_kind": {
+        "IL-504": {
+          "bad": 1200
+        }
+      }
     },
     "CWE835_Infinite_Loop": {
       "files": 9,
@@ -409,7 +738,20 @@
       "FP": 0,
       "TN": 6,
       "TPR": 0.0,
-      "FPR": 0.0
+      "FPR": 0.0,
+      "with_review": {
+        "TP": 3,
+        "FN": 3,
+        "FP": 0,
+        "TN": 6,
+        "TPR": 0.5,
+        "FPR": 0.0
+      },
+      "by_kind": {
+        "IL-517": {
+          "bad_review": 3
+        }
+      }
     },
     "CWE90_LDAP_Injection": {
       "files": 822,
@@ -418,7 +760,16 @@
       "FP": 0,
       "TN": 480,
       "TPR": 0.0,
-      "FPR": 0.0
+      "FPR": 0.0,
+      "with_review": {
+        "TP": 0,
+        "FN": 480,
+        "FP": 0,
+        "TN": 480,
+        "TPR": 0.0,
+        "FPR": 0.0
+      },
+      "by_kind": {}
     }
   }
 }

@@ -29,34 +29,59 @@ Java, JavaScript, Python, C#, Go, Rust, PHP, C/C++ 오픈소스 프로젝트 수
 - DDL, EF Core 보간 쿼리, 요청 본문 스트림 같은 안전한 패턴 제외
 - 속성 이름(`import.meta.url`)이 변수로 오염되던 문제 수정
 
+### 실측 순환 프로젝트 재점검
+
+`benchmarks/realworld/projects.json`의 프로젝트 4개와 이 저장소를 1.12.1과 Unreleased로 점검해, 바뀐 지적을 모두 분류했다. 새로 생김·사라짐은 (규칙, 파일, 줄, 확정 여부)가 다른 지적이다.
+
+| 프로젝트 | 1.12.1 지적 | Unreleased 지적 | 새로 생김 | 사라짐 | 공개 API 모드에서 늘어난 `확인 필요` |
+|---|---:|---:|---:|---:|---:|
+| WebGoat | 526 | 526 | 1 | 1 | 18 |
+| NodeGoat | 42 | 42 | 0 | 0 | 0 |
+| juice-shop | 1,277 | 1,279 | 2 | 0 | 11 |
+| spring-petclinic | 16 | 16 | 0 | 0 | 0 |
+| 이 저장소 | 22 | 22 | 0 | 0 | 184 |
+
+- WebGoat `SerializationHelper.java:23`의 역직렬화는 확정에서 `확인 필요`로 바뀌었다(새로 생김·사라짐 각 1건이 같은 줄이다). 데이터가 메서드 매개변수이고 프로젝트 안에 이 메서드를 부르는 곳이 없어 출처를 알 수 없기 때문이다. 요청 값을 역직렬화하는 `InsecureDeserializationTask.java:45`는 확정으로 남는다.
+- juice-shop `server.ts:271`(`path.resolve`)·`:276`(`fs.readFile`)은 정규화한 경로를 구분자 없이 `startsWith`로 기준 폴더와 비교해 `확인 필요`로 새로 나왔다. 둘 다 오탐이다. 경로는 `/`로 시작하는 `req.path`를 `path.normalize`로 정리한 값이라, 루트 위로 올라가는 `..`가 지워져 기준 폴더 밖으로 나가지 못한다.
+- 공개 API 모드에서 늘어난 지적은 모두 `확인 필요`이고, 확정 지적은 두 모드가 같다.
+
 ## 3. OWASP Benchmark v1.2 (Java, 2,740개 테스트)
 
-- 데이터: BenchmarkJava 커밋 `8b67a88d73b2594570fc21150705283de884620b`
-- 측정 도구: `benchmarks/owasp_benchmark.py`, 측정 판: 1.11.0
+- 데이터: BenchmarkJava 커밋 `10dfcc54ad02dcfcb358b0ba4a0fef8c919a6d17`
+- 측정 도구: `benchmarks/owasp_benchmark.py`, 측정 판: CHANGELOG의 Unreleased
+- 저장소 루트를 점검해 도우미 클래스(`helpers`)와 설정 파일(`src/main/resources/benchmark.properties`)까지 분석하고, 채점은 `testcode` 아래 사례 파일만 한다.
 - 점수 = TPR(취약 사례를 잡은 비율) − FPR(안전 사례를 잘못 잡은 비율)
 - `확정`은 외부 입력이 닿는 것이 코드에서 확인된 지적만, `전체`는 `확인 필요` 지적까지 센 결과다.
 
 | 분류 | 확정 TPR | 확정 FPR | 확정 점수 | 전체 점수 |
 |---|---|---|---|---|
-| SQL 삽입 (sqli) | 75.0% | 0.0% | +75.0% | +55.6% |
-| XSS (xss) | 89.4% | 5.7% | +83.7% | +83.7% |
-| 명령어 삽입 (cmdi) | 50.8% | 0.0% | +50.8% | +50.8% |
-| 경로 조작 (pathtraver) | 88.7% | 0.0% | +88.7% | +88.7% |
-| LDAP 삽입 (ldapi) | 88.9% | 0.0% | +88.9% | +53.1% |
-| XPath 삽입 (xpathi) | 93.3% | 0.0% | +93.3% | +80.0% |
-| 취약 암호 (crypto) | 100.0% | 23.3% | +76.7% | +76.7% |
-| 취약 해시 (hash) | 69.0% | 0.0% | +69.0% | +69.0% |
-| 쿠키 보안 속성 (securecookie) | 0.0% | 0.0% | 0.0% | +100.0% |
-| 신뢰 경계 (trustbound) | 78.3% | 0.0% | +78.3% | +78.3% |
-| 예측 가능한 난수 (weakrand) | 0.0% | 0.0% | 0.0% | 0.0% |
+| SQL 삽입 (sqli) | 100.0% | 0.0% | +100.0% | +69.8% |
+| XSS (xss) | 100.0% | 0.0% | +100.0% | +100.0% |
+| 명령어 삽입 (cmdi) | 100.0% | 0.0% | +100.0% | +100.0% |
+| 경로 조작 (pathtraver) | 100.0% | 0.0% | +100.0% | +100.0% |
+| LDAP 삽입 (ldapi) | 100.0% | 0.0% | +100.0% | +56.2% |
+| XPath 삽입 (xpathi) | 100.0% | 0.0% | +100.0% | +80.0% |
+| 취약 암호 (crypto) | 100.0% | 0.0% | +100.0% | +100.0% |
+| 취약 해시 (hash) | 100.0% | 0.0% | +100.0% | +100.0% |
+| 쿠키 보안 속성 (securecookie) | 0.0% | 0.0% | +0.0% | +100.0% |
+| 신뢰 경계 (trustbound) | 100.0% | 0.0% | +100.0% | +100.0% |
+| 예측 가능한 난수 (weakrand) | 0.0% | 0.0% | +0.0% | +0.0% |
 
-상수 계산을 넣기 전(1.10.0)과 비교하면 모든 범주에서 TPR은 같고 확정 FPR이 내려갔다: SQL 41.8%→0%, 명령어 33.6%→0%, 경로 50.4%→0%, XSS 35.9%→5.7%, 신뢰 경계 65.1%→0%, LDAP 37.5%→0%, XPath 60.0%→0%. 이 벤치마크는 상수 계산을 만들 때 오탐 사례의 모양을 보는 데 썼으므로, 같은 모양을 다른 이름·상수·구조로 쓴 반례(`tests/test_constant_branches.py`)와 실측 순환의 실제 프로젝트 4개(지적 변화 0건)로 함께 확인했다.
+1.12.1과 비교한 변화(확정 기준)는 다음과 같다. 1.12.1은 같은 데이터에서 `testcode` 폴더만 점검했고, 같은 엔진으로 저장소 루트를 점검해도 사례별 판정이 모두 같았다.
+- 명령어 50.8%→100%: `Runtime.exec`의 환경 변수 배열, `ProcessBuilder.command(목록)`, 요청을 감싼 도우미 객체.
+  환경 변수 배열을 쓰는 46건 가운데 43건은 배열 항목 전체가 외부 입력이라 확정이다. 나머지 3건은 환경 변수가 상수(`foo=bar`)이고 명령 인자에 입력이 들어가 확정이다. 고정 키에 값만 외부 입력인 사례는 이 벤치마크에 없어 확인 필요로 낸 것은 0건이다.
+- SQL 75.0%→100%: JDBC 호출 구문 `{call …}`, `addBatch`, `queryForRowSet`, 도우미 객체.
+- XSS 89.4%→100%, FPR 5.7%→0%: 도우미 객체, Spring `HtmlUtils.htmlEscape`를 HTML 정제로 인정.
+- 취약 암호 FPR 23.3%→0%, 취약 해시 69.0%→100%: `getProperty(키, 기본값)`의 기본값 대신 `benchmark.properties`의 실제 값으로 판정.
+- 경로·LDAP·XPath·신뢰 경계의 남은 미탐은 모두 도우미 객체로 입력을 읽는 사례였다.
 
-원시 결과는 `docs/benchmark_results/owasp_confirmed.json`, `owasp_all.json`이다.
+`전체` 점수가 확정보다 낮은 SQL·LDAP·XPath는 안전 사례의 값이 리플렉션(`ThingFactory`)으로 만든 객체를 거치거나, 상수를 돌려주는 도우미 메서드의 값을 라이브러리 함수(Base64 인코딩·디코딩 등)로 가공해 상수인지 계산하지 못한 것이다. 이런 값을 SQL 문자열에 이으면 `확인 필요`로 남는다. 이 벤치마크는 원인을 찾는 데도 쓰였으므로, 같은 모양을 다른 이름·구조로 쓴 반례를 `tests/test_flow_definitions.py`에 따로 둔다.
+
+원시 결과는 `docs/benchmark_results/owasp_confirmed.json`, `owasp_all.json`이며, 사례별 판정이 `outcomes`에 있다.
 
 ### 해석과 한계
 - OWASP Benchmark는 안전한 사례를 도우미 클래스, 상수로 정해지는 분기, 컬렉션 경유 같은 방법으로 일부러 감춰 정적 분석의 오탐을 끌어낸다. 오철칙은 상수 조건(if·조건식·switch), 같은 블록에서 만든 지역 List·Map(Python은 list·dict·configparser), 같은 파일에 하나뿐인 도우미의 상수 반환값을 계산해 실행되지 않는 갈래와 상수 원소를 뺀다. 리플렉션(`ThingFactory`)처럼 계산하지 않는 경로는 `확인 필요`로 남아 전체 점수에 반영된다.
-- Benchmark의 도우미 클래스는 측정 대상 폴더 밖에 있어 파일 간 추적은 이 수치에 영향이 없다.
+- 도우미 클래스(`SeparateClassRequest`)로 입력을 읽는 사례는 지역 객체의 메서드 추적으로 잡는다. 같은 클래스의 `getTheValue`는 상수 `"bar"`를 돌려주므로 그 메서드를 쓰는 사례는 상수로 본다.
 - `weakrand` 0%는 의도한 결과다. 오철칙은 토큰·인증번호처럼 보안 문맥에서 쓰인 난수만 지적하며, 문맥 없는 `Random`은 지적하지 않는다.
 - `securecookie`는 Secure·HttpOnly 누락 여부를 사람이 확인해야 해서 `확인 필요`로만 보고한다.
 - 함수 안의 흐름은 실행 순서를 따른다. 분기(if·switch·try)는 갈래마다 따로 따라간 뒤 합치고, 반복문은 두 번 돌려 다음 회차로 넘어가는 값을 반영한다. 한 갈래에서만 안전해진 변수는 오염된 채로 남고, 모든 갈래에서 안전해진 변수만 깨끗하다. 객체 필드와 상수 키는 한 단계까지 구분한다(`obj.field`, `d['k']`).
@@ -71,7 +96,7 @@ Java, JavaScript, Python, C#, Go, Rust, PHP, C/C++ 오픈소스 프로젝트 수
   | Go | 같은 패키지의 다른 파일 함수, `go.mod` 모듈 경로와 맞는 프로젝트 폴더의 내보낸 함수 |
   | PHP | require·include한 파일의 함수, 프로젝트에서 하나뿐인 함수·클래스의 static 메서드 |
 
-  C#, Kotlin, Rust, C/C++와 Java의 그 밖의 객체 메서드(지역 변수로 만든 객체 등)는 파일을 넘어 따라가지 않는다.
+  Python과 Java는 지역 변수로 만든 객체(`w = mod.Cls(…)`, `Cls w = new Cls(…)`, Python `Cls(…).method()`)의 메서드도 그 클래스에서 찾는다. C#, Kotlin, Rust, C/C++는 파일을 넘어 따라가지 않는다.
 - 후보가 둘 이상이거나 동적 `import()`·계산된 `require`처럼 대상을 정할 수 없으면 "찾지 못함"으로 세어 보고서 `metadata.cross_file.by_language`의 `resolution_gap_rate`에 남긴다. `limits.max_cross_file_lookups`는 위험 호출 하나를 판정할 때 다른 파일을 찾아가는 횟수 상한이며, 넘으면 진단으로 남긴다. 결과는 병렬 프로세스 수와 무관하다.
 - 실제 프로젝트에서 확인한 효과: WebGoat의 도우미 함수 안 SQL 삽입 4건을 새로 잡았고, DVWA에서 이스케이프된 입력 7건이 CRITICAL에서 `확인 필요`로 내려갔다. 파일 간 추적으로 달라진 지적의 분류는 `docs/benchmark_results/xfile_js.json`, `xfile_java.json`에 있다.
 - 정제 함수는 프로젝트에 정의되어 있으면 이름이 아니라 본문 동작을 따르고, 외부 라이브러리 함수는 이름으로 판단하되 **도달하는 곳의 문맥(HTML·SQL·셸·경로·URL·LDAP·XPath·헤더)에 유효한 정제만** 인정한다. HTML 이스케이프는 SQL 삽입·명령어 삽입을 막지 못하고, `normalize`·`abspath`는 경로 이탈 검사 없이는 정제로 보지 않는다. 다만 이름이 맞다고 해서 실제로 안전한 것은 아니다(예: 따옴표 없는 숫자 문맥에서의 SQL 이스케이프).
@@ -101,6 +126,7 @@ Java, JavaScript, Python, C#, Go, Rust, PHP, C/C++ 오픈소스 프로젝트 수
 - 평가용 사례가 실패하면 엔진을 고치고, 그 사례를 개발용으로 옮긴 뒤, 같은 유형의 새 평가용 사례를 만든다. 옮긴 사례 목록은 `tests/semantic_holdout.py`의 `MOVED_TO_DEV`에 있다.
 - `확인 필요`는 판단을 보류한 것이다. 정상 사례에서는 따로 세고, 위험 변형이 `확인 필요`로만 나오면 잡은 것이 아니라 놓친 것으로 센다.
 - 파일 경계를 넘는 변형 3종은 따로 잰다: ① 외부 입력을 다른 파일의 '그대로 돌려주는 함수'에 통과시키기, ② 두 파일을 거치는 함수 사슬에 통과시키기, ③ 외부 입력을 읽는 일 자체를 다른 파일의 함수로 옮기기. 적용할 수 없는 언어(Python·JavaScript·TypeScript 외)의 사례는 빼고 센다. 위험 변형 개발용 81건·평가용 21건을 모두 잡았고, 정상 변형(개발용 63건·평가용 21건)을 막은 경우는 없다. ③은 호출 지점에 입력이 드러나지 않아 파일 간 추적 없이는 잡을 수 없다.
+- 라이브러리 경계를 넘는 변형 3종도 따로 잰다: ① 외부 입력을 다른 파일 클래스의 메서드로 읽기(`Incoming(request).read_args(key)`, Python만), ② 사전에 넣었다 꺼내기, ③ 문자열 분리·결합으로 다시 만들기. 위험 변형 개발용 78건·평가용 21건을 모두 잡았고 정상 변형(개발용 63건·평가용 21건)을 막은 경우는 없다. 지역 객체의 메서드 추적을 넣기 전에는 ①을 개발용 22건·평가용 7건 모두 놓쳤고, ②·③은 그때도 모두 잡았다.
 
 ### 4.2 실제 프로젝트 점검 시간과 재현성
 
@@ -151,7 +177,7 @@ Java, JavaScript, Python, C#, Go, Rust, PHP, C/C++ 오픈소스 프로젝트 수
 
 ### 5.1 의존성 권고(`iron-laws deps`)
 
-- **OSV 서버 판정과 비교**(`docs/benchmark_results/deps_osv_crosscheck.json`): 같은 (패키지, 버전)을 OSV 서버에 물어 결과를 맞춰 봤다. PyPI 10개 패키지·400개 버전은 96.25%가 일치했고, 잘못 잡은 것 0건, 놓친 것 15건이다. 놓친 15건은 모두 Git 커밋 범위만 있는 권고이며 도구는 이를 `판정 불가`로 표시한다. npm 10개 패키지·391개 버전은 모두 일치했다.
+- **OSV 서버 판정과 비교**(`docs/benchmark_results/deps_osv_crosscheck.json`): 같은 (패키지, 버전)을 OSV 서버에 물어 결과를 맞춰 봤다. PyPI 10개 패키지·400개 버전은 96.5%가 일치했고, 잘못 잡은 것 0건, 놓친 것 14건이다. 놓친 14건은 모두 Git 커밋 범위만 있는 권고이며 도구는 이를 `판정 불가`로 표시한다. npm 10개 패키지·391개 버전과 Maven 10개 패키지·370개 버전은 모두 일치했다.
 - **실제 잠금 파일**(`docs/benchmark_results/deps_real_locks.json`): 잠금 파일 40개(uv 7, poetry 2, package-lock 26, pnpm 5), 패키지 13,426개에서 도구가 취약으로 본 (패키지, 버전) 537건이 OSV 서버 판정과 모두 같았고 한쪽에만 있는 것은 없었다. `판정 불가`는 6건이다.
 - 같은 OSV 데이터를 쓰는 두 구현의 비교라서 OSV 데이터 자체의 오류는 드러나지 않는다.
 
@@ -197,16 +223,32 @@ Python 위험 모듈의 별칭(`import os as o`), 가져온 이름(`from os impo
 
 ### 5.6 LLM 검토 의견의 근거 대조(`--triage-model`)
 
-OWASP Benchmark Java의 '확인 필요' 지적 156건 중 정답이 취약인 30건과 취약하지 않은 30건을 무작위로 골라(seed 7) `claude -p`(Claude Code CLI 기본 모델)의 의견을 받았다.
+`--triage-model`은 `확인 필요` 지적마다 LLM의 의견을 붙인다. 의견은 판정을 바꾸지 않는다. 아래는 `claude -p`(Claude Code CLI 기본 모델)에 지적마다 한 번씩 물은 결과다.
 
-| 표본 | likely_true | unsure | likely_false | 근거 확인(corroborated) |
-|---|---|---|---|---|
-| 취약 30건 | 21 | 9 | 0 | 0 |
-| 취약하지 않음 30건 | 2 | 19 | 9 | 0 |
+**OWASP Benchmark Java.** 1.12.1과 Unreleased에서 함께 나온 `확인 필요` 지적 109건 중 정답이 취약인 30건과 취약하지 않은 30건을 무작위로 골라(seed 7), 같은 표본을 두 판으로 물었다.
 
-- 취약한 지적을 오탐이라고 한 의견은 없었고, 근거가 확인된 오탐 의견도 없었다. 근거 대조가 진짜 취약점을 덮은 사례는 이 표본에서 0건이다.
-- 오탐 의견 9건의 근거는 모두 "상수"였다. 컬렉션에서 꺼낸 값, 리플렉션 호출을 거친 값처럼 상수가 지적한 줄에 직접 쓰이지 않아 모두 `unsupported`다. 이 표본에서 근거 대조가 사람의 검토량을 줄인 효과는 없었다.
-- 응답은 사례마다 한 번이며, 모델 하나의 결과다.
+| 표본 | 판 | likely_true | unsure | likely_false | 근거 확인(corroborated) |
+|---|---|---|---|---|---|
+| 취약 30건 | 1.12.1 | 30 | 0 | 0 | 0 |
+| | Unreleased | 30 | 0 | 0 | 0 |
+| 취약하지 않음 30건 | 1.12.1 | 0 | 27 | 3 | 0 |
+| | Unreleased | 1 | 26 | 3 | 0 |
+
+- 취약 30건은 모두 쿠키 보안 속성 규칙(AI-115)의 지적이고, 취약하지 않은 30건은 SQL·LDAP·XPath 삽입 지적이다. Unreleased에서 오염 추적 규칙의 `확인 필요` 지적은 OWASP Benchmark Java·Python 모두 정답이 취약하지 않은 사례에만 남는다. 그래서 이 표본으로는 오염 추적 지적에서 진짜 결함을 덮을 위험을 잴 수 없고, 아래 CWE-Bench-Java 표본으로 잰다.
+- Unreleased는 오염 추적 지적 30건 모두에 엔진이 따라간 흐름을 근거로 붙인다(1.12.1은 0건). 그래도 의견 분포는 거의 같았다.
+- 오탐 의견 3건은 두 판에서 같은 지적이다. 근거는 모두 '상수'였는데, 상수가 지적한 줄에 직접 쓰이지 않아 모두 `unsupported`다.
+
+**CWE-Bench-Java.** 공개 API 모드(§6.4)에서 데이터가 지목한 메서드 안에 `확인 필요` 지적이 있는 18개 사례의 지적을 Unreleased로 물었다. 취약한 쪽의 지적은 결함이 있는 메서드에 붙은 지적이다.
+
+| 표본 | 지적 | likely_true | unsure | likely_false | 근거 확인 | 엔진 근거와 모순(contradicted) |
+|---|---|---|---|---|---|---|
+| 취약한 쪽(14개 사례) | 79 | 45 | 29 | 5 | 0 | 4 |
+| 고친 쪽(15개 사례) | 70 | 8 | 52 | 9 | 0 | 4 |
+
+- 취약한 쪽 지적 5건(6.3%)이 오탐 의견을 받았다(tika 2, yamcs 2, uima-uimaj 1). 그중 4건은 '외부 입력이 아니다'라는 근거가 엔진이 확인한 입력 유입과 맞지 않아 `contradicted`이고, 1건은 근거를 확인하지 못해 `unsupported`다. 근거가 확인된 오탐 의견은 없으므로, 근거 대조 결과를 기준으로 삼으면 이 표본에서 진짜 결함을 덮은 의견은 0건이다.
+- 정규 경로를 구분자 없이 `startsWith`로 비교한 뒤의 지적(yamcs, Graylog, hapifhir)에는 공개 API 모드에서도 그 사유가 함께 실린다. yamcs·hapifhir의 이런 지적은 의견이 접두사 비교를 결함으로 짚어 `likely_true`였고, Graylog 취약한 쪽 2건은 같은 한계를 적고 `unsure`였다. 오탐 의견을 받은 것은 없다.
+- 고친 쪽 지적 1건(zip4j)은 의견을 받지 못했다.
+- 응답은 지적마다 한 번이며, 모델 하나의 결과다.
 
 ### 5.7 근거 장부의 Java·JavaScript·TypeScript 지점
 
@@ -227,31 +269,54 @@ OWASP Benchmark Java의 '확인 필요' 지적 156건 중 정답이 취약인 30
 ### 6.1 OWASP Benchmark for Python 0.1
 
 - 데이터: BenchmarkPython 커밋 `f1291485808b66e20ddb6b01b10dc71b3df8c8ba`(사례 1,230개)
-- 측정 도구: `benchmarks/owasp_benchmark_python.py`
+- 측정 도구: `benchmarks/owasp_benchmark_python.py`. 저장소 루트를 점검해 `helpers` 모듈까지 분석하고 `testcode`의 사례 파일만 채점한다.
 - 표의 수는 확정 지적 기준 TP/FN/FP/TN이고, 마지막 열은 `확인 필요`까지 센 점수다.
 
 | 분류 | 확정 TP/FN/FP/TN | 확정 TPR | 확정 FPR | 전체 점수 |
 |---|---|---|---|---|
-| cmdi | 11/2/1/6 | 84.6% | 14.3% | +56.0% |
-| codeinj | 14/6/10/23 | 70.0% | 30.3% | +39.7% |
-| deserialization | 18/0/12/24 | 100.0% | 33.3% | +66.7% |
+| cmdi | 13/0/0/7 | 100.0% | 0.0% | +85.7% |
+| codeinj | 20/0/0/33 | 100.0% | 0.0% | +63.6% |
+| deserialization | 18/0/0/36 | 100.0% | 0.0% | +100.0% |
 | hash | 0/71/0/80 | 0.0% | 0.0% | +100.0% |
-| ldapi | 14/2/0/13 | 87.5% | 0.0% | +84.6% |
-| pathtraver | 27/38/18/85 | 41.5% | 17.5% | +24.0% |
-| redirect | 0/13/0/21 | 0.0% | 0.0% | +0.0% |
+| ldapi | 16/0/0/13 | 100.0% | 0.0% | +92.3% |
+| pathtraver | 65/0/0/103 | 100.0% | 0.0% | +73.8% |
+| redirect | 13/0/0/21 | 100.0% | 0.0% | +100.0% |
 | securecookie | 0/24/0/15 | 0.0% | 0.0% | +100.0% |
-| sqli | 3/2/0/11 | 60.0% | 0.0% | +100.0% |
-| trustbound | 0/18/0/19 | 0.0% | 0.0% | +0.0% |
+| sqli | 5/0/0/11 | 100.0% | 0.0% | +100.0% |
+| trustbound | 18/0/0/19 | 100.0% | 0.0% | +100.0% |
 | weakrand | 0/99/0/227 | 0.0% | 0.0% | +0.0% |
-| xpathi | 16/35/17/118 | 31.4% | 12.6% | +8.6% |
-| xss | 0/31/0/58 | 0.0% | 0.0% | +0.0% |
-| xxe | 8/0/7/13 | 100.0% | 35.0% | +65.0% |
+| xpathi | 51/0/0/135 | 100.0% | 0.0% | +48.2% |
+| xss | 31/0/1/57 | 100.0% | 1.7% | +98.3% |
+| xxe | 8/0/0/20 | 100.0% | 0.0% | +100.0% |
 
-weakrand·xss·redirect·trustbound는 확정 지적이 없다. Python에서 이 분류의 외부 입력·위험 호출 정의가 부족하다는 뜻이다. 원시 결과는 `docs/benchmark_results/owasp_python_confirmed.json`, `owasp_python_all.json`이다.
+1.12.1(확정 TP 111, FP 65)과 비교하면 확정 TP는 258, FP는 1이다. 늘어난 탐지는 `codecs.open`·존재 확인·`request.query_string`, 모듈 이름을 붙인 `flask.redirect`, `flask.session[키]`, `elementpath.select`·`lxml.etree.XPath` 객체·`StringIO`로 조립한 질의, 문자열을 반환하는 Flask 핸들러, 요청을 감싼 객체에서 나왔다. 줄어든 오탐은 차단 목록·따옴표·문자열 리터럴 검사 분기(확인 필요로 낮춤), 상수 변수 비교, 라우트 경로 조각, 입력이 닿지 않는 역직렬화·XXE에서 나왔다. 남은 오탐 1건(xss, BenchmarkTest00364)은 문자 허용 목록으로 이스케이프하는 프로젝트 함수 본문을 정제로 알아보지 못한 사례다. hash·weakrand·securecookie는 확정 지적을 내지 않는 분류다.
+
+`전체` 점수가 낮은 경로·XPath·코드 실행은 검사 분기를 거친 안전 사례가 `확인 필요`로 남은 것이다. 원시 결과는 `docs/benchmark_results/owasp_python_confirmed.json`, `owasp_python_all.json`이다.
 
 ### 6.2 Juliet Test Suite 1.3 (C/C++, C#)
 
-측정 도구는 `benchmarks/juliet.py`이며, 오철칙 규칙과 대응하는 CWE만 잰다(대응표는 결과 파일의 `cwe_rule_map`). 범주별 수치는 `docs/benchmark_results/juliet_c.json`, `juliet_cs.json`에 있다. C/C++의 메모리 규칙(IL-514)은 `strcpy` 같은 위험 함수 호출을 안전 여부와 관계없이 알리는 패턴 규칙이라 bad·good 양쪽에 같이 걸려 TPR과 FPR이 같게 나온다. C#은 Juliet가 쓰는 입력 방식(`req.Params.Get`, `Console.ReadLine`)과 SQL 실행 방식(`CommandText` 속성 대입)을 외부 입력·위험 호출로 정의하지 않아 대부분의 범주에서 탐지가 0이다.
+측정 도구는 `benchmarks/juliet.py`이며, 오철칙 규칙과 대응하는 CWE만 잰다(대응표는 결과 파일의 `cwe_rule_map`). 범주별 수치는 `docs/benchmark_results/juliet_c.json`, `juliet_cs.json`에 있고, `with_review`에 확인 필요까지 센 결과, `by_kind`에 하위 판정(IL-514는 복사·서식·입력 너비·크기 계산)별 사례 수가 있다. 아래 표는 확정 지적 기준이며, 1.12.1에서 바뀐 범주만 적는다.
+
+| 언어 | 범주 | bad 확정 TP | good 확정 FP | 바뀐 까닭 |
+|---|---|---|---|---|
+| C/C++ | CWE-78 명령 삽입 | 0 → 1,200 / 4,800 | 0 → 0 | 출력 인자 입력(`fgets`·`recv`), `getenv`, `exec` 계열 싱크, 객체형 매크로 |
+| C/C++ | CWE-23·36 경로 조작 | 각 0 → 400 / 2,400 | 0 → 0 | 같은 입력 정의, 매크로로 감싼 `fopen`·`open` |
+| C/C++ | CWE-134 서식 문자열 | 1,000 → 960 / 2,880 | 2,880 → 630 | 리터럴만 복사한 버퍼를 서식으로 써도 지적하지 않고, 크기가 맞는 `strcpy`를 지적하지 않는다 |
+| C/C++ | CWE-121 스택 넘침 | 912 → 364 / 4,944 | 912 → 0 | `strcpy`·`strcat`의 원본 길이와 목적지 크기를 비교한다. 계산할 수 없으면 확인 필요(bad 540, good 540) |
+| C/C++ | CWE-122 힙 넘침 | 1,008 → 80 / 5,922 | 1,008 → 0 | 같은 비교. 확인 필요 bad 924, good 924 |
+| C/C++ | CWE-124·127 버퍼 앞쪽 쓰기·읽기 | 각 352 → 68 / 2,048 | 각 352 → 0 | 음수 오프셋은 확정. 확인 필요 bad 284, good 284 |
+| C# | CWE-89 SQL | 0 → 342 / 999 | 0 → 0 | `HttpRequest` 형식 매개변수·네트워크 스트림 입력, `CommandText` 대입 싱크 |
+| C# | CWE-78·23·36·643·94 | 각 0 → 126 / 370 | 0(CWE-94는 126) | 같은 입력 정의, `File.Exists`, `CompileAssemblyFromSource` |
+| C# | CWE-90 LDAP | 0 → 120 / 370 | 0 | `DirectorySearcher.Filter` 대입 |
+| C# | CWE-80·83 XSS | 0 → 240 / 666, 0 → 120 / 333 | 0 | `HttpResponse.Write` |
+| C# | CWE-601 리다이렉트 | 0 → 126 / 333 | 0 | `HttpResponse.Redirect` |
+| C# | CWE-113 응답 분할 | 0 → 378 / 999 | 0 | `new HttpCookie`의 값, URL 인코딩을 헤더 정제로 인정 |
+
+- 대응 규칙이 없는 범주는 재지 않는다. C/C++ 118개 범주 가운데 88개, C# 105개 범주 가운데 75개가 '대응 규칙 없음'이며, 잰 범주는 결과 파일의 `categories`에 있다.
+- CWE-134 bad 확정 TP가 1,000에서 960으로 줄어든 40건은 모두 흐름 변형 12번이다. 이 변형의 bad 함수에는 고정 문자열을 복사하는 갈래가 함께 있고, 1.12.1은 그 `strcpy`·`wcscpy`를 지적해 TP로 셌다. 서식 결함 자체는 1.12.1도 잡지 못했다. 이 40건의 서식 함수(`snprintf` 매크로, `vfprintf`·`vprintf` 감싼 함수, 넓은 문자 `fwprintf`)는 다른 흐름 변형에서도 확정 지적이 없다.
+- C/C++ 메모리 범주의 확정 TP가 줄어든 것은 크기를 계산할 수 있는 경우만 확정으로 남겼기 때문이다. 포인터의 포인터, 함수 매개변수로 넘긴 버퍼, 다른 함수에서 채운 버퍼는 크기를 정하지 못해 확인 필요로 낸다.
+- C/C++ 입력 범주의 남은 미탐은 다른 함수·다른 파일을 거치는 데이터 흐름 변형(Juliet의 42~68번)과 C++ 컨테이너·클래스 변형(72~84번)이다. C/C++은 파일을 넘어 추적하지 않는다.
+- C# 범주의 남은 미탐은 데이터베이스·파일·환경 변수에서 읽는 변형과 다른 메서드를 거치는 변형이다. CWE-94의 good 확정 FP 126건은 `int.Parse`가 성공한 경우에만 원래 문자열을 코드에 넣는 변형으로, 형식 변환의 성공을 검사로 알아보지 못한다.
 
 ### 6.3 Semgrep·CodeQL과의 같은 조건 비교
 
@@ -270,44 +335,87 @@ weakrand·xss·redirect·trustbound는 확정 지적이 없다. Python에서 이
 ### 6.4 CWE-Bench-Java(실제 오픈소스 CVE)
 
 - 데이터: CWE-Bench-Java 커밋 `afe0ebd0adc237abb46255f9cd479b1d71819136`(사례 120개)
-- 측정 도구 `benchmarks/cwe_bench_java.py`, 원시 결과 `docs/benchmark_results/cwe_bench_java.json`
+- 측정 도구 `benchmarks/cwe_bench_java.py`, 원시 결과 `docs/benchmark_results/cwe_bench_java.json`(기본 설정)과 `cwe_bench_java_public_api.json`(공개 API 모드)
 - 사례마다 취약한 커밋과 고친 커밋의 프로젝트 전체를 점검한다. 데이터가 지목한 취약 메서드 안에 해당 규칙(CWE-22 → IL-502, CWE-78 → IL-504, CWE-79 → IL-505, CWE-94 → IL-503)의 지적이 있으면 취약한 쪽은 TP, 고친 쪽은 FP로 센다.
+- 커밋을 받지 못했거나 지목한 메서드를 찾지 못한 쪽은 TN·FN에 넣지 않고 '분석하지 못함'으로 따로 센다. 짧은 해시로 적힌 커밋(cxf, activemq, nifi의 고친 쪽)은 저장소 이력에서 전체 해시를 찾아 받는다. 지금 남은 '분석하지 못함'은 모두 지목한 메서드를 찾지 못한 경우다.
 - 확정은 확정 지적만, 전체는 `확인 필요`까지 센 결과다.
 
-| 분류 | 확정 TP/FN/FP/TN | 확정 재현율 | 확정 오탐률 | 전체 TP/FN/FP/TN | 분석하지 못함(취약/고친 쪽) |
-|---|---|---|---|---|---|
-| CWE-22 경로 조작 | 14/26/6/32 | 35.0% | 15.8% | 14/26/6/32 | 15 / 17 |
-| CWE-78 명령 삽입 | 0/12/0/12 | 0.0% | 0.0% | 0/12/0/12 | 1 / 1 |
-| CWE-79 XSS | 0/28/0/27 | 0.0% | 0.0% | 0/28/0/27 | 3 / 4 |
-| CWE-94 코드 삽입 | 0/18/0/18 | 0.0% | 0.0% | 2/16/2/16 | 3 / 3 |
+```bash
+git clone https://github.com/iris-sast/cwe-bench-java.git <폴더>
+uv run python benchmarks/cwe_bench_java.py <폴더> afe0ebd0adc237abb46255f9cd479b1d71819136 <작업 폴더> --fetch docs/benchmark_results/cwe_bench_java.json
+uv run python benchmarks/cwe_bench_java.py <폴더> afe0ebd0adc237abb46255f9cd479b1d71819136 <작업 폴더> --fetch --public-api docs/benchmark_results/cwe_bench_java_public_api.json
+```
 
-경로 조작에서 잡은 14건은 대부분 압축 해제 경로 조작(Zip Slip)과 웹 프레임워크 요청 경로(Flink `getPathParameter`)다. 놓친 사례는 대체로 다음과 같다.
+| 분류 | 판 | 확정 TP/FN/FP/TN | 확정 재현율 | 확정 오탐률 | 전체 TP/FN/FP/TN | 분석하지 못함(취약/고친 쪽) |
+|---|---|---|---|---|---|---|
+| CWE-22 경로 조작 | 1.6.0 | 14/26/6/32 | 35.0% | 15.8% | 14/26/6/32 | 15 / 17 |
+| | Unreleased | 14/37/3/49 | 27.5% | 5.8% | 17/34/7/45 | 4 / 3 |
+| CWE-78 명령 삽입 | 1.6.0 · Unreleased | 0/12/0/12 | 0.0% | 0.0% | 0/12/0/12 | 1 / 1 |
+| CWE-79 XSS | 1.6.0 | 0/28/0/27 | 0.0% | 0.0% | 0/28/0/27 | 3 / 4 |
+| | Unreleased | 0/28/0/28 | 0.0% | 0.0% | 0/28/0/28 | 3 / 3 |
+| CWE-94 코드 삽입 | 1.6.0 | 0/18/0/18 | 0.0% | 0.0% | 2/16/2/16 | 3 / 3 |
+| | Unreleased | 0/18/0/20 | 0.0% | 0.0% | 2/16/2/18 | 3 / 1 |
+
+경로 조작의 재현율이 35.0%에서 27.5%로 내려간 것은 분석한 사례가 늘었기 때문이다. 1.6.0이 메서드를 찾지 못한 취약한 쪽 15건 가운데 11건을 이제 분석한다. 그중 2건(hapifhir CVE-2023-24057, plexus-utils)을 확정으로 잡고, hapifhir CVE-2023-28465는 `확인 필요`로 내고, 8건은 놓친다. 반면 1.6.0이 잡은 것으로 센 2건(dolphinscheduler CVE-2022-34662, uima-uimaj)은 이제 FN이다. 두 사례의 1.6.0 지적은 수정에서 바뀌지 않은 줄에 붙어 고친 쪽에도 똑같이 나왔다. dolphinscheduler에서는 경로 검사 함수를 부르는 줄이었다. 그래서 결함을 잡은 근거가 아니었다.
+
+사례별로 두 쪽의 판정을 짝으로 보면 경로 조작은 다음과 같다.
+
+| 짝(취약/고친 쪽) | 사례 | 뜻 |
+|---|---|---|
+| TP/TN | 10 | 취약한 쪽만 지적해 수정 전후를 가른다. 5건은 지적한 줄 자체는 수정에서 바뀌지 않았고, 다른 곳의 수정으로 지적이 사라졌다 |
+| TP/FP | 3 | 두 쪽을 가르지 못한다. 3건 모두 지적한 줄이 수정에서 바뀌지 않았다 |
+| FN/TN | 36 | 놓쳤다 |
+| 따로 센 사례 | 1 | uima-uimaj. 데이터가 고친 쪽으로 지정한 커밋에 보안 수정이 없다(실제 수정은 두 커밋 뒤). `benchmarks/cwe_bench_java_notes.json`에 근거가 있다 |
+| 짝을 이루지 못함 | 5 | 한쪽을 분석하지 못했다. alibaba one-java-agent는 취약한 쪽 TP다 |
+
+두 쪽을 가르지 못하는 TP/FP 3건은 다음과 같다.
+
+- DependencyCheck: 경로 검사가 지목한 메서드가 아니라 다른 메서드에 있다.
+- zt-zip: 고친 쪽도 압축 항목의 중간 폴더를 만들 때(`ZipUtil.java:1223`) 기준 폴더를 검사하지 않는다. 남은 약점을 짚은 지적이다.
+- plexus-utils: 고친 쪽 검사는 `f.getAbsolutePath().startsWith(dir.getAbsolutePath())`다. 오철칙은 앞선 `resolveFile`이 경로를 정규화하는지 알지 못하고, 이 비교는 구분자 없는 문자열 접두사 비교라 기준 폴더 검사로 인정하지 않는다.
+
+hapifhir의 두 CVE는 같은 코드를 서로 다르게 분류한다. `TerminologyCacheManager`의 압축 해제 코드는 CVE-2023-24057에서는 고친 쪽이고 CVE-2023-28465에서는 취약한 쪽이다. 이 코드는 정규화한 경로를 기준 폴더와 구분자 없이 문자열 접두사로 비교한 뒤(`path.startsWith(targetDir)`) 다른 파일의 쓰기 함수에 넘긴다. 오철칙은 이 지적을 `확인 필요`로 낸다. 그래서 CVE-2023-24057은 TP/TN, CVE-2023-28465는 확정으로 보면 FN/TN, `확인 필요`까지 세면 TP/TN이다.
+
+경로 조작에서 놓친 사례와 다른 CWE에서 잡지 못한 사례는 대체로 다음과 같다.
 
 - 라이브러리 함수 자체의 검증 결함: 공개 메서드의 매개변수가 입력이라 외부 입력 흐름이 코드에 없다(commons-io, ESAPI, myfaces, antisamy, json-sanitizer, sling-xss, hibernate-validator 등). CWE-79 사례의 다수가 XSS 방어 라이브러리 자체의 결함이다.
 - 웹 요청이 아닌 입력: Jenkins 작업 설정 값(perfecto), 디렉터리 서비스의 그룹 이름(nifi), 라우트 정의(spring-cloud-gateway)처럼 프레임워크 고유의 입력 모델이 필요하다.
 - 셸 삽입이 아닌 명령 결함: git 인자 삽입(git-client-plugin), 역직렬화를 거친 명령 실행(xstream), 스크립트 샌드박스 우회(Jenkins).
 - 상속·추상 메서드를 거치는 흐름(plexus-archiver), 경로 API를 직접 부르지 않는 결함(retrofit, rocketmq, keycloak 등).
 
-CWE-94의 `확인 필요` 2건(spring-cloud-gateway, spring-boot-admin)은 상수가 아닌 SpEL 식 평가를 짚었지만, 고친 쪽에도 같은 지적이 남아 둘을 가르지 못한다(평가 컨텍스트를 다른 함수에서 바꿔 고쳤다). 경로 조작에서 고친 쪽의 오탐 6건은 검사가 다른 메서드에 있거나(DependencyCheck), 검사 뒤 같은 경로를 문자열로 다시 조립하거나(DSpace), 조건부로만 검사하는 약한 방어(zt-zip의 `..` 포함 시에만 검사)다. 대형 저장소(aws-sdk-java, Java 파일 약 22만 개)는 한 사례 점검에 약 70분이 걸렸다.
+경로 조작에서 `확인 필요`까지 세면 기본 설정에서 karaf, uima-uimaj, hapifhir CVE-2023-28465의 취약한 쪽을 더 잡는다. 반면 zip4j, DSpace CVE-2022-31194, uima-uimaj, hapifhir CVE-2023-24057의 고친 쪽에도 지적이 남아 오탐이 4건 는다.
+
+CWE-94의 `확인 필요` 2건(spring-cloud-gateway, spring-boot-admin)은 상수가 아닌 SpEL 식 평가를 짚었지만, 고친 쪽에도 같은 지적이 남아 둘을 가르지 못한다(평가 컨텍스트를 다른 함수에서 바꿔 고쳤다).
+
+공개 API 모드(`--public-api`)는 공개 메서드의 매개변수를 입력으로 보고 그 지적을 `확인 필요`로 낸다. 그래서 확정 수치는 모든 CWE에서 기본 설정과 같다. 경로 조작의 전체 수치는 23/28/16/36(재현율 45.1%, 오탐률 30.8%)이 된다. 새로 잡는 취약한 쪽은 tika, Graylog, mina-sshd, yamcs 2건, ESAPI의 6건이고, ESAPI를 뺀 5건은 고친 쪽에도 지적이 남는다. 이미 잡던 hutool, kubernetes-client, DSpace CVE-2022-31195, goomph도 고친 쪽에 지적이 생긴다. 라이브러리 결함을 찾는 데는 쓸 수 있지만 수정 여부를 가르지는 못한다. 명령 삽입·XSS·코드 삽입은 두 모드의 결과가 같다.
+
+LLM 명세 초안(`spec draft --llm-cmd "claude -p"`)으로 명령 삽입·코드 삽입 30개 사례를 따로 쟀다. 사례마다 취약한 쪽 초안을 만들고, 제안한 예제대로 판정된 LLM 항목만 명세로 채택했다.
+
+- 놓친 단계: 26건은 데이터가 지목한 메서드 안에 오철칙이 아는 명령·코드 실행 호출이 없다(싱크 단계). 4건(spring-boot-admin, plexus-utils CVE-2017-1000487, perfecto, spring-cloud-gateway)은 그런 호출이 있지만 외부 입력이 이어진 것을 확인하지 못했다(원천·전달 단계).
+- 채택한 항목: 싱크 6건(dolphinscheduler `SwitchTaskUtils.evaluate` 2건, spring-framework `evaluateBshScript`·`ExpressionEvaluatorManager.evaluate`, spring-cloud-gateway `ShortcutConfigurable.getValue`, nifi `N1qlQuery.simple`). 나머지 제안은 오철칙이 이미 아는 싱크를 다시 냈거나, 예제가 기대대로 판정되지 않아 빠졌다.
+- 결과: 자기 초안을 채택한 5개 사례와, 자기를 뺀 나머지 초안을 합쳐 채택한 30개 사례 모두 확정·전체 판정이 기본 설정과 같았다. 새 정탐은 없고, 초안을 만들 때 쓰지 않은 프로젝트에서 생긴 새 확정 오탐도 0건이다.
 
 ### 6.5 CWEval(AI 생성 코드 평가 세트)
 
-[CWEval](https://github.com/Co1lin/CWEval)(Apache-2.0)은 LLM이 쓴 코드의 기능과 보안을 함께 보는 평가 세트이며 CWE별 취약한 참조 구현과 안전한 참조 구현을 함께 싣습니다. 오철칙이 재는 것은 기능·보안 동시 통과율이 아니라 **취약 참조 구현에서 같은 CWE의 지적을 내는지**와 **안전 참조 구현에서 같은 CWE의 지적을 내지 않는지**입니다. 평가 세트 커밋 `e9a2a124c8c5`, 오철칙 1.11.1로 쟀습니다.
+[CWEval](https://github.com/Co1lin/CWEval)(Apache-2.0)은 LLM이 쓴 코드의 기능과 보안을 함께 보는 평가 세트이며 CWE별 취약한 참조 구현과 안전한 참조 구현을 함께 싣습니다. 오철칙이 재는 것은 기능·보안 동시 통과율이 아니라 **취약 참조 구현에서 같은 CWE의 지적을 내는지**와 **안전 참조 구현에서 같은 CWE의 지적을 내지 않는지**입니다. 평가 세트 커밋 `e9a2a124c8c5`로 쟀습니다.
 
-| 언어 | 취약 사례 | 같은 CWE 지적 (확정) | 다른 규칙의 지적만 | 안전 사례 | 같은 CWE 오탐 (확정) |
+| 언어 | 취약 사례 | 같은 CWE 지적 (확정) | 공개 API 모드의 같은 CWE 지적 (확정) | 안전 사례 | 같은 CWE 오탐 (확정) |
 |---|---:|---:|---:|---:|---:|
-| Python | 21 | 6 (4) | 5 | 25 | 0 (0) |
-| JavaScript | 23 | 6 (4) | 4 | 23 | 1 (0) |
-| Go | 19 | 3 (2) | 4 | 19 | 0 (0) |
+| Python | 21 | 6 (3) | 8 (3) | 25 | 0 (0) |
+| JavaScript | 23 | 6 (4) | 7 (4) | 23 | 1 (0) |
+| Go | 19 | 3 (2) | 3 (2) | 19 | 0 (0) |
 
-- 같은 CWE는 지적의 기준 팩 항목과 행안부 항목 설명의 `(CWE-n)` 표기에서 읽습니다. `다른 규칙의 지적만`은 같은 CWE의 지적은 없고 다른 규칙의 지적만 있는 취약 사례 수이며, 그 지적이 같은 결함을 가리키는지는 따지지 않았습니다.
-- 사례는 함수 하나짜리 참조 구현이라 프레임워크의 입력 연결이 없습니다. 오철칙은 일반 함수의 매개변수를 외부 입력으로 보지 않으므로 이 사례에서 외부 입력 추적에 기대는 규칙의 탐지가 낮게 나옵니다. 실제 프로젝트의 탐지율이 아니라 이 평가 세트에서의 값입니다.
+- 같은 CWE는 지적의 기준 팩 항목과 행안부 항목 설명의 `(CWE-n)` 표기에서 읽습니다.
+- 사례는 함수 하나짜리 참조 구현이라 프레임워크의 입력 연결이 없습니다. 기본 설정은 일반 함수의 매개변수를 외부 입력으로 보지 않으므로 외부 입력 추적에 기대는 규칙의 탐지가 낮게 나옵니다. 실제 프로젝트의 탐지율이 아니라 이 평가 세트에서의 값입니다.
+- 공개 API 모드(`policies.entry_points: public_api`, `--entry-points public_api`)는 공개 함수의 매개변수를 입력으로 보고 그 지적을 `확인 필요`로 냅니다. 그래서 같은 CWE 지적은 Python 2건(경로·코드 실행), JavaScript 1건(경로) 늘고 확정 수는 같습니다. 안전 사례의 판정은 두 모드가 같습니다.
+- 1.12.1에서 Python 확정 4건이던 것이 3건이 된 것은 역직렬화(IL-515)가 데이터 인자의 출처로 판정하게 되어, 매개변수로 받은 데이터를 복원하는 사례가 `확인 필요`로 내려갔기 때문입니다.
 - 취약 참조 구현의 정답 CWE가 오철칙의 대응 CWE와 다른 경우(예: NoSQL 삽입 CWE-943에 SQL 삽입 CWE-89)는 같은 CWE로 세지 않습니다.
-- 사례별 결과는 [docs/benchmark_results/cweval.json](benchmark_results/cweval.json)에 있습니다. 평가 세트는 저장소에 넣지 않고 내려받아 읽습니다.
+- 사례별 결과는 [docs/benchmark_results/cweval.json](benchmark_results/cweval.json)과 `cweval_public_api.json`에 있습니다. 평가 세트는 저장소에 넣지 않고 내려받아 읽습니다.
 
 ```bash
 git clone --depth 1 https://github.com/Co1lin/CWEval.git <폴더>
 uv run python benchmarks/cweval.py <폴더>
+uv run python benchmarks/cweval.py <폴더> --entry-points public_api -o docs/benchmark_results/cweval_public_api.json
 ```
 
 ## 7. 재현

@@ -243,6 +243,54 @@ CROSS_FILE_OPERATORS: dict[str, Callable[[str, str], tuple[str, dict[str, str]] 
 }
 
 
+# ---------------------------------------------------------------------------
+# 라이브러리 경계 변형 연산: 외부 입력을 객체 메서드·컨테이너·값을 그대로 옮기는 라이브러리 함수에 통과시켜도 판정이 같아야 한다.
+# ---------------------------------------------------------------------------
+
+def _py_reader_class(attrs: set[str]) -> str:
+    methods = "".join(f"    def read_{a}(self, key):\n        return self.request.{a}[key]\n\n" for a in sorted(attrs))
+    return "class Incoming:\n    def __init__(self, request):\n        self.request = request\n\n" + methods
+
+
+def lib_object_method(code: str, ext: str) -> tuple[str, dict[str, str]] | None:
+    """외부 입력을 다른 파일 클래스의 메서드로 읽는다(`Incoming(request).read_args(key)`). Python만 만든다"""
+    if ext != ".py" or not _PY_SOURCE_PARTS.search(code):
+        return None
+    attrs: set[str] = set()
+
+    def py(m: re.Match) -> str:
+        attrs.add(m.group(1))
+        return f"Incoming(request).read_{m.group(1)}({m.group(2) or m.group(3)})"
+
+    wrapped = _PY_SOURCE_PARTS.sub(py, code)
+    return "from xf_reader import Incoming\n" + wrapped, {"xf_reader.py": _py_reader_class(attrs)}
+
+
+def lib_container(code: str, ext: str) -> tuple[str, dict[str, str]] | None:
+    """외부 입력을 사전에 넣었다 꺼낸다(Python `{'v': 입력}['v']`, JS `({ v: 입력 }).v`)"""
+    if ext == ".py" and _PY_SOURCE.search(code):
+        return _PY_SOURCE.sub(lambda m: "{'v': " + m.group(0) + "}['v']", code), {}
+    if ext in (".js", ".ts") and _JS_SOURCE.search(code):
+        return _JS_SOURCE.sub(lambda m: "({ v: " + m.group(0) + " }).v", code), {}
+    return None
+
+
+def lib_split_join(code: str, ext: str) -> tuple[str, dict[str, str]] | None:
+    """외부 입력을 문자열 분리·결합으로 그대로 다시 만든다(값은 바뀌지 않는다)"""
+    if ext == ".py" and _PY_SOURCE.search(code):
+        return _PY_SOURCE.sub(lambda m: "'/'.join(str(" + m.group(0) + ").split('/'))", code), {}
+    if ext in (".js", ".ts") and _JS_SOURCE.search(code):
+        return _JS_SOURCE.sub(lambda m: "String(" + m.group(0) + ").split('/').join('/')", code), {}
+    return None
+
+
+LIBRARY_OPERATORS: dict[str, Callable[[str, str], tuple[str, dict[str, str]] | None]] = {
+    "lib_object_method": lib_object_method,
+    "lib_container": lib_container,
+    "lib_split_join": lib_split_join,
+}
+
+
 def render(code: str, ext: str, operator: str | None = None) -> str:
     names = RENAMES if operator == "rename" else DEFAULT_NAMES
     text = _fill(code, names)

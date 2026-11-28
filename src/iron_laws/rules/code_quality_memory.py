@@ -15,6 +15,7 @@ from iron_laws.engine.ast_tools import (
     iter_calls,
     walk,
 )
+from iron_laws.engine.c_buffers import capacity, current_length, literal_only_buffer, string_length
 from iron_laws.engine.languages import C_FAMILY
 from iron_laws.engine.source import SourceFile
 from iron_laws.engine.taint import is_tainted
@@ -23,7 +24,7 @@ from iron_laws.standards import mois_ref
 
 
 class MemorySafetyRule(BaseRule):
-    version = 2
+    version = 3
     rule_id = "IL-514"
     name = "메모리 버퍼 오버플로우·포맷 스트링·정수 오버플로우 탐지"
     iron_law = IronLaw.LAW_5
@@ -33,6 +34,31 @@ class MemorySafetyRule(BaseRule):
     how_to_fix = "strcpy/strcat/sprintf 대신 snprintf, strlcpy, std::string을 쓰세요. printf는 항상 printf(\"%s\", 값) 형태로 호출하세요. 크기 계산 전에 오버플로우를 검사하세요."
     languages = frozenset(C_FAMILY)
     unsafe_copy = re.compile(r"^(strcpy|strcat|sprintf|vsprintf|stpcpy|wcscpy|wcscat|swprintf)$")
+    string_copy = re.compile(r"^(strcpy|strcat|stpcpy|wcscpy|wcscat)$")
+
+    def _copy_verdict(self, src: SourceFile, call) -> Violation | None:
+        """strcpy·strcat: 원본 길이와 목적지의 남은 크기를 상수로 계산할 수 있으면 비교한다.
+        넘치면 확정, 들어가면 지적하지 않고, 계산할 수 없으면 확인 필요"""
+        callee = call.callee
+        dest, source = call.args
+        append = callee.endswith("cat")
+        room = capacity(src, dest, call.node)
+        source_room = capacity(src, source, call.node)
+        if room is not None and room[1] < 0:
+            return self.at_node(src, call.node, f"{callee}가 목적지 버퍼의 시작보다 {-room[1]}칸 앞부터 씁니다(버퍼 아래쪽 쓰기).")
+        if source_room is not None and source_room[1] < 0:
+            return self.at_node(src, call.node, f"{callee}가 원본 버퍼의 시작보다 {-source_room[1]}칸 앞부터 읽습니다(버퍼 아래쪽 읽기).")
+        length = string_length(src, source, call.node)
+        used = current_length(src, dest, call.node) if append else 0
+        if room is not None and length is not None and used is not None:
+            remaining = room[0] - room[1] - used
+            if length + 1 <= remaining:
+                return None  # 종료 문자까지 목적지에 들어간다
+            return self.at_node(src, call.node, f"{callee}가 {length}자 문자열(종료 문자 포함 {length + 1}칸)을 남은 크기 {remaining}칸인 버퍼에 복사합니다. 길이를 제한하는 함수(snprintf/strlcpy)를 쓰십시오.")
+        return self.at_node(
+            src, call.node, f"{callee}는 목적지 버퍼 크기를 검사하지 않습니다. 원본 길이나 목적지 크기를 코드에서 정할 수 없으니 넘치지 않는지 확인하고 길이를 제한하는 함수(snprintf/strlcpy)를 쓰십시오.",
+            severity=Severity.MEDIUM, confidence=Confidence.REVIEW,
+        )
     fmt_funcs = {"printf": 0, "fprintf": 1, "sprintf": 1, "snprintf": 2, "syslog": 1, "vprintf": 0, "dprintf": 1, "wprintf": 0, "err": 1, "warn": 0}
     scanf_funcs = re.compile(r"^(scanf|fscanf|sscanf)$")
     alloc = re.compile(r"^(malloc|alloca|calloc|realloc)$")
@@ -41,7 +67,11 @@ class MemorySafetyRule(BaseRule):
         found = []
         for call in iter_calls(src):
             callee = call.callee
-            if self.unsafe_copy.search(callee):
+            if self.string_copy.search(callee) and len(call.args) == 2:
+                verdict = self._copy_verdict(src, call)
+                if verdict is not None:
+                    found.append(verdict)
+            elif self.unsafe_copy.search(callee):
                 source_arg = call.args[1] if len(call.args) > 1 else None
                 if callee in ("sprintf", "vsprintf") and len(call.args) > 2:
                     source_arg = call.args[1]
@@ -55,7 +85,11 @@ class MemorySafetyRule(BaseRule):
                     arg = call.args[idx]
                     tainted = is_tainted(src, arg, cli=True)
                     if arg.type in ("identifier", "subscript_expression", "field_expression", "call_expression", "pointer_expression", "parenthesized_expression", "cast_expression"):
-                        found.append(self.at_node(src, call.node, f"{callee}의 포맷 문자열이 상수가 아닙니다. 외부 입력이면 메모리 변조가 가능합니다.", severity=Severity.CRITICAL if tainted else Severity.HIGH))
+                        if tainted:
+                            found.append(self.at_node(src, call.node, f"{callee}의 포맷 문자열에 외부 입력이 들어갑니다. %n 등으로 메모리를 변조할 수 있습니다.", severity=Severity.CRITICAL))
+                        elif not literal_only_buffer(src, arg, call.node):
+                            # 리터럴이 아닌 서식 문자열은 그 자체로 약점이다(CWE-134). 리터럴만 복사한 버퍼만 뺀다
+                            found.append(self.at_node(src, call.node, f"{callee}의 포맷 문자열이 상수가 아닙니다. 외부 입력이면 메모리 변조가 가능하니 {callee}(\"%s\", 값) 꼴로 쓰십시오.", severity=Severity.HIGH))
             if self.scanf_funcs.search(callee):
                 fmt = call.args[0 if callee == "scanf" else 1] if call.args else None
                 if fmt is not None and re.search(r"%s|%\[", src.text_of(fmt)) and not re.search(r"%\d+s|%\d+\[", src.text_of(fmt)):

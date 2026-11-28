@@ -5,18 +5,22 @@ from tree_sitter import Node
 
 from iron_laws.core.models import Confidence, IronLaw, Severity, Violation
 from iron_laws.engine.ast_tools import (
+    enclosing_function,
     is_literal,
     iter_calls,
 )
 from iron_laws.engine.languages import JS_FAMILY, Lang
+from iron_laws.engine.project import ProjectContext
 from iron_laws.engine.source import SourceFile
 from iron_laws.engine.taint import (
+    Ctx,
     expr_has_source,
     is_tainted,
 )
+from iron_laws.engine.xfile_python import imports, qualified_name
+from iron_laws.rules.auth_flow import il534_active, login_state_judgments
 from iron_laws.rules.base import BaseRule
 from iron_laws.rules.injection_common import (
-    ESCAPER_RE,
     SinkRule,
 )
 from iron_laws.rules.sinks import (
@@ -26,9 +30,20 @@ from iron_laws.rules.sinks import (
 )
 from iron_laws.standards import mois_ref
 
+# 2단계 인증의 발송·확인 호출: 동작(send·verify 등)과 인증 수단(sms·otp 등)이 함께 든 이름
+FACTOR_CALL = re.compile(
+    r"(?i)(?:send|issue|verify|check|confirm|request|validate)\w*(?:sms|otp|totp|mfa|2fa|code|certif|authnum)|"
+    r"(?:sms|otp|totp|mfa|2fa|certif|authnum)\w*(?:send|issue|verify|check|confirm|validate)"
+)
+SESSION_USER = re.compile(
+    r"\bHttpSession\b|\bPrincipal\s+\w+|@AuthenticationPrincipal|\bAuthentication\s+\w+\s*[,)]|getSession\(|session\.getAttribute|"
+    r"\brequest\.user\b|\bcurrent_user\b|\breq\.user\b|\breq\.session\b|\bsession\["
+)
+USER_ARG = re.compile(r"(?i)user|member|account|login|phone|mobile|target|(?:^|_)id$|Id$")
+
 
 class SecurityDecisionInputRule(BaseRule):
-    version = 2
+    version = 3
     rule_id = "IL-512"
     name = "보안기능 결정에 사용되는 부적절한 입력값 탐지"
     iron_law = IronLaw.LAW_5
@@ -54,6 +69,30 @@ class SecurityDecisionInputRule(BaseRule):
                 continue
             if expr_has_source(src, cond) or self._direct_cookie_flag(src, cond):
                 found.append(self.at_node(src, node, "요청 값(쿠키·파라미터·헤더)으로 권한 여부를 판단합니다. 서버 측 세션/토큰 정보를 사용하십시오."))
+        found.extend(self._factor_target(src))
+        return found
+
+    def _factor_target(self, src: SourceFile) -> list[Violation]:
+        """세션의 로그인 사용자를 쓸 수 있는 핸들러가 2단계 인증 대상(발송·확인할 사용자)을 요청 값으로 정하는 경우"""
+        found: list[Violation] = []
+        for call in iter_calls(src):
+            if not FACTOR_CALL.search(call.callee.rsplit(".", 1)[-1]):
+                continue
+            fn = enclosing_function(call.node, src.lang)
+            if fn is None or not SESSION_USER.search(src.text_of(fn)):
+                continue
+            target = next((a for a in call.args if USER_ARG.search(src.text_of(a)) and not is_literal(a) and is_tainted(src, a)), None)
+            if target is None:
+                continue
+            found.append(
+                self.at_node(
+                    src,
+                    call.node,
+                    f"2단계 인증 대상을 요청 값({src.text_of(target)})으로 정합니다. 세션의 로그인 사용자로 정하십시오.",
+                    confidence=Confidence.REVIEW,
+                    how_to_fix="인증번호 발송·확인 대상은 요청 파라미터가 아니라 1단계 로그인을 마친 세션의 사용자로 정하세요. 1단계가 끝나지 않은 세션은 2단계 요청을 거부하세요.",
+                )
+            )
         return found
 
     def _direct_cookie_flag(self, src: SourceFile, cond: Node) -> bool:
@@ -61,8 +100,10 @@ class SecurityDecisionInputRule(BaseRule):
 
 
 class TrustBoundaryRule(SinkRule):
-    version = 2
+    version = 4
     rule_id = "IL-526"
+    # 세션에 저장하는 값은 출력 문맥이 정해지지 않았다. HTML·SQL 이스케이프 같은 문맥 정제는 검증이 아니므로 값의 종류를 바꾸는 정제와 검증만 인정한다
+    taint_ctx = Ctx.CODE
     name = "신뢰 경계 위반 (검증 없는 입력을 세션에 저장) 탐지"
     severity = Severity.MEDIUM
     gov_standard = None
@@ -76,24 +117,75 @@ class TrustBoundaryRule(SinkRule):
     ]
 
     def check(self, src: SourceFile) -> list[Violation]:
+        # IL-534가 켜져 있으면 같은 줄을 IL-534가 더 정확히 지적할 수 있어 프로젝트 단위(check_project)에서 함께 판정한다
+        if il534_active(self.config):
+            return []
+        return self._file_check(src)
+
+    def check_project(self, project: ProjectContext) -> list[Violation]:
+        if not il534_active(self.config):
+            return []
+        taken = {j.key for j in login_state_judgments(project)}
+        found: list[Violation] = []
+        for src in project.source_files(include_tests=self.include_tests):
+            found.extend(v for v in self._file_check(src) if (v.file_path.as_posix(), v.line_number) not in taken)
+        return found
+
+    def _file_check(self, src: SourceFile) -> list[Violation]:
         found = super().check(src)
         if src.lang is Lang.PYTHON and src.root is not None:
-            for node in src.nodes:
-                if node.type != "assignment":
-                    continue
-                left = node.child_by_field_name("left")
-                right = node.child_by_field_name("right")
-                if left is not None and right is not None and re.match(r"session\[", src.text_of(left)):
-                    if is_tainted(src, right) and not ESCAPER_RE.search(src.text_of(right)):
-                        found.append(self.at_node(src, node, "검증되지 않은 외부 입력이 session에 저장됩니다."))
+            found.extend(self._python_session_writes(src))
         if src.lang in JS_FAMILY and src.root is not None:
             for node in src.nodes:
                 if node.type == "assignment_expression":
                     left = node.child_by_field_name("left")
                     right = node.child_by_field_name("right")
                     if left is not None and right is not None and re.match(r"req\.session\.", src.text_of(left)):
-                        if is_tainted(src, right):
+                        if is_tainted(src, right, ctx=self.taint_ctx):
                             found.append(self.at_node(src, node, "검증되지 않은 외부 입력이 req.session에 저장됩니다."))
+        return found
+
+
+    PY_WEB_SESSIONS = frozenset({"flask.session", "quart.session"})
+
+    def _python_session_object(self, src: SourceFile, obj: Node) -> bool:
+        """식이 웹 세션 객체인지: Flask·Quart의 session(import로 확인), Django 요청 객체의 request.session.
+        import로 묶이지 않은 이름 session은 예전처럼 세션으로 본다. 다른 모듈에서 가져온 session은 세션이 아니다"""
+        text = src.text_of(obj)
+        if text == "session":
+            return "session" not in imports(src) or qualified_name(src, text) in self.PY_WEB_SESSIONS
+        if obj.type != "attribute" or not text.endswith(".session"):
+            return False
+        return qualified_name(src, text) in self.PY_WEB_SESSIONS or re.fullmatch(r"(?:self\.)?request\.session", text) is not None
+
+    def _python_session_writes(self, src: SourceFile) -> list[Violation]:
+        """`session[키] = 값`은 키와 값의 오염을 따로 판정해 어느 쪽인지 문구에 적는다. `session.update(...)`는 인자를 본다"""
+        found = []
+        for node in src.nodes:
+            if node.type == "assignment":
+                left, right = node.child_by_field_name("left"), node.child_by_field_name("right")
+                if left is None or right is None or left.type != "subscript":
+                    continue
+                obj, key = left.child_by_field_name("value"), left.child_by_field_name("subscript")
+                if obj is None or not self._python_session_object(src, obj):
+                    continue
+                parts = []
+                if key is not None and not is_literal(key) and is_tainted(src, key, ctx=self.taint_ctx):
+                    parts.append("키")
+                if not is_literal(right) and is_tainted(src, right, ctx=self.taint_ctx):
+                    parts.append("값")
+                if parts:
+                    where = "키와 값으로" if len(parts) == 2 else ("키로" if parts == ["키"] else "값으로")
+                    found.append(self.at_node(src, node, f"검증되지 않은 외부 입력이 session의 {where} 저장됩니다."))
+        for call in iter_calls(src):
+            if not call.callee.endswith(".update") or not call.args:
+                continue
+            function = call.node.child_by_field_name("function")
+            obj = function.child_by_field_name("object") if function is not None else None
+            if obj is None or not self._python_session_object(src, obj):
+                continue
+            if any(not is_literal(a) and is_tainted(src, a, ctx=self.taint_ctx) for a in call.args):
+                found.append(self.at_node(src, call.node, "검증되지 않은 외부 입력이 session.update로 세션에 저장됩니다."))
         return found
 
 

@@ -9,14 +9,17 @@ from iron_laws.engine.ast_tools import (
     enclosing_function,
     is_literal,
     iter_calls,
+    walk,
 )
 from iron_laws.engine.languages import JS_FAMILY, Lang
 from iron_laws.engine.source import SourceFile
 from iron_laws.engine.taint import (
     Ctx,
+    definitions,
     expr_has_source,
     is_tainted,
 )
+from iron_laws.engine.xfile_python import imports, qualified_name
 from iron_laws.rules.base import BaseRule
 from iron_laws.rules.injection_common import (
     ESCAPER_RE,
@@ -34,13 +37,14 @@ from iron_laws.rules.sinks import (
     Flow,
     Sink,
     assess,
+    cs_response_receiver,
     looks_like_browser_script,
 )
 from iron_laws.standards import mois_ref
 
 
 class XssRule(BaseRule):
-    version = 2
+    version = 3
     rule_id = "IL-505"
     name = "크로스사이트 스크립트(XSS) 탐지"
     iron_law = IronLaw.LAW_5
@@ -57,6 +61,7 @@ class XssRule(BaseRule):
         Sink.of(JS, r"^(res|response|reply)\.(send|end|write)$"),
         Sink.of(JAVA, r"getWriter\(\)\.(print|println|write|append|printf|format)$", None),
         Sink.of(CS, r"^(Response\.Write|Html\.Raw|newHtmlString)$"),
+        Sink.of(CS, r"\.Write$"),  # 형식이 HttpResponse인 수신자의 Write
         Sink.of(GO, r"^(fmt\.Fprintf|fmt\.Fprint|fmt\.Fprintln|io\.WriteString)$", 1),
         Sink.of(GO, r"^template\.HTML$"),
         Sink.of(PY, r"^(render_template_string|Markup|mark_safe|HttpResponse|HTMLResponse|make_response|Response)$"),
@@ -105,6 +110,8 @@ class XssRule(BaseRule):
             for sink in self.resp_sinks:
                 if src.lang not in sink.langs or not sink.callee.search(call.callee):
                     continue
+                if src.lang is Lang.CSHARP and sink.callee.pattern == r"\.Write$" and not cs_response_receiver(src, call):
+                    continue
                 indices = range(len(call.args)) if sink.arg is None else [sink.arg]
                 for i in indices:
                     if i >= len(call.args):
@@ -117,7 +124,124 @@ class XssRule(BaseRule):
                         break
                 break
         found.extend(self._php_echo(src))
-        found.extend(self._python_return_html(src))
+        html_returns = self._python_return_html(src)
+        found.extend(html_returns)
+        taken = {v.line_number for v in html_returns}
+        found.extend(v for v in self._flask_route_returns(src) if v.line_number not in taken)
+        if self.config is not None and self.config.policies.entry_points == "public_api":
+            found.extend(self._public_api_outputs(src, {v.line_number for v in found}))
+        return found
+
+    def _public_api_outputs(self, src: SourceFile, taken: set[int]) -> list[Violation]:
+        """공개 함수의 매개변수가 이스케이프 없이 HTML 출력 싱크에 닿으면 확인 필요로 낸다(웹 입력이 닿는 지적과 겹치면 빼지 않는다)"""
+        from iron_laws.engine.public_api import public_entries
+
+        found = []
+        calls = list(iter_calls(src))
+        for fn, params in public_entries(src):
+            for call in calls:
+                if not (fn.node.start_byte <= call.node.start_byte < fn.node.end_byte) or call.line in taken:
+                    continue
+                if not any(src.lang in sink.langs and sink.callee.search(call.callee) for sink in self.resp_sinks):
+                    continue
+                if any(not is_literal(a) and not ESCAPER_RE.search(_context_text(src, a)) and is_tainted(src, a, seeds=params, ctx=Ctx.HTML) and self._htmlish(src, a, call.callee) for a in call.args):
+                    taken.add(call.line)
+                    found.append(self.at_node(
+                        src, call.node, f"공개 API 매개변수가 이스케이프 없이 {call.callee}로 출력됩니다. 호출하는 쪽이 외부 입력을 넘기는지 확인하십시오.",
+                        severity=Severity.MEDIUM, confidence=Confidence.REVIEW,
+                    ))
+        return found
+
+    FLASK_ROUTE_DECORATOR = re.compile(r"^@\s*(\w+)\.(route|get|post|put|patch|delete)\s*\(")
+    PLAIN_TEXT_TYPE = re.compile(r"(?i)['\"]content-type['\"]\s*:\s*['\"](?:text/plain|application/(?:[\w.+-]*\+)?json)")
+
+    def _flask_handlers(self, src: SourceFile) -> list[Node]:
+        """Flask에 등록된 핸들러 함수(데코레이터, add_url_rule)와 핸들러가 그대로 반환하는 같은 파일의 함수"""
+        if not any(module == "flask" or module.startswith("flask.") for module, _ in imports(src).values()):
+            return []
+        functions: dict[str, Node] = {}
+        handlers: dict[int, Node] = {}
+        for node in src.nodes:
+            if node.type != "function_definition":
+                continue
+            name = node.child_by_field_name("name")
+            if name is not None:
+                functions.setdefault(src.text_of(name), node)
+            holder = node.parent
+            if holder is not None and holder.type == "decorated_definition":
+                if any(d.type == "decorator" and self.FLASK_ROUTE_DECORATOR.match(src.text_of(d)) for d in holder.named_children):
+                    handlers[node.id] = node
+        for call in iter_calls(src):
+            if not call.callee.endswith(".add_url_rule"):
+                continue
+            view = next((a.child_by_field_name("value") for a in call.args if a.type == "keyword_argument" and src.text_of(a.child_by_field_name("name")) == "view_func"), None)
+            positional = [a for a in call.args if a.type != "keyword_argument"]
+            view = view if view is not None else (positional[2] if len(positional) > 2 else None)
+            if view is not None and src.text_of(view) in functions:
+                fn = functions[src.text_of(view)]
+                handlers[fn.id] = fn
+        work = list(handlers.values())
+        while work:
+            fn = work.pop()
+            for node in walk(fn):
+                if node.type == "return_statement" and node.named_children and node.named_children[0].type == "call":
+                    callee = node.named_children[0].child_by_field_name("function")
+                    target = functions.get(src.text_of(callee)) if callee is not None else None
+                    if target is not None and target.id not in handlers:
+                        handlers[target.id] = target
+                        work.append(target)
+        return list(handlers.values())
+
+    def _str_value(self, src: SourceFile, scope: Node, node: Node, depth: int = 0) -> bool:
+        """식의 값이 문자열인지: 문자열 리터럴·f-string, 문자열을 잇는 +, 문자열 서식 %, 문자열의 format·join, 정의가 모두 문자열인 변수"""
+        while node.type == "parenthesized_expression" and node.named_children:
+            node = node.named_children[0]
+        if node.type in ("string", "concatenated_string"):
+            return True
+        if node.type == "binary_operator":
+            left, right = node.child_by_field_name("left"), node.child_by_field_name("right")
+            operator = node.child_by_field_name("operator")
+            if operator is None:
+                return False
+            if src.text_of(operator) == "%":
+                return left is not None and left.type == "string"  # '...%s...' % 값
+            return src.text_of(operator) == "+" and any(n is not None and self._str_value(src, scope, n, depth + 1) for n in (left, right))
+        if node.type == "call":
+            function = node.child_by_field_name("function")
+            if function is None:
+                return False
+            text = src.text_of(function)
+            if text == "str":
+                return True
+            if function.type == "attribute" and text.endswith((".format", ".join")):
+                target = function.child_by_field_name("object")
+                return target is not None and target.type == "string"
+            return False
+        if node.type == "identifier" and depth < 3:
+            defs = definitions(src, scope, src.text_of(node))
+            return bool(defs) and all(self._str_value(src, scope, d, depth + 1) for d in defs)
+        return False
+
+    def _flask_route_returns(self, src: SourceFile) -> list[Violation]:
+        """Flask 핸들러가 외부 입력을 이스케이프 없이 섞은 문자열을 그대로 반환하면 Flask는 text/html 응답으로 보낸다.
+        응답 형식을 text/plain·JSON으로 정한 튜플 반환, render_template·jsonify처럼 문자열이 아닌 반환은 보지 않는다"""
+        if src.lang is not Lang.PYTHON or src.root is None:
+            return []
+        found = []
+        for fn in self._flask_handlers(src):
+            for node in walk(fn):
+                if node.type != "return_statement" or not node.named_children or enclosing_function(node, src.lang) != fn:
+                    continue
+                value = node.named_children[0]
+                if value.type in ("tuple", "expression_list"):
+                    parts = [c for c in value.named_children if "comment" not in c.type]
+                    if not parts or any(self.PLAIN_TEXT_TYPE.search(src.text_of(c)) for c in parts[1:]):
+                        continue
+                    value = parts[0]
+                if not self._str_value(src, fn, value):
+                    continue
+                if is_tainted(src, value, ctx=Ctx.HTML):
+                    found.append(self.at_node(src, node, "외부 입력이 이스케이프 없이 섞인 문자열을 Flask 핸들러가 반환합니다. Flask는 이 문자열을 HTML 응답으로 보냅니다."))
         return found
 
     RESPONSE_STREAM_RE = re.compile(r"\b\w*(?:[rR]esp|[rR]esponse)\w*\.(getWriter|getOutputStream)\s*\(\s*\)")
@@ -305,7 +429,7 @@ class SsrfRule(SinkRule):
 
 
 class OpenRedirectRule(SinkRule):
-    version = 2
+    version = 3
     rule_id = "IL-507"
     taint_ctx = Ctx.URL
     name = "신뢰되지 않는 URL로 자동접속(오픈 리다이렉트) 탐지"
@@ -317,11 +441,27 @@ class OpenRedirectRule(SinkRule):
     tainted_message = "외부 입력이 {callee}의 이동 주소로 쓰입니다. 허용된 경로 목록으로 제한하십시오."
     sinks = [
         Sink.of(PY, r"^(redirect|HttpResponseRedirect|RedirectResponse)$"),
+        Sink.of(PY, r"\.(redirect|HttpResponseRedirect|HttpResponsePermanentRedirect|RedirectResponse)$"),
         Sink.of(JS, r"(^|\.)redirect$", None),
         Sink.of(JAVA, r"(^|\.)sendRedirect$|^newRedirectView$"),
         Sink.of(CS, r"^(Redirect|RedirectPermanent)$"),
+        Sink.of(CS, r"\.(Redirect|RedirectPermanent)$"),  # 형식이 HttpResponse인 수신자만 본다(select_args)
         Sink.of(GO, r"^http\.Redirect$", 2),
     ]
+
+    # 모듈 이름을 붙여 부른 리다이렉트 함수. 같은 이름의 다른 함수와 헷갈리지 않도록 import로 출처를 확인한다
+    PY_QUALIFIED_REDIRECTS = frozenset({
+        "flask.redirect", "flask.helpers.redirect", "quart.redirect", "werkzeug.utils.redirect",
+        "django.shortcuts.redirect", "django.http.HttpResponseRedirect", "django.http.HttpResponsePermanentRedirect",
+        "django.http.response.HttpResponseRedirect", "starlette.responses.RedirectResponse", "fastapi.responses.RedirectResponse",
+    })
+
+    def select_args(self, src: SourceFile, call: Call, sink: Sink) -> list[Node]:
+        if src.lang is Lang.PYTHON and "." in call.callee and qualified_name(src, call.callee) not in self.PY_QUALIFIED_REDIRECTS:
+            return []
+        if src.lang is Lang.CSHARP and "." in call.callee and not cs_response_receiver(src, call):
+            return []
+        return super().select_args(src, call, sink)
 
     def check(self, src: SourceFile) -> list[Violation]:
         found = super().check(src)
@@ -343,7 +483,7 @@ class OpenRedirectRule(SinkRule):
 
 
 class HeaderInjectionRule(SinkRule):
-    version = 2
+    version = 3
     rule_id = "IL-511"
     taint_ctx = Ctx.HEADER
     name = "HTTP 응답분할(헤더 삽입) 탐지"
@@ -357,6 +497,13 @@ class HeaderInjectionRule(SinkRule):
         Sink.of(JS, r"^(res|response|reply)\.(setHeader|header|set|append|cookie)$", None),
         Sink.of(JAVA, r"(^|\.)(setHeader|addHeader|addCookie)$|^newCookie$", None),
         Sink.of(CS, r"Response\.(AppendHeader|AddHeader|Headers\.Add|Cookies\.Append)$", None),
+        Sink.of(CS, r"^newHttpCookie$", 1),  # 쿠키 값
+        Sink.of(CS, r"\.(AppendHeader|AddHeader)$", None),  # 형식이 HttpResponse인 수신자만 본다(select_args)
         Sink.of(GO, r"\.Header\(\)\.(Set|Add)$|^http\.SetCookie$", None),
         Sink.of(PHP, r"^(header|setcookie)$", None),
     ]
+
+    def select_args(self, src: SourceFile, call: Call, sink: Sink) -> list[Node]:
+        if src.lang is Lang.CSHARP and re.search(r"\.(AppendHeader|AddHeader)$", call.callee) and not call.callee.startswith("Response") and not cs_response_receiver(src, call):
+            return []
+        return super().select_args(src, call, sink)

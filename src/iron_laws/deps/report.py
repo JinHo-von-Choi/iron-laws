@@ -108,7 +108,7 @@ def markdown(data: dict[str, Any]) -> str:
     out += ["", GLOSSARY, ""]
     findings = all_findings(data)
     if not data["locks"]:
-        out.append("점검할 락 파일을 찾지 못했습니다. `uv.lock`, `poetry.lock`, `package-lock.json`, `pnpm-lock.yaml`, `requirements.txt`를 지원합니다.")
+        out.append("점검할 락 파일을 찾지 못했습니다. `uv.lock`, `poetry.lock`, `package-lock.json`, `pnpm-lock.yaml`, `requirements.txt`와 Maven·Gradle 매니페스트(`pom.xml`, `build.gradle`, `libs.versions.toml`)를 지원합니다.")
     for lock in data["locks"]:
         out.append(f"## {lock['path']} ({lock['kind']}, 패키지 {lock['packages']}개)")
         for note in lock["notes"]:

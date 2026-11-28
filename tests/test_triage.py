@@ -114,6 +114,25 @@ def test_prompt_carries_cwe_criteria_and_human_judgements(tmp_path: Path):
     assert "코드가 이와 다르면 코드를 따르라" in prompt
 
 
+def test_code_sent_for_review_keeps_names_and_strings_but_hides_secrets(tmp_path: Path):
+    from iron_laws.core.triage import _window
+
+    (tmp_path / "A.java").write_text(
+        "class A {\n"
+        "    void run(String name) {\n"
+        "        ensureFileIsInsideBundleDirectory(bundleDir, name);\n"
+        '        String sql = "SELECT * FROM users WHERE id = " + name;\n'
+        '        String apiKey = "abcdefghijklmnop";\n'
+        '        String digest = "9f86d081884c7d659a2feaa0c55ad015";\n'
+        "    }\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    code = _window(tmp_path, "A.java", 3, set())
+    assert "ensureFileIsInsideBundleDirectory" in code and '"SELECT * FROM users WHERE id = "' in code  # 판단에 필요한 이름과 SQL은 보낸다
+    assert "abcdefghijklmnop" not in code and "9f86d081884c7d659a2feaa0c55ad015" not in code  # 비밀 이름에 대입한 값과 토큰 모양 값은 가린다
+
+
 def test_prompt_lists_the_engine_flow_when_the_finding_has_one():
     from iron_laws.core.models import EvidenceStep
     from iron_laws.core.triage import flow_lines
@@ -146,3 +165,45 @@ def test_approval_reasons_are_offered_for_the_same_rule(tmp_path: Path):
     store_path.write_text(record.model_dump_json() + "\n", encoding="utf-8")
     notes = precedent_notes(tmp_path, {"IL-504", "IL-501"})
     assert notes["IL-504"] == ["승인 사유: 입력은 내부 배치가 만든 고정 목록이다"] and notes["IL-501"] == []
+
+
+def test_review_evidence_follows_the_definition_that_reaches_the_sink(tmp_path):
+    from iron_laws.core.scanner import AuditScanner
+
+    (tmp_path / "a.py").write_text(
+        'from flask import request\n\nBASE = "/srv"\n\n\ndef f():\n    other = request.args.get("o")\n    doc = request.args.get("d")\n'
+        '    if "../" in doc:\n        return other\n    target = f"{BASE}/{doc}"\n    return open(target).read()\n',
+        encoding="utf-8",
+    )
+    found = [v for v in AuditScanner(tmp_path).scan().violations if v.rule_id == "IL-502"]
+    assert [(v.line_number, v.confidence.value) for v in found] == [(12, "REVIEW")]
+    roles = [(s.role, s.line) for s in found[0].evidence]
+    assert ("source", 8) in roles and ("source", 7) not in roles  # 싱크에 닿는 doc의 정의만 원천이다
+    assert ("guard", 9) in roles and ("propagation", 11) in roles
+
+
+def test_triage_sample_keeps_every_rule(tmp_path):
+    from iron_laws.core.models import AuditReport, Confidence, IronLaw, Severity, Violation
+    from iron_laws.core.triage import MAX_FINDINGS, select_findings
+
+    def make(rule: str, line: int) -> Violation:
+        return Violation(rule_id=rule, rule_name="r", iron_law=IronLaw.LAW_5, severity=Severity.MEDIUM, file_path=Path("a.py"), line_number=line, snippet="", message="m", confidence=Confidence.REVIEW)
+
+    violations = [make("IL-502", n) for n in range(1, MAX_FINDINGS + 10)] + [make("IL-504", 100), make("IL-504", 101), make("IL-504", 102)]
+    report = AuditReport.model_construct(violations=violations)
+    picks = select_findings(report)
+    assert len([v for v in picks if v.rule_id == "IL-504"]) == 2
+    assert len([v for v in picks if v.rule_id == "IL-502"]) == MAX_FINDINGS
+
+
+def test_basis_in_other_file_must_be_on_the_engine_path():
+    from iron_laws.core.models import Confidence, EvidenceStep, IronLaw, Severity, Violation
+    from iron_laws.core.triage import check_basis
+
+    v = Violation(rule_id="IL-502", rule_name="r", iron_law=IronLaw.LAW_5, severity=Severity.MEDIUM, file_path=Path("a.py"), line_number=5, snippet="", message="m",
+                  confidence=Confidence.REVIEW, evidence=[EvidenceStep(role="sink", file_path="lib/b.py", line=3)])
+    lines = {"lib/b.py": ["def clean(x):", "    pass", "    return escape(x)"]}
+    off_path = check_basis([], v, {"kind": "unreachable", "line": 1, "name": "", "file": "lib/c.py"}, lines.get)
+    assert off_path["status"] == "unsupported" and "근거 경로에 없는" in off_path["why"]
+    on_path = check_basis([], v, {"kind": "unreachable", "line": 1, "name": "", "file": "lib/b.py"}, lines.get)
+    assert "근거 경로에 없는" not in on_path["why"]

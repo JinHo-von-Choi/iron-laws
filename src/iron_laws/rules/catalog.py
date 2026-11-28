@@ -16,6 +16,7 @@ FAMILY_ORDER: tuple[str, ...] = (
     "secrets_crypto",
     "errors",
     "injection",
+    "auth_flow",
     "code_quality",
     "ai_code",
     "ai_attack",

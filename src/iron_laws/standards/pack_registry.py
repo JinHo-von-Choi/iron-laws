@@ -38,9 +38,16 @@ class StandardPack(BaseModel):
     mapping: dict[str, list[str]] = Field(default_factory=dict)
     verified_edition: str | None = None
     verified_sha256: str | None = None
+    item_scope: dict[str, str] = Field(default_factory=dict)  # 항목 → code(코드로 확인) / mixed(일부) / manual(코드 밖 확인)
+    item_question: dict[str, str] = Field(default_factory=dict)  # 항목 → 점검 질문 원문
 
     def content_sha256(self) -> str:
-        body = {"items": [i.model_dump() for i in self.items], "mapping": {k: sorted(v) for k, v in sorted(self.mapping.items())}}
+        body: dict = {"items": [i.model_dump() for i in self.items], "mapping": {k: sorted(v) for k, v in sorted(self.mapping.items())}}
+        # 비어 있지 않을 때만 넣는다. 이 칸이 없는 팩의 해시는 칸을 더하기 전과 같다
+        if self.item_scope:
+            body["item_scope"] = dict(sorted(self.item_scope.items()))
+        if self.item_question:
+            body["item_question"] = dict(sorted(self.item_question.items()))
         return hashlib.sha256(json.dumps(body, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
 
     @property
@@ -73,7 +80,7 @@ def _file_packs() -> list[StandardPack]:
             raise PackError(f"팩 폴더 이름과 id가 다릅니다: {entry.name} / {pack.id}")
         if pack.sha256 != pack.content_sha256():
             raise PackError(f"{pack.id} 팩의 sha256이 내용과 다릅니다(항목·대응표를 고친 뒤 해시를 갱신하지 않음)")
-        unknown = {i for ids in pack.mapping.values() for i in ids} - {i.id for i in pack.items}
+        unknown = ({i for ids in pack.mapping.values() for i in ids} | set(pack.item_scope) | set(pack.item_question)) - {i.id for i in pack.items}
         if unknown:
             raise PackError(f"{pack.id} 대응표가 없는 항목을 가리킵니다: {sorted(unknown)}")
         packs.append(pack)

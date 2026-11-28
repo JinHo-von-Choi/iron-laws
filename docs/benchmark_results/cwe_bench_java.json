@@ -1,8 +1,9 @@
 {
-  "tool_version": "1.6.0",
+  "tool_version": "1.12.1",
   "dataset": "CWE-Bench-Java",
   "dataset_commit": "afe0ebd0adc237abb46255f9cd479b1d71819136",
-  "command": "benchmarks/cwe_bench_java.py <cwe-bench-java 폴더> afe0ebd0adc237abb46255f9cd479b1d71819136 <작업 폴더> --fetch",
+  "command": "benchmarks/cwe_bench_java.py <cwe-bench-java 폴더> <커밋> <작업 폴더> --fetch",
+  "entry_points": "web",
   "cwe_rule_map": {
     "CWE-022": [
       "IL-502"
@@ -20,22 +21,35 @@
   "categories": {
     "CWE-022": {
       "TP": 14,
-      "FN": 26,
-      "FP": 6,
-      "TN": 32,
-      "TPR": 0.35,
-      "FPR": 0.1579,
+      "FN": 37,
+      "FP": 3,
+      "TN": 49,
+      "TPR": 0.2745,
+      "FPR": 0.0577,
       "unanalyzed": {
-        "buggy": 15,
-        "fixed": 17
+        "buggy": {
+          "method_not_found": 4
+        },
+        "fixed": {
+          "method_not_found": 3
+        }
       },
       "with_review": {
-        "TP": 14,
-        "FN": 26,
-        "FP": 6,
-        "TN": 32,
-        "TPR": 0.35,
-        "FPR": 0.1579
+        "TP": 17,
+        "FN": 34,
+        "FP": 7,
+        "TN": 45,
+        "TPR": 0.3333,
+        "FPR": 0.1346
+      },
+      "pairs": {
+        "noted:FN/TN": 1,
+        "pairs:FN/TN": 36,
+        "pairs:TP/FP": 3,
+        "pairs:TP/FP:hits_unchanged": 3,
+        "pairs:TP/TN": 10,
+        "pairs:TP/TN:hits_unchanged": 5,
+        "unpaired": 5
       }
     },
     "CWE-078": {
@@ -46,8 +60,12 @@
       "TPR": 0.0,
       "FPR": 0.0,
       "unanalyzed": {
-        "buggy": 1,
-        "fixed": 1
+        "buggy": {
+          "method_not_found": 1
+        },
+        "fixed": {
+          "method_not_found": 1
+        }
       },
       "with_review": {
         "TP": 0,
@@ -56,46 +74,66 @@
         "TN": 12,
         "TPR": 0.0,
         "FPR": 0.0
+      },
+      "pairs": {
+        "pairs:FN/TN": 12,
+        "unpaired": 1
       }
     },
     "CWE-079": {
       "TP": 0,
       "FN": 28,
       "FP": 0,
-      "TN": 27,
+      "TN": 28,
       "TPR": 0.0,
       "FPR": 0.0,
       "unanalyzed": {
-        "buggy": 3,
-        "fixed": 4
+        "buggy": {
+          "method_not_found": 3
+        },
+        "fixed": {
+          "method_not_found": 3
+        }
       },
       "with_review": {
         "TP": 0,
         "FN": 28,
         "FP": 0,
-        "TN": 27,
+        "TN": 28,
         "TPR": 0.0,
         "FPR": 0.0
+      },
+      "pairs": {
+        "pairs:FN/TN": 28,
+        "unpaired": 3
       }
     },
     "CWE-094": {
       "TP": 0,
       "FN": 18,
       "FP": 0,
-      "TN": 18,
+      "TN": 20,
       "TPR": 0.0,
       "FPR": 0.0,
       "unanalyzed": {
-        "buggy": 3,
-        "fixed": 3
+        "buggy": {
+          "method_not_found": 3
+        },
+        "fixed": {
+          "method_not_found": 1
+        }
       },
       "with_review": {
         "TP": 2,
         "FN": 16,
         "FP": 2,
-        "TN": 16,
+        "TN": 18,
         "TPR": 0.1111,
-        "FPR": 0.1111
+        "FPR": 0.1
+      },
+      "pairs": {
+        "pairs:FN/TN": 18,
+        "unpaired": 3
       }
     }
   },
@@ -105,140 +143,206 @@
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "perwendel__spark_CVE-2018-9159_2.7.1": {
       "cwe": "CWE-022",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "perwendel__spark_CVE-2016-9177_2.5.1": {
       "cwe": "CWE-022",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "wildfly__wildfly_CVE-2018-1047_11.0.0.Final": {
       "cwe": "CWE-022",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "vert-x3__vertx-web_CVE-2018-12542_3.5.3.CR1": {
       "cwe": "CWE-022",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "apache__camel_CVE-2018-8041_2.20.3": {
       "cwe": "CWE-022",
       "buggy": "FN",
       "buggy_all": "FN",
-      "fixed": "unanalyzed"
+      "fixed_commit": "a0d25d9582c6ee85e9567fa39413df0b4f02ef7b",
+      "fixed": "TN",
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "dromara__hutool_CVE-2018-17297_4.1.11": {
       "cwe": "CWE-022",
       "buggy": "TP",
       "buggy_all": "TP",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "buggy_hits": [
+        {
+          "file": "hutool-core/src/main/java/cn/hutool/core/util/ZipUtil.java",
+          "line": 389,
+          "unchanged": false
+        }
+      ],
+      "pair": "TP/TN"
     },
     "apache__tika_CVE-2018-11762_1.18": {
       "cwe": "CWE-022",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "square__retrofit_CVE-2018-1000850_2.4.0": {
       "cwe": "CWE-022",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "apache__jspwiki_CVE-2019-0225_2.11.0.M2": {
       "cwe": "CWE-022",
       "buggy": "unanalyzed",
-      "fixed": "unanalyzed"
+      "buggy_reason": "method_not_found",
+      "fixed": "unanalyzed",
+      "fixed_reason": "method_not_found"
     },
     "apache__camel_CVE-2019-0194_2.21.4": {
       "cwe": "CWE-022",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "asf__tapestry-5_CVE-2019-0207_5.4.4": {
       "cwe": "CWE-022",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "spring-cloud__spring-cloud-config_CVE-2020-5410_2.1.8.RELEASE": {
       "cwe": "CWE-022",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "spring-cloud__spring-cloud-config_CVE-2020-5405_2.1.6.RELEASE": {
       "cwe": "CWE-022",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "apache__rocketmq_CVE-2019-17572_4.6.0": {
       "cwe": "CWE-022",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "joniles__mpxj_CVE-2020-35460_8.3.4": {
       "cwe": "CWE-022",
       "buggy": "TP",
       "buggy_all": "TP",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "buggy_hits": [
+        {
+          "file": "src/main/java/net/sf/mpxj/common/InputStreamHelper.java",
+          "line": 126,
+          "unchanged": true
+        },
+        {
+          "file": "src/main/java/net/sf/mpxj/common/InputStreamHelper.java",
+          "line": 139,
+          "unchanged": true
+        }
+      ],
+      "pair": "TP/TN",
+      "hits_unchanged": true
     },
     "apache__flink_CVE-2020-17519_1.11.2": {
       "cwe": "CWE-022",
       "buggy": "TP",
       "buggy_all": "TP",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "buggy_hits": [
+        {
+          "file": "flink-runtime/src/main/java/org/apache/flink/runtime/rest/handler/cluster/JobManagerCustomLogHandler.java",
+          "line": 58,
+          "unchanged": true
+        }
+      ],
+      "pair": "TP/TN",
+      "hits_unchanged": true
     },
     "kubernetes-client__java_CVE-2020-8570_client-java-parent-9.0.1": {
       "cwe": "CWE-022",
       "buggy": "TP",
       "buggy_all": "TP",
-      "fixed": "FP",
-      "fixed_all": "FP"
+      "fixed": "TN",
+      "fixed_all": "TN",
+      "buggy_hits": [
+        {
+          "file": "util/src/main/java/io/kubernetes/client/Copy.java",
+          "line": 140,
+          "unchanged": false
+        },
+        {
+          "file": "util/src/main/java/io/kubernetes/client/Copy.java",
+          "line": 150,
+          "unchanged": true
+        }
+      ],
+      "pair": "TP/TN"
     },
     "asf__commons-io_CVE-2021-29425_2.6": {
       "cwe": "CWE-022",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "asf__karaf_CVE-2022-22932_4.3.5": {
       "cwe": "CWE-022",
       "buggy": "FN",
-      "buggy_all": "FN",
-      "fixed": "unanalyzed"
+      "buggy_all": "TP",
+      "fixed_commit": "36a2bc430cc773db1cfd0b32e307d9da2d1697f7",
+      "fixed": "TN",
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "asf__james-project_CVE-2022-22931_3.6.0": {
       "cwe": "CWE-022",
       "buggy": "unanalyzed",
+      "buggy_reason": "method_not_found",
       "fixed": "TN",
       "fixed_all": "TN"
     },
@@ -247,651 +351,994 @@
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "ESAPI__esapi-java-legacy_CVE-2022-23457_2.2.3.1": {
       "cwe": "CWE-022",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "xwiki__xwiki-commons_CVE-2022-24897_12.6.6": {
       "cwe": "CWE-022",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "srikanth-lingala__zip4j_CVE-2018-1002202_1.3.2": {
       "cwe": "CWE-022",
       "buggy": "TP",
       "buggy_all": "TP",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "FP",
+      "buggy_hits": [
+        {
+          "file": "src/main/java/net/lingala/zip4j/unzip/Unzip.java",
+          "line": 146,
+          "unchanged": true
+        }
+      ],
+      "pair": "TP/TN",
+      "hits_unchanged": true
     },
     "alibaba__one-java-agent_CVE-2022-25842_0.0.1": {
       "cwe": "CWE-022",
       "buggy": "TP",
       "buggy_all": "TP",
-      "fixed": "unanalyzed"
+      "fixed": "unanalyzed",
+      "fixed_reason": "method_not_found",
+      "buggy_hits": [
+        {
+          "file": "one-java-agent-plugin/src/main/java/com/alibaba/oneagent/utils/IOUtils.java",
+          "line": 124,
+          "unchanged": null
+        },
+        {
+          "file": "one-java-agent-plugin/src/main/java/com/alibaba/oneagent/utils/IOUtils.java",
+          "line": 141,
+          "unchanged": null
+        }
+      ]
     },
     "apache__myfaces_CVE-2011-4367_2.0.11": {
       "cwe": "CWE-022",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "undertow-io__undertow_CVE-2014-7816_1.0.16.Final": {
       "cwe": "CWE-022",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "jeremylong__DependencyCheck_CVE-2018-12036_3.1.2": {
       "cwe": "CWE-022",
       "buggy": "TP",
       "buggy_all": "TP",
       "fixed": "FP",
-      "fixed_all": "FP"
+      "fixed_all": "FP",
+      "buggy_hits": [
+        {
+          "file": "core/src/main/java/org/owasp/dependencycheck/analyzer/ArchiveAnalyzer.java",
+          "line": 516,
+          "unchanged": true
+        },
+        {
+          "file": "core/src/main/java/org/owasp/dependencycheck/utils/ExtractionUtil.java",
+          "line": 96,
+          "unchanged": true
+        },
+        {
+          "file": "core/src/main/java/org/owasp/dependencycheck/utils/ExtractionUtil.java",
+          "line": 102,
+          "unchanged": true
+        },
+        {
+          "file": "core/src/main/java/org/owasp/dependencycheck/utils/ExtractionUtil.java",
+          "line": 104,
+          "unchanged": true
+        },
+        {
+          "file": "core/src/main/java/org/owasp/dependencycheck/utils/ExtractionUtil.java",
+          "line": 168,
+          "unchanged": true
+        }
+      ],
+      "fixed_hits": [
+        {
+          "file": "core/src/main/java/org/owasp/dependencycheck/utils/ExtractionUtil.java",
+          "line": 113,
+          "unchanged": true
+        }
+      ],
+      "pair": "TP/FP",
+      "hits_unchanged": true
     },
     "codehaus-plexus__plexus-archiver_CVE-2018-1002200_3.5": {
       "cwe": "CWE-022",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "zeroturnaround__zt-zip_CVE-2018-1002201_1.12": {
       "cwe": "CWE-022",
       "buggy": "TP",
       "buggy_all": "TP",
       "fixed": "FP",
-      "fixed_all": "FP"
+      "fixed_all": "FP",
+      "buggy_hits": [
+        {
+          "file": "src/main/java/org/zeroturnaround/zip/ZipUtil.java",
+          "line": 1152,
+          "unchanged": true
+        },
+        {
+          "file": "src/main/java/org/zeroturnaround/zip/ZipUtil.java",
+          "line": 1214,
+          "unchanged": true
+        },
+        {
+          "file": "src/main/java/org/zeroturnaround/zip/ZipUtil.java",
+          "line": 1220,
+          "unchanged": true
+        },
+        {
+          "file": "src/main/java/org/zeroturnaround/zip/ZipUtil.java",
+          "line": 1225,
+          "unchanged": true
+        },
+        {
+          "file": "src/main/java/org/zeroturnaround/zip/ZipUtil.java",
+          "line": 1260,
+          "unchanged": true
+        }
+      ],
+      "fixed_hits": [
+        {
+          "file": "src/main/java/org/zeroturnaround/zip/ZipUtil.java",
+          "line": 1223,
+          "unchanged": true
+        }
+      ],
+      "pair": "TP/FP",
+      "hits_unchanged": true
     },
     "whitesource__curekit_CVE-2022-23082_1.1.3": {
       "cwe": "CWE-022",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "aws__aws-sdk-java_CVE-2022-31159_1.12.260": {
       "cwe": "CWE-022",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "jlangch__venice_CVE-2022-36007_1.10.16": {
       "cwe": "CWE-022",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "DSpace__DSpace_CVE-2022-31195_5.10": {
       "cwe": "CWE-022",
       "buggy": "TP",
       "buggy_all": "TP",
-      "fixed": "FP",
-      "fixed_all": "FP"
+      "fixed": "TN",
+      "fixed_all": "TN",
+      "buggy_hits": [
+        {
+          "file": "dspace-api/src/main/java/org/dspace/app/itemimport/ItemImport.java",
+          "line": 2033,
+          "unchanged": false
+        },
+        {
+          "file": "dspace-api/src/main/java/org/dspace/app/itemimport/ItemImport.java",
+          "line": 2051,
+          "unchanged": false
+        },
+        {
+          "file": "dspace-api/src/main/java/org/dspace/app/itemimport/ItemImport.java",
+          "line": 2078,
+          "unchanged": false
+        }
+      ],
+      "pair": "TP/TN"
     },
     "payara__Payara_CVE-2022-37422_5.2022.2": {
       "cwe": "CWE-022",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "DSpace__DSpace_CVE-2022-31194_5.10": {
       "cwe": "CWE-022",
       "buggy": "TP",
       "buggy_all": "TP",
-      "fixed": "unanalyzed"
+      "fixed_commit": "d1dd7d23329ef055069759df15cfa200c8e32e54",
+      "fixed": "TN",
+      "fixed_all": "FP",
+      "buggy_hits": [
+        {
+          "file": "dspace-jspui/src/main/java/org/dspace/app/webui/servlet/SubmissionController.java",
+          "line": 1590,
+          "unchanged": true
+        },
+        {
+          "file": "dspace-jspui/src/main/java/org/dspace/app/webui/servlet/SubmissionController.java",
+          "line": 1599,
+          "unchanged": true
+        }
+      ],
+      "pair": "TP/TN",
+      "hits_unchanged": true
     },
     "diffplug__goomph_CVE-2022-26049_3.37.1": {
       "cwe": "CWE-022",
       "buggy": "TP",
       "buggy_all": "TP",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "buggy_hits": [
+        {
+          "file": "src/main/java/com/diffplug/gradle/ZipMisc.java",
+          "line": 180,
+          "unchanged": true
+        },
+        {
+          "file": "src/main/java/com/diffplug/gradle/ZipMisc.java",
+          "line": 185,
+          "unchanged": true
+        }
+      ],
+      "pair": "TP/TN",
+      "hits_unchanged": true
     },
     "apache__dolphinscheduler_CVE-2022-26884_2.0.5": {
       "cwe": "CWE-022",
       "buggy": "unanalyzed",
+      "buggy_reason": "method_not_found",
       "fixed": "TN",
       "fixed_all": "TN"
     },
     "apache__dolphinscheduler_CVE-2022-34662_2.0.9": {
       "cwe": "CWE-022",
-      "buggy": "TP",
-      "buggy_all": "TP",
-      "fixed": "FP",
-      "fixed_all": "FP"
+      "buggy": "FN",
+      "buggy_all": "FN",
+      "fixed": "TN",
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "testng-team__testng_CVE-2022-4065_7.5": {
       "cwe": "CWE-022",
       "buggy": "TP",
       "buggy_all": "TP",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "buggy_hits": [
+        {
+          "file": "testng-core/src/main/java/org/testng/JarFileUtils.java",
+          "line": 78,
+          "unchanged": true
+        },
+        {
+          "file": "testng-core/src/main/java/org/testng/JarFileUtils.java",
+          "line": 79,
+          "unchanged": false
+        }
+      ],
+      "pair": "TP/TN"
     },
     "apache__uima-uimaj_CVE-2022-32287_3.3.0": {
       "cwe": "CWE-022",
-      "buggy": "TP",
+      "buggy": "FN",
       "buggy_all": "TP",
-      "fixed": "FP",
-      "fixed_all": "FP"
+      "fixed": "TN",
+      "fixed_all": "FP",
+      "pair": "FN/TN",
+      "note": {
+        "kind": "fixed_commit_lacks_fix",
+        "dataset_fixed_commit": "1088f615154b385dd163965b8d2ef78e87111ab1",
+        "actual_fix_commit": "9c99e071be79bdb6bbd1bcd3f20431d76ce5143e",
+        "evidence": "두 커밋 모두 파일 처리 코드 정리 커밋이다. extractFilesFromJar의 기준 폴더 검사(targetDir 정규 경로에 구분자를 붙인 접두사 비교)는 1088f615보다 두 커밋 뒤인 9c99e071에서 들어온다."
+      }
     },
     "keycloak__keycloak_CVE-2022-3782_20.0.1": {
       "cwe": "CWE-022",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "eclipse-ee4j__glassfish_CVE-2022-2712_6.2.5": {
       "cwe": "CWE-022",
       "buggy": "unanalyzed",
-      "fixed": "unanalyzed"
+      "buggy_reason": "method_not_found",
+      "fixed": "unanalyzed",
+      "fixed_reason": "method_not_found"
     },
     "hapifhir__org.hl7.fhir.core_CVE-2023-24057_5.6.91": {
       "cwe": "CWE-022",
-      "buggy": "unanalyzed",
-      "fixed": "unanalyzed"
+      "buggy": "TP",
+      "buggy_all": "TP",
+      "fixed": "TN",
+      "fixed_all": "FP",
+      "buggy_hits": [
+        {
+          "file": "org.hl7.fhir.r4b/src/main/java/org/hl7/fhir/r4b/terminologies/TerminologyCacheManager.java",
+          "line": 106,
+          "unchanged": true
+        },
+        {
+          "file": "org.hl7.fhir.r4b/src/main/java/org/hl7/fhir/r4b/terminologies/TerminologyCacheManager.java",
+          "line": 108,
+          "unchanged": true
+        },
+        {
+          "file": "org.hl7.fhir.r4b/src/main/java/org/hl7/fhir/r4b/terminologies/TerminologyCacheManager.java",
+          "line": 109,
+          "unchanged": true
+        },
+        {
+          "file": "org.hl7.fhir.r5/src/main/java/org/hl7/fhir/r5/terminologies/TerminologyCacheManager.java",
+          "line": 106,
+          "unchanged": true
+        },
+        {
+          "file": "org.hl7.fhir.r5/src/main/java/org/hl7/fhir/r5/terminologies/TerminologyCacheManager.java",
+          "line": 108,
+          "unchanged": true
+        },
+        {
+          "file": "org.hl7.fhir.r5/src/main/java/org/hl7/fhir/r5/terminologies/TerminologyCacheManager.java",
+          "line": 109,
+          "unchanged": true
+        },
+        {
+          "file": "org.hl7.fhir.validation/src/main/java/org/hl7/fhir/validation/Scanner.java",
+          "line": 350,
+          "unchanged": false
+        },
+        {
+          "file": "org.hl7.fhir.validation/src/main/java/org/hl7/fhir/validation/Scanner.java",
+          "line": 360,
+          "unchanged": true
+        }
+      ],
+      "pair": "TP/TN"
     },
     "hapifhir__org.hl7.fhir.core_CVE-2023-28465_5.6.105": {
       "cwe": "CWE-022",
-      "buggy": "unanalyzed",
-      "fixed": "unanalyzed"
+      "buggy": "FN",
+      "buggy_all": "TP",
+      "fixed": "TN",
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "Graylog2__graylog2-server_CVE-2023-41044_5.1.2": {
       "cwe": "CWE-022",
-      "buggy": "unanalyzed",
-      "fixed": "unanalyzed"
+      "buggy": "FN",
+      "buggy_all": "FN",
+      "fixed": "TN",
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "apache__mina-sshd_CVE-2023-35887_2.9.2": {
       "cwe": "CWE-022",
-      "buggy": "unanalyzed",
-      "fixed": "unanalyzed"
+      "buggy": "FN",
+      "buggy_all": "FN",
+      "fixed": "TN",
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "apache__shiro_CVE-2023-34478_1.11.0": {
       "cwe": "CWE-022",
-      "buggy": "unanalyzed",
-      "fixed": "unanalyzed"
+      "buggy": "FN",
+      "buggy_all": "FN",
+      "fixed": "TN",
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "codehaus-plexus__plexus-archiver_CVE-2023-37460_4.7.1": {
       "cwe": "CWE-022",
-      "buggy": "unanalyzed",
-      "fixed": "unanalyzed"
+      "buggy": "FN",
+      "buggy_all": "FN",
+      "fixed": "TN",
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "codehaus-plexus__plexus-utils_CVE-2022-4244_3.0.23": {
       "cwe": "CWE-022",
-      "buggy": "unanalyzed",
-      "fixed": "unanalyzed"
+      "buggy": "TP",
+      "buggy_all": "TP",
+      "fixed": "FP",
+      "fixed_all": "FP",
+      "buggy_hits": [
+        {
+          "file": "src/main/java/org/codehaus/plexus/util/Expand.java",
+          "line": 178,
+          "unchanged": true
+        }
+      ],
+      "fixed_hits": [
+        {
+          "file": "src/main/java/org/codehaus/plexus/util/Expand.java",
+          "line": 166,
+          "unchanged": true
+        }
+      ],
+      "pair": "TP/FP",
+      "hits_unchanged": true
     },
     "yamcs__yamcs_CVE-2023-45278_5.8.6": {
       "cwe": "CWE-022",
-      "buggy": "unanalyzed",
-      "fixed": "unanalyzed"
+      "buggy": "FN",
+      "buggy_all": "FN",
+      "fixed": "TN",
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "yamcs__yamcs_CVE-2023-45277_5.8.6": {
       "cwe": "CWE-022",
-      "buggy": "unanalyzed",
-      "fixed": "unanalyzed"
+      "buggy": "FN",
+      "buggy_all": "FN",
+      "fixed": "TN",
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "apache__shiro_CVE-2023-46749_1.12.0": {
       "cwe": "CWE-022",
-      "buggy": "unanalyzed",
-      "fixed": "unanalyzed"
+      "buggy": "FN",
+      "buggy_all": "FN",
+      "fixed": "TN",
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "apache__sling-org-apache-sling-servlets-resolver_CVE-2024-23673_2.10.0": {
       "cwe": "CWE-022",
-      "buggy": "unanalyzed",
-      "fixed": "unanalyzed"
+      "buggy": "FN",
+      "buggy_all": "FN",
+      "fixed": "TN",
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "x-stream__xstream_CVE-2013-7285_1.4.6": {
       "cwe": "CWE-078",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "x-stream__xstream_CVE-2020-26217_1.4.14-java7": {
       "cwe": "CWE-078",
       "buggy": "unanalyzed",
-      "fixed": "unanalyzed"
+      "buggy_reason": "method_not_found",
+      "fixed": "unanalyzed",
+      "fixed_reason": "method_not_found"
     },
     "x-stream__xstream_CVE-2021-21345_1.4.15": {
       "cwe": "CWE-078",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "jenkinsci__docker-commons-plugin_CVE-2022-20617_1.17": {
       "cwe": "CWE-078",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "jenkinsci__workflow-cps-plugin_CVE-2022-25173_2646.v6ed3b5b01ff1": {
       "cwe": "CWE-078",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "jenkinsci__workflow-cps-global-lib-plugin_CVE-2022-25174_544.vff04fa68714d": {
       "cwe": "CWE-078",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "jenkinsci__workflow-multibranch-plugin_CVE-2022-25175_706.vd43c65dec013": {
       "cwe": "CWE-078",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "apache__activemq_CVE-2014-3576_5.10.1": {
       "cwe": "CWE-078",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "codehaus-plexus__plexus-utils_CVE-2017-1000487_3.0.15": {
       "cwe": "CWE-078",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "jenkinsci__git-client-plugin_CVE-2019-10392_2.8.4": {
       "cwe": "CWE-078",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "jenkinsci__perfecto-plugin_CVE-2020-2261_1.17": {
       "cwe": "CWE-078",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "apache__nifi_CVE-2022-33140_1.16.2": {
       "cwe": "CWE-078",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "jenkinsci__script-security-plugin_CVE-2023-24422_1228.vd93135a_2fb_25": {
       "cwe": "CWE-078",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "nahsra__antisamy_CVE-2016-10006_1.5.3": {
       "cwe": "CWE-079",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "nahsra__antisamy_CVE-2017-14735_1.5.6": {
       "cwe": "CWE-079",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "apache__jspwiki_CVE-2019-10077_2.11.0.M3": {
       "cwe": "CWE-079",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "apache__jspwiki_CVE-2019-10076_2.11.0.M3": {
       "cwe": "CWE-079",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "apache__jspwiki_CVE-2019-10078_2.11.0.M3": {
       "cwe": "CWE-079",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "apache__jspwiki_CVE-2019-10089_2.11.0.M4": {
       "cwe": "CWE-079",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "hibernate__hibernate-validator_CVE-2019-10219_6.0.17.Final": {
       "cwe": "CWE-079",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "asf__cxf_CVE-2019-17573_3.2.11": {
       "cwe": "CWE-079",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "xuxueli__xxl-job_CVE-2020-29204_2.2.0": {
       "cwe": "CWE-079",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "OWASP__json-sanitizer_CVE-2020-13973_1.2.0": {
       "cwe": "CWE-079",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "eclipse__hawkbit_CVE-2020-27219_0.3.0M6": {
       "cwe": "CWE-079",
       "buggy": "unanalyzed",
-      "fixed": "unanalyzed"
+      "buggy_reason": "method_not_found",
+      "fixed": "unanalyzed",
+      "fixed_reason": "method_not_found"
     },
     "alibaba__nacos_CVE-2021-44667_2.0.3": {
       "cwe": "CWE-079",
       "buggy": "unanalyzed",
-      "fixed": "unanalyzed"
+      "buggy_reason": "method_not_found",
+      "fixed": "unanalyzed",
+      "fixed_reason": "method_not_found"
     },
     "nahsra__antisamy_CVE-2022-28367_1.6.5": {
       "cwe": "CWE-079",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "ESAPI__esapi-java-legacy_CVE-2022-24891_2.2.3.1": {
       "cwe": "CWE-079",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "nahsra__antisamy_CVE-2022-29577_1.6.6.1": {
       "cwe": "CWE-079",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "rhuss__jolokia_CVE-2018-1000129_1.4.0": {
       "cwe": "CWE-079",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "keycloak__keycloak_CVE-2014-3656_1.0.5.Final": {
       "cwe": "CWE-079",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "asf__cxf_CVE-2016-6812_3.0.11": {
       "cwe": "CWE-079",
       "buggy": "FN",
       "buggy_all": "FN",
-      "fixed": "unanalyzed"
+      "fixed_commit": "a30397b0c7c4b7fc83e9a4bae71df342c194b60f",
+      "fixed": "TN",
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "apache__sling-org-apache-sling-xss_CVE-2016-5394_1.0.8": {
       "cwe": "CWE-079",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "DSpace__DSpace_CVE-2022-31192_5.10": {
       "cwe": "CWE-079",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "keycloak__keycloak_CVE-2022-4137_20.0.3": {
       "cwe": "CWE-079",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "keycloak__keycloak_CVE-2022-1274_20.0.3": {
       "cwe": "CWE-079",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "xwiki__xwiki-commons_CVE-2023-29201_14.5": {
       "cwe": "CWE-079",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "xwiki__xwiki-commons_CVE-2023-29528_14.9-rc-1": {
       "cwe": "CWE-079",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "xwiki__xwiki-rendering_CVE-2023-32070_14.5": {
       "cwe": "CWE-079",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "xwiki__xwiki-commons_CVE-2023-31126_14.10.3": {
       "cwe": "CWE-079",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "apache__jspwiki_CVE-2022-46907_2.11.3": {
       "cwe": "CWE-079",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "keycloak__keycloak_CVE-2022-4361_21.1.1": {
       "cwe": "CWE-079",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "xwiki__xwiki-commons_CVE-2023-36471_14.10.5": {
       "cwe": "CWE-079",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "jstachio__jstachio_CVE-2023-33962_1.0.0": {
       "cwe": "CWE-079",
       "buggy": "unanalyzed",
-      "fixed": "unanalyzed"
+      "buggy_reason": "method_not_found",
+      "fixed": "unanalyzed",
+      "fixed_reason": "method_not_found"
     },
     "xwiki__xwiki-rendering_CVE-2023-37908_14.10.3": {
       "cwe": "CWE-079",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "SpringSource__spring-security-oauth_CVE-2018-1260_2.3.2.RELEASE": {
       "cwe": "CWE-094",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "apache__activemq_CVE-2019-0222_5.15.8": {
       "cwe": "CWE-094",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "jmrozanec__cron-utils_CVE-2021-41269_9.1.5": {
       "cwe": "CWE-094",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "apache__struts_CVE-2020-17530_2.5.25": {
       "cwe": "CWE-094",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "apache__activemq_CVE-2020-11998_5.15.12": {
       "cwe": "CWE-094",
       "buggy": "FN",
       "buggy_all": "FN",
-      "fixed": "unanalyzed"
+      "fixed_commit": "aa8900ca70e6f9422490c1a03627400375d3ff83",
+      "fixed": "TN",
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "spring-projects__spring-framework_CVE-2022-22965_5.2.19.RELEASE": {
       "cwe": "CWE-094",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "spring-cloud__spring-cloud-gateway_CVE-2022-22947_3.0.6": {
       "cwe": "CWE-094",
       "buggy": "FN",
       "buggy_all": "TP",
       "fixed": "TN",
-      "fixed_all": "FP"
+      "fixed_all": "FP",
+      "pair": "FN/TN"
     },
     "apache__dubbo_CVE-2021-30180_2.7.9": {
       "cwe": "CWE-094",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "apache__incubator-dubbo_CVE-2021-30181_2.6.8": {
       "cwe": "CWE-094",
       "buggy": "unanalyzed",
+      "buggy_reason": "method_not_found",
       "fixed": "TN",
       "fixed_all": "TN"
     },
     "spring-projects__spring-security_CVE-2011-2732_2.0.6.RELEASE": {
       "cwe": "CWE-094",
       "buggy": "unanalyzed",
+      "buggy_reason": "method_not_found",
       "fixed": "TN",
       "fixed_all": "TN"
     },
     "fabric8io__kubernetes-client_CVE-2021-4178_5.0.2": {
       "cwe": "CWE-094",
       "buggy": "unanalyzed",
-      "fixed": "unanalyzed"
+      "buggy_reason": "method_not_found",
+      "fixed": "unanalyzed",
+      "fixed_reason": "method_not_found"
     },
     "asf__commons-text_CVE-2022-42889_1.9": {
       "cwe": "CWE-094",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "ff4j__ff4j_CVE-2022-44262_1.8.13": {
       "cwe": "CWE-094",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "codecentric__spring-boot-admin_CVE-2022-46166_2.6.9": {
       "cwe": "CWE-094",
       "buggy": "FN",
       "buggy_all": "TP",
       "fixed": "TN",
-      "fixed_all": "FP"
+      "fixed_all": "FP",
+      "pair": "FN/TN"
     },
     "xerial__sqlite-jdbc_CVE-2023-32697_3.41.2.1": {
       "cwe": "CWE-094",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "asf__nifi_CVE-2023-34468_1.21.0": {
       "cwe": "CWE-094",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "apache__rocketmq_CVE-2023-37582_4.9.6": {
       "cwe": "CWE-094",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "asf__nifi_CVE-2023-36542_1.22.0": {
       "cwe": "CWE-094",
       "buggy": "FN",
       "buggy_all": "FN",
-      "fixed": "unanalyzed"
+      "fixed_commit": "532578799c0a4cb1edc54dadda81aa60787e54b0",
+      "fixed": "TN",
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "apache__rocketmq_CVE-2023-33246_5.1.0": {
       "cwe": "CWE-094",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "apache__dolphinscheduler_CVE-2023-51770_3.2.0": {
       "cwe": "CWE-094",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     },
     "apache__dolphinscheduler_CVE-2023-49109_3.2.0": {
       "cwe": "CWE-094",
       "buggy": "FN",
       "buggy_all": "FN",
       "fixed": "TN",
-      "fixed_all": "TN"
+      "fixed_all": "TN",
+      "pair": "FN/TN"
     }
   }
 }

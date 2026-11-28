@@ -7,13 +7,14 @@
 대상 패키지마다 (1) OSV에서 그 패키지의 모든 권고를 받아 오프라인 DB 폴더로 저장하고, (2) 배포된 버전 가운데 일부(권고 경계 버전 포함)를 골라
 (3) 우리 해석기가 영향 아래라고 보는 권고 묶음과 OSV 서버(`/v1/querybatch`)가 영향 아래라고 보는 권고 묶음을 비교한다.
 별칭(GHSA·CVE·PYSEC)은 같은 권고로 합쳐 센다. 이 측정은 판정 일치를 보며 탐지 성능이나 우위를 주장하지 않는다.
-네트워크가 필요하다(PyPI·npm 레지스트리, api.osv.dev). 표본 패키지는 개발팀이 골랐다.
+네트워크가 필요하다(PyPI·npm 레지스트리, Maven Central, api.osv.dev). 표본 패키지는 개발팀이 골랐다.
 작성자: 최진호
 작성일: 2026-10-05
 """
 
 import json
 import random
+import re
 import sys
 import urllib.request
 from pathlib import Path
@@ -27,6 +28,11 @@ from iron_laws.deps.versions import normalize_name, parse_version  # noqa: E402
 PACKAGES = {
     "PyPI": ["requests", "urllib3", "django", "jinja2", "pyyaml", "flask", "pillow", "cryptography", "werkzeug", "numpy"],
     "npm": ["lodash", "minimist", "express", "axios", "jsonwebtoken", "semver", "moment", "ws", "tar", "node-fetch"],
+    "Maven": [
+        "org.apache.logging.log4j:log4j-core", "com.fasterxml.jackson.core:jackson-databind", "org.springframework:spring-web",
+        "org.springframework:spring-core", "org.apache.commons:commons-text", "commons-io:commons-io", "org.yaml:snakeyaml",
+        "com.google.guava:guava", "org.apache.tomcat.embed:tomcat-embed-core", "io.netty:netty-codec-http",
+    ],
 }
 VERSIONS_PER_PACKAGE = 40
 
@@ -52,7 +58,16 @@ def advisories_of(ecosystem: str, name: str) -> list[dict]:
     return [get(f"https://api.osv.dev/v1/vulns/{i}") for i in sorted(set(ids))]
 
 
+def get_text(url: str) -> str:
+    with urllib.request.urlopen(url, timeout=60) as response:  # noqa: S310  # 고정된 Maven Central 주소만 연다
+        return response.read().decode("utf-8")
+
+
 def releases(ecosystem: str, name: str) -> list[str]:
+    if ecosystem == "Maven":
+        group, artifact = name.split(":", 1)
+        metadata = get_text(f"https://repo1.maven.org/maven2/{group.replace('.', '/')}/{artifact}/maven-metadata.xml")
+        return re.findall(r"<version>([^<]+)</version>", metadata.split("<versions>", 1)[-1])
     if ecosystem == "PyPI":
         return list(get(f"https://pypi.org/pypi/{name}/json")["releases"].keys())
     return list(get(f"https://registry.npmjs.org/{name}")["versions"].keys())

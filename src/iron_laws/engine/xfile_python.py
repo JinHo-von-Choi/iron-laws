@@ -152,3 +152,58 @@ def imports(src: SourceFile) -> dict[str, tuple[str, str | None]]:
         return table
 
     return src.memo("py_imports", build_table)
+
+
+def resolve_method(index, src: SourceFile, class_ref: str, method: str, argc: int):
+    """`w = mod.Cls(...)`로 만든 지역 객체의 메서드. 클래스는 import를 따라 찾고, 같은 파일에 정의된 클래스도 본다.
+    같은 이름의 클래스가 둘 이상이거나 같은 이름의 메서드가 둘 이상이면 해석하지 않는다"""
+    parts = class_ref.split(".")
+    table = imports(src)
+    target: SourceFile | None = None
+    class_name = parts[-1]
+    if len(parts) == 1 and parts[0] not in table:
+        target = src
+    else:
+        if len(parts) == 1:
+            module_name, class_name = table[parts[0]][0], table[parts[0]][1] or ""
+        else:
+            entry = table.get(".".join(parts[:-1]))
+            head = table.get(parts[0])
+            if entry is not None and entry[1] is None:
+                module_name = entry[0]
+            elif head is not None:
+                module_name = ".".join([head[0], *([head[1]] if head[1] else []), *parts[1:-1]])
+            else:
+                return []
+        rel, _ambiguous = _lookup(index, module_name, src.path.as_posix())
+        target = index.files.get(rel) if rel is not None else None
+    if target is None or target.root is None or not class_name:
+        return []
+    classes = [n for n in target.root.named_children if n.type == "class_definition" and target.text_of(n.child_by_field_name("name")) == class_name]
+    classes += [d for n in target.root.named_children if n.type == "decorated_definition" for d in n.named_children if d.type == "class_definition" and target.text_of(d.child_by_field_name("name")) == class_name]
+    if len(classes) != 1:
+        return []
+    from iron_laws.engine.ast_tools import iter_functions
+
+    body = classes[0].child_by_field_name("body")
+    found = []
+    for fn in iter_functions(target):
+        owner = fn.node.parent.parent if fn.node.parent is not None and fn.node.parent.type == "decorated_definition" else fn.node.parent
+        if fn.name != method or owner is None or body is None or owner.id != body.id:
+            continue
+        params = [p for p in fn.params if target.text_of(p) not in ("self", "cls")]
+        if len(params) == argc:
+            found.append((target, fn))
+    return found if len(found) == 1 else []
+
+
+def qualified_name(src: SourceFile, callee: str) -> str:
+    """호출 이름의 첫 조각을 import로 풀어 모듈 경로를 붙인 이름. `import flask` 뒤의 `flask.redirect` → `flask.redirect`,
+    `from django import shortcuts` 뒤의 `shortcuts.redirect` → `django.shortcuts.redirect`. import로 묶이지 않은 이름은 빈 문자열"""
+    head, _, rest = callee.partition(".")
+    bound = imports(src).get(head)
+    if bound is None:
+        return ""
+    module, name = bound
+    base = f"{module}.{name}" if name else module
+    return f"{base}.{rest}" if rest else base

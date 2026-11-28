@@ -1,14 +1,15 @@
 # 의존성 점검
 
-잠금 파일을 읽어 세 가지를 합니다.
+잠금 파일과 매니페스트를 읽어 네 가지를 합니다.
 
 - 취약한 의존성 찾기(`deps`)
 - SBOM 만들기(`sbom`)
 - 존재하지 않는 패키지 이름 찾기(`--package-index`)
+- 지원이 끝난 런타임·OS 이미지·라이브러리 찾기(`policies.eol_db`, AI-121)
 
 ## 취약한 의존성: `iron-laws deps`
 
-`uv.lock`, `poetry.lock`, `package-lock.json`, `pnpm-lock.yaml`, `requirements.txt`(`==`로 고정한 것)에 적힌 버전이 공개 취약점 데이터베이스(OSV)의 권고에 걸리는지 봅니다. 걸리면 몇 버전 이상으로 올려야 권고가 사라지는지도 알려 줍니다. 잠금 파일이 없으면 버전을 알 수 없어 점검하지 않습니다.
+`uv.lock`, `poetry.lock`, `package-lock.json`, `pnpm-lock.yaml`, `requirements.txt`(`==`로 고정한 것)와 Maven·Gradle 매니페스트(`pom.xml`, `build.gradle`, `build.gradle.kts`, `gradle/libs.versions.toml`)에 적힌 버전이 공개 취약점 데이터베이스(OSV)의 권고에 걸리는지 봅니다. 걸리면 몇 버전 이상으로 올려야 권고가 사라지는지도 알려 줍니다. 잠금 파일이 없으면 버전을 알 수 없어 점검하지 않습니다.
 
 ```bash
 # 권고 목록을 한 번 받아 둡니다(에코시스템별 all.zip)
@@ -23,13 +24,14 @@ iron-laws deps . --advisory-db osv --fail-on high  # HIGH 이상 권고가 있�
 
 - 점검 중에는 네트워크를 쓰지 않고, 코드나 의존성 목록을 어디로도 보내지 않습니다. 권고 목록은 직접 받아 둔 파일을 씁니다.
 - 안내하는 버전은 권고가 "이 버전에서 고쳤다"고 적은 버전입니다. 앱과 호환된다는 보증은 아니니 올린 뒤 테스트를 돌리십시오. 직접 의존인지, 간접 의존이면 어느 패키지가 끌어오는지도 보여 줍니다.
+- Maven·Gradle은 잠금 파일이 없어 직접 의존성만 봅니다. 전이 의존성은 확인하지 않았다고 보고서에 적고, BOM·플러그인이 버전을 관리해 버전을 정하지 못한 의존성은 건너뛴 수를 적습니다. Maven 권고 목록은 `osv/Maven/all.zip`으로 받아 둡니다.
 - `--reachability`를 붙이면, 권고가 영향받는 함수를 알려 줄 때 코드가 그 함수를 부르는지 봅니다.
 
   | 결과 | 뜻 |
   |---|---|
   | `reachable` | 부르는 곳을 찾았습니다 |
   | `no_evidence` | 부르는 곳을 못 찾았습니다. 영향이 없다는 뜻은 아닙니다 |
-  | `undetermined` | 판단할 수 없습니다 |
+  | `undetermined` | 판단할 수 없습니다. Maven 패키지는 도달성 판정을 지원하지 않아 언제나 이 값입니다 |
 
 - `--format openvex`는 OpenVEX 0.2.0 문서를 씁니다. 자동으로는 `affected`(영향 함수 호출 확인)와 `under_investigation`만 쓰고, `not_affected`는 `--vex-decisions`로 준 사람의 판정 기록에 근거(justification)가 있을 때만 씁니다.
 - 권고가 Git 커밋 범위만 주거나 해석할 수 없으면 "영향 여부 판정 불가"로 따로 표시합니다. 영향이 없다는 뜻은 아닙니다.
@@ -75,3 +77,22 @@ iron-laws audit . --package-index pkg-index
 - `workspace:`·`file:`·Git·URL 의존, 그리고 `policies.private_packages`(예: `['@acme/*']`)에 맞는 사내 패키지는 공개 색인과 맞추지 않습니다.
 - 코드의 import 이름도 맞춥니다. JavaScript·TypeScript는 npm 색인으로 맞춥니다. Python은 모듈 이름→배포 이름 색인(`--ecosystem pypi-modules`, 한 줄에 `모듈 배포이름`)이 있을 때만 판정합니다. 표준 라이브러리, Node 내장 모듈, 프로젝트 안의 모듈은 제외합니다.
 - 색인을 주지 않으면 인기 패키지와 철자가 비슷한 이름만 지적합니다.
+
+## 지원 종료 제품: `policies.eol_db`
+
+지원이 끝난 OS 이미지(`FROM centos:7` 등), DB 이미지, Spring Boot·Spring Framework·log4j·Tomcat 같은 Java 직접 의존성, Python·Node.js 런타임 표기를 찾습니다. 판정에는 endoflife.date의 제품별 지원 주기 자료를 내려받아 둔 폴더를 씁니다.
+
+```bash
+iron-laws index fetch --eol --out ./eol   # 지원 종료 자료를 받습니다(네트워크를 쓰는 명령은 index fetch뿐)
+```
+
+```yaml
+policies:
+  eol_db: ./eol
+```
+
+- 판정 기준일은 자료 수집일입니다. 같은 코드·같은 자료면 언제 돌려도 결과가 같고, 보고서의 `execution.reference_data`에 수집일과 내용 지문이 남습니다.
+- 마크다운 보고서(`--standard fin-selfcheck-2026`)와 JSON 보고서의 `metadata.eol`에 제품, 쓰는 버전, 지원 종료일, 위치, 근거 주소를 표로 냅니다.
+- 자료를 지정했는데 읽을 수 없거나 내용이 `manifest.json`의 지문과 다르면, 내장 목록으로 대체하지 않고 오류 진단을 내며 점검은 `incomplete`가 됩니다.
+- 자료를 지정하지 않으면 내장 목록만 봅니다. 내장 목록은 21보다 낮은 Node.js, 3.10보다 낮은 Python, 주 버전 2 이하의 Spring Boot입니다.
+

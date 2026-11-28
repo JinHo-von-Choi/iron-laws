@@ -1,0 +1,12 @@
+{
+  "source": "https://endoflife.date/api",
+  "fetched_at": "2026-11-20",
+  "products": [
+    "centos",
+    "log4j",
+    "nodejs",
+    "python",
+    "spring-boot"
+  ],
+  "sha256": "782789fbaf0ae4907c9e250d9a403285e6bf3085ce48aa512fc4728479c16caf"
+}

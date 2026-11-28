@@ -114,8 +114,8 @@ HOLDOUT_SCAN: list[ScanCase] = [
         "spring",
         ".java",
         "IL-502",
-        'import org.springframework.web.bind.annotation.*;\n@RestController\npublic class A {\n  @GetMapping("/x")\n  public String @FN@(@RequestParam String name) throws Exception {\n    java.io.File f = new java.io.File("/srv", "fixed.txt");\n    return f.getName();\n  }\n}\n',
-        'import org.springframework.web.bind.annotation.*;\n@RestController\npublic class A {\n  @GetMapping("/x")\n  public String @FN@(@RequestParam String name) throws Exception {\n    java.io.File f = new java.io.File("/srv/" + name);\n    return f.getName();\n  }\n}\n',
+        'import org.springframework.web.bind.annotation.*;\n@RestController\npublic class A {\n  @GetMapping("/x")\n  public String @FN@(@RequestParam String name) throws Exception {\n    java.io.File f = new java.io.File("/srv", "fixed.txt");\n    return new String(java.nio.file.Files.readAllBytes(f.toPath()));\n  }\n}\n',
+        'import org.springframework.web.bind.annotation.*;\n@RestController\npublic class A {\n  @GetMapping("/x")\n  public String @FN@(@RequestParam String name) throws Exception {\n    java.io.File f = new java.io.File("/srv/" + name);\n    return new String(java.nio.file.Files.readAllBytes(f.toPath()));\n  }\n}\n',
     ),
     ScanCase(
         "java-xxe-stax-reset",

@@ -8,12 +8,13 @@ from iron_laws.engine.ast_tools import (
     has_interpolation,
     identifiers_in,
 )
-from iron_laws.engine.languages import JS_FAMILY, Lang
+from iron_laws.engine.languages import C_FAMILY, JS_FAMILY, Lang
 from iron_laws.engine.source import SourceFile
 from iron_laws.engine.taint.constants import (
     condition_value,
     list_get_is_literal,
     python_container_get_is_literal,
+    route_segment_is_literal,
 )
 from iron_laws.engine.taint.nodes import ternary_parts
 from iron_laws.engine.taint.resolve import _call_parts
@@ -213,6 +214,8 @@ def _reads(src: SourceFile, node: Node, skip=None) -> list[tuple[str, bool]]:
             continue  # 지역 리스트에서 꺼낸 원소가 상수 리터럴이다
         if src.lang is Lang.PYTHON and n.type in ("subscript", "call") and python_container_get_is_literal(src, n):
             continue  # 지역 dict·list·configparser에서 상수 키·위치로 꺼낸 값이 리터럴이다
+        if src.lang is Lang.PYTHON and n.type == "subscript" and route_segment_is_literal(src, n):
+            continue  # 핸들러를 등록한 모든 경로에서 같은 고정 조각이다
         parts = _call_parts(src, n) if src.lang is not None else None
         if parts is not None and "." in parts[0]:
             method = parts[0].rsplit(".", 1)[-1]
@@ -244,6 +247,11 @@ def _reads(src: SourceFile, node: Node, skip=None) -> list[tuple[str, bool]]:
         if n.type in ("identifier", "variable_name", "property_identifier", "field_identifier"):
             if (n.child_count == 0 or n.type == "variable_name") and not _is_property_position(n):
                 found.append((src.text_of(n).lstrip("$"), True))
+                if src.lang in C_FAMILY and n.type == "identifier":
+                    # 객체형 매크로(`#define COMMAND_ARG3 data`)는 펼친 변수를 읽는다
+                    from iron_laws.engine.taint.c_inputs import expand_name
+
+                    found += [(name, True) for name in expand_name(src, src.text_of(n))]
             continue
         if n.type == "string_literal" and src.lang is Lang.KOTLIN:  # "$name" 단순 템플릿
             found += [(m, True) for m in re.findall(r"(?<!\\)\$([A-Za-z_]\w*)", src.text_of(n))]

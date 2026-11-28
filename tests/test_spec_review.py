@@ -287,7 +287,7 @@ def test_예제_검증은_항목마다_격리한다(tmp_path: Path):
     assert by_name[("sinks.wrapper-b", "negative")] is True
 
 
-def test_예제_검증은_항목당_한_번_점검한다(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+def test_예제_검증은_항목마다_적용_전후로_한_번씩_점검한다(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     from iron_laws.core import scanner as scanner_module
 
     calls: list[int] = []
@@ -302,7 +302,7 @@ def test_예제_검증은_항목당_한_번_점검한다(tmp_path: Path, monkeyp
 
     example_results(spec, scan_examples)
 
-    assert len(calls) == 2
+    assert len(calls) == 4  # 항목 2개 × (항목 적용, 적용 전)
 
 
 def test_spec_check는_저장소가_없으면_예제_판정만_한다(tmp_path: Path):

@@ -12,6 +12,7 @@ from iron_laws.core.models import Confidence, IronLaw, Severity, Violation
 from iron_laws.engine.ast_tools import (
     Call,
     enclosing_function,
+    is_literal,
     iter_calls,
     iter_functions,
     walk,
@@ -19,14 +20,22 @@ from iron_laws.engine.ast_tools import (
 )
 from iron_laws.engine.languages import C_FAMILY, Lang
 from iron_laws.engine.source import SourceFile
-from iron_laws.engine.taint import ASSIGN_TYPES, _target_and_value, _target_names, is_tainted
+from iron_laws.engine.taint import (
+    ASSIGN_TYPES,
+    Ctx,
+    _target_and_value,
+    _target_names,
+    is_tainted,
+    reaching_definitions,
+)
+from iron_laws.engine.taint.closed import is_closed_value
 from iron_laws.rules.base import BaseRule
 from iron_laws.rules.sinks import CS, JAVA, JS, PHP, PY, Sink
 from iron_laws.standards import mois_ref
 
 
 class DeserializationRule(BaseRule):
-    version = 2
+    version = 3
     rule_id = "IL-515"
     name = "신뢰할 수 없는 데이터의 역직렬화 탐지"
     iron_law = IronLaw.LAW_5
@@ -47,7 +56,31 @@ class DeserializationRule(BaseRule):
         (re.compile(r"new\s+Yaml\(\s*\)\s*\.load"), "SnakeYAML 기본 생성자의 load는 임의 객체를 생성합니다."),
     ]
 
+    # 데이터 없이 위험한 설정만 켜는 호출. 데이터 인자가 없으므로 지금처럼 확정으로 알린다
+    config_only = re.compile(r"(^|\.)(enableDefaultTyping|activateDefaultTyping)$|^new(BinaryFormatter|NetDataContractSerializer|SoapFormatter|LosFormatter|ObjectStateFormatter)$")
+
+    def _data_node(self, src: SourceFile, call: Call) -> Node | None:
+        """역직렬화할 데이터가 든 식. Java readObject는 수신자 스트림을 만든 `new ObjectInputStream(데이터)`의 인자다"""
+        if src.lang is Lang.JAVA and re.search(r"(^|\.)(readObject|readUnshared)$", call.callee):
+            function = call.node.child_by_field_name("object")
+            if function is None or function.type != "identifier":
+                return None
+            scope = enclosing_function(call.node, src.lang) or src.root
+            defs = reaching_definitions(src, scope, src.text_of(function), call.node.start_byte) if scope is not None else []
+            if not defs and scope is not None:
+                # try (ObjectInputStream ois = new ObjectInputStream(…)) 자원 선언
+                defs = [r.child_by_field_name("value") for r in walk(scope) if r.type == "resource" and r.child_by_field_name("name") is not None
+                        and src.text_of(r.child_by_field_name("name")) == src.text_of(function) and r.child_by_field_name("value") is not None]
+            streams = [d for d in defs if d.type == "object_creation_expression"]
+            if len(streams) != 1 or len(defs) != 1:
+                return None
+            arguments = streams[0].child_by_field_name("arguments")
+            values = [a for a in arguments.named_children if "comment" not in a.type] if arguments is not None else []
+            return values[0] if values else None
+        return call.args[0] if call.args else None
+
     def check(self, src: SourceFile) -> list[Violation]:
+        """데이터 인자로 판정한다: 외부 입력이 닿으면 확정, 상수면 지적하지 않고, 출처를 모르면 확인 필요로 낸다"""
         found = []
         for call in iter_calls(src):
             if not any(src.lang in s.langs and s.callee.search(call.callee) for s in self.sinks):
@@ -59,15 +92,20 @@ class DeserializationRule(BaseRule):
                 continue
             if call.callee == "readObject" and src.lang is Lang.JAVA and not re.search(r"ObjectInputStream|ois|in\b", src.text):
                 continue
-            tainted = any(is_tainted(src, a) for a in call.args)
-            found.append(
-                self.at_node(
-                    src,
-                    call.node,
-                    f"{call.callee}로 객체를 역직렬화합니다. 신뢰할 수 없는 데이터라면 원격 코드 실행으로 이어질 수 있습니다.",
-                    severity=Severity.CRITICAL if tainted else Severity.HIGH,
-                )
-            )
+            if self.config_only.search(call.callee):
+                found.append(self.at_node(src, call.node, f"{call.callee}는 임의 타입의 객체 복원을 허용합니다. 신뢰할 수 없는 데이터라면 원격 코드 실행으로 이어질 수 있습니다."))
+                continue
+            data = self._data_node(src, call)
+            # HTML 이스케이프 같은 문맥 정제는 직렬화 데이터의 위험을 없애지 못한다. 값의 종류를 바꾸는 정제만 인정한다
+            if data is not None and is_tainted(src, data, ctx=Ctx.CODE):
+                found.append(self.at_node(src, call.node, f"외부 입력을 {call.callee}로 역직렬화합니다. 원격 코드 실행으로 이어질 수 있습니다.", severity=Severity.CRITICAL))
+            elif data is not None and (is_literal(data) or is_closed_value(src, data)):
+                continue  # 코드에 고정된 값을 복원한다
+            else:
+                found.append(self.at_node(
+                    src, call.node, f"{call.callee}로 객체를 역직렬화합니다. 데이터가 신뢰할 수 없는 곳에서 오면 원격 코드 실행으로 이어질 수 있으니 출처를 확인하십시오.",
+                    confidence=Confidence.REVIEW,
+                ))
         if src.lang in (Lang.CSHARP, Lang.JAVA):
             for idx, line in enumerate(src.code_lines, start=1):
                 for pattern, message in self.regexes:

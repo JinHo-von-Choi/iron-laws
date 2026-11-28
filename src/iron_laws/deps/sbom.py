@@ -18,6 +18,9 @@ from iron_laws.deps.graph import DependencyGraph
 
 
 def purl(ecosystem: str, name: str, version: str) -> str:
+    if ecosystem == "Maven" and ":" in name:
+        group, artifact = name.split(":", 1)
+        return f"pkg:maven/{quote(group)}/{quote(artifact)}@{quote(version)}"
     if ecosystem == "npm":
         if name.startswith("@") and "/" in name:
             scope, base = name.split("/", 1)

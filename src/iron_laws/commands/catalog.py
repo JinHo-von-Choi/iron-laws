@@ -190,11 +190,18 @@ def _pack_coverage(pack_id: str, rules) -> None:
     table = Table(title=f"[{pack.title} ({pack.edition}) 항목별 대응 규칙]", expand=True)
     table.add_column("항목", style="bold cyan", width=8)
     table.add_column("명칭")
+    if pack.item_scope:
+        table.add_column("범위")
     table.add_column("대응 규칙")
+    scope_label = {"code": "코드로 확인", "mixed": "일부 코드로 확인", "manual": "코드 밖 확인"}
     for item in pack.items:
-        table.add_row(item.id, item.name, ", ".join(sorted(by_item.get(item.id, []))) or "-")
+        rules_text = ", ".join(sorted(by_item.get(item.id, []))) or "-"
+        if pack.item_scope:
+            table.add_row(item.id, item.name, scope_label.get(pack.item_scope.get(item.id, ""), "-"), rules_text)
+        else:
+            table.add_row(item.id, item.name, rules_text)
     console.print(table)
     covered = sum(1 for item in pack.items if by_item.get(item.id))
     state = "사람이 이 판본으로 확인함" if pack.mapping_verified else "미확인(오철칙이 정한 대응이며 사람이 이 판본으로 확인하지 않음)"
     console.print(f"대응 규칙이 있는 항목 {covered}개 / 전체 {len(pack.items)}개 · 대응표: {state}")
-    console.print(f"[dim]출처 {pack.source_url} (수집 {pack.retrieved_at}) · 내용 해시 {pack.content_sha256()[:16]}[/dim]")
+    console.print(f"[dim]출처 {pack.source_url or '-'} (수집 {pack.retrieved_at}) · 내용 해시 {pack.content_sha256()[:16]}[/dim]")

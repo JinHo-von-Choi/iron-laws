@@ -68,7 +68,7 @@ SAFE_CHANGES = [
     ("join-of-constants", {"a.py": "import os\nBASE = '/srv/data'\ndef f():\n    return open(os.path.join(BASE, 'x.txt'))\n"}),
     ("path-env-base", {"a.py": "import os\ndef f():\n    return open(os.path.join(os.environ['DATA_DIR'], 'x.txt'))\n"}),
     ("path-param-closed-caller", {"a.py": "def read(p):\n    return open(p).read()\ndef top():\n    return read('/etc/hostname')\n"}),
-    ("path-guarded-normalized", {"a.py": "import os\nfrom flask import request\ndef f():\n    p = os.path.abspath(request.args['p'])\n    if not p.startswith('/srv'):\n        abort(400)\n    return open(p).read()\n"}),
+    ("path-guarded-normalized", {"a.py": "import os\nfrom flask import request\ndef f():\n    p = os.path.abspath(request.args['p'])\n    if not p.startswith('/srv/'):\n        abort(400)\n    return open(p).read()\n"}),
     ("path-basename", {"a.py": "import os\nfrom flask import request\ndef f():\n    return open('/srv/' + os.path.basename(request.args['p']))\n"}),
     ("sql-literal", {"a.py": "def f(cur):\n    cur.execute('SELECT 1')\n"}),
     ("sql-bound", {"a.py": "def f(cur, uid):\n    cur.execute('SELECT * FROM t WHERE id = ?', (uid,))\n"}),

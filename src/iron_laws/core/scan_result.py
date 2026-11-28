@@ -202,7 +202,7 @@ class ScanResultBuilder:
         metadata = {
             "config": self.config.model_dump(mode="json"),
             "config_source": self.config_source,
-            "config_hash": hashlib.sha256(self.config.model_dump_json().encode()).hexdigest()[:16],
+            "config_hash": hashlib.sha256(self.config.hash_json().encode()).hexdigest()[:16],
             "fail_on_source": self.fail_on_source,
             "tool_version": tool_version(),
             "ruleset": self._ruleset_info(),
@@ -225,6 +225,15 @@ class ScanResultBuilder:
             metadata["file_coverage"] = self._file_coverage
         if self.baseline is not None:
             metadata["baseline"] = {"entries": len(self.baseline.entries), "tool_version": self.baseline.tool_version}
+        tenancy = getattr(self, "_tenancy", None)
+        if tenancy is not None:
+            metadata["tenancy"] = {"rows": tenancy[:MAX_ROUTE_ROWS], "truncated": len(tenancy) > MAX_ROUTE_ROWS}
+        eol = getattr(self, "_eol", None)
+        if eol is not None and (eol.data is not None or eol.error is not None):
+            metadata["eol"] = {
+                "data": eol.data or {"source": self.config.policies.eol_db, "error": eol.error},
+                "rows": [r.as_row() for r in eol.rows][:MAX_ROUTE_ROWS],
+            }
         if self.config.policies.custom_spec:
             metadata["custom_spec"] = {
                 "path": self.config.policies.custom_spec,
@@ -254,7 +263,17 @@ class ScanResultBuilder:
             error_diagnostics=sum(1 for d in self._diagnostics if d.severity == "error"),
             cross_file_limit_hits=self._cross_file["limit_hits"],
             cost=self._cost,
+            reference_data=self._reference_data(),
         )
+
+    def _reference_data(self) -> dict[str, str]:
+        """판정에 쓴 외부 자료의 기준일과 내용 지문. 같은 코드라도 자료가 바뀌면 판정이 달라질 수 있다."""
+        eol = getattr(self, "_eol", None)
+        if eol is None:
+            return {}
+        if eol.data is not None:
+            return {"eol": f"{eol.data['fetched_at']}:{eol.data['sha256']}"}
+        return {"eol": "내장 목록"} if eol.error is None else {"eol": "읽기 실패"}
 
 
     @staticmethod
@@ -388,10 +407,11 @@ MAX_ROUTE_ROWS = 500
 
 
 def _route_summary(rows: list[dict]) -> dict:
-    """라우트 접근통제 행렬 요약. 중요 기능 라우트의 행을 함께 싣는다(인증 근거가 없거나 정할 수 없는 행이 먼저)."""
+    """라우트 접근통제 행렬 요약. 중요 기능·관리 라우트의 행을 함께 싣는다(인증 근거가 없거나 정할 수 없는 행이 먼저)."""
     sensitive = [r for r in rows if r.get("sensitive")]
     order = {"no": 0, "unknown": 1, "yes": 2}
-    listed = sorted(sensitive, key=lambda r: (order.get(r["auth"], 3), r["file"], r["line"]))
+    shown = [r for r in rows if r.get("sensitive") or r.get("kind") == "admin"]
+    listed = sorted(shown, key=lambda r: (order.get(r["auth"], 3), r["file"], r["line"]))
     count = lambda key, value: sum(1 for r in sensitive if r[key] == value)  # noqa: E731
     return {
         "total": len(rows),

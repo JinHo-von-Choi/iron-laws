@@ -9,6 +9,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
+from iron_laws.core.gating import blocks
 from iron_laws.core.models import AuditReport, BaselineStatus, Confidence, Severity, Violation
 
 console = Console()
@@ -82,10 +83,14 @@ _SEVERITY_ORDER = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3}
 
 
 def first_steps(report: AuditReport) -> list:
-    """지적이 많을 때 먼저 볼 3개: 심각도가 높고 외부 입력 도달이 확정된 것부터"""
-    if report.summary.total_violations <= FIRST_STEPS_THRESHOLD:
+    """먼저 볼 3개: 심각도가 높고 외부 입력 도달이 확정된 것부터. 프로젝트 단계가 있으면 그 단계에서 통과를 막는 지적부터 고르고,
+    단계가 없으면 지적이 많을 때(FIRST_STEPS_THRESHOLD 초과)만 보여 준다"""
+    policy = report.metadata.get("stage_policy")
+    if not isinstance(policy, dict) and report.summary.total_violations <= FIRST_STEPS_THRESHOLD:
         return []
     ranked = sorted(report.violations, key=lambda v: (_SEVERITY_ORDER.get(v.severity.value, 9), v.confidence.value != "CONFIRMED", v.file_path.as_posix(), v.line_number))
+    if isinstance(policy, dict):
+        ranked = [v for v in ranked if blocks(v.rule_id, v.severity.value, v.confidence.value, v.layer.value, policy, policy["threshold"])]
     return ranked[:3]
 
 
@@ -94,7 +99,9 @@ def _first_steps(report: AuditReport) -> None:
     if not picks:
         return
     lines = Text()
-    lines.append(f"지적이 {report.summary.total_violations}건입니다. 먼저 아래 3건부터 고치십시오.\n", style="bold")
+    stage = (report.metadata.get("stage_policy") or {}).get("stage")
+    head = f"단계 {stage}에서 통과를 막는 지적부터 고치십시오." if stage else f"지적이 {report.summary.total_violations}건입니다. 먼저 아래 3건부터 고치십시오."
+    lines.append(head + "\n", style="bold")
     for i, v in enumerate(picks, start=1):
         lines.append(f"{i}. [{v.severity.value}] {v.rule_id} {v.file_path.as_posix()}:{v.line_number} ", style="bold")
         lines.append(f"{v.plain or v.message}\n")

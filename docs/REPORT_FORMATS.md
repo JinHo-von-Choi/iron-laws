@@ -7,13 +7,14 @@
 최상위 키: `schema_version`, `document_id`, `title`, `auditor`, `audit_date`, `target_path`, `summary`, `violations`, `diagnostics`, `coverage_ledger`, `execution`, `approval_checks`, `metadata`.
 
 ### 버전 정책
-- `schema_version`은 `주.부` 형식이다. 현재 `1.9`이다.
+- `schema_version`은 `주.부` 형식이다. 현재 `1.10`이다.
 - 키를 **추가**하면 부 버전을 올린다. 소비하는 쪽은 모르는 키를 무시해야 한다.
 - 키를 **삭제하거나 의미를 바꾸면** 주 버전을 올리고 CHANGELOG에 알린다. 주 버전이 같으면 기존 키는 유지된다.
 - 판마다 무엇을 추가했는지:
 
   | 판 | 추가한 것 |
   |---|---|
+  | 1.10 | `metadata.stage_policy`(설정의 `stage`에 따른 차단 정책: `always_block_rules`, `block_confirmed_critical`, `threshold`, `threshold_layers`, `threshold_confirmed_only`), `metadata.stage_advisory_count`(fail_on 이상이지만 단계 정책 때문에 막지 않은 지적 수). 둘 다 `stage`를 정했을 때만 있다. 진단 종류 `stage` |
   | 1.9 | `metadata.routes.rows[].kind`(라우트 종류 auth_flow·admin·normal, 관리 라우트 행 포함), `metadata.tenancy`(조회문별 소속 확인 표), `metadata.eol`(지원 종료 판정 표와 자료 출처), `execution.reference_data`(판정에 쓴 외부 자료의 기준일과 지문), `execution.cost.counters`(매퍼 문장 수·미해석 매퍼 호출 수) |
   | 1.8 | `metadata.file_coverage`(외부 파일 목록과 분석한 파일의 대조), `review_opinion`의 `basis`(오탐 의견의 근거)·`check`(근거 대조 결과) |
   | 1.7 | `execution.cost`(점검에 쓴 시간과 메모리) |
@@ -23,7 +24,7 @@
   | 1.3 | 지적의 `finding_id`, `execution`·`approval_checks`, 장부 근거 필드 |
 
   `gov_standard`는 그대로 둔다.
-- 독립 검증기는 1.3·1.4·1.5·1.6·1.7·1.8·1.9를 확인하며, 그 밖의 버전은 통과가 아니라 `판정 불가`로 끝낸다([EVIDENCE_VERIFICATION.md](EVIDENCE_VERIFICATION.md)).
+- 독립 검증기는 1.3·1.4·1.5·1.6·1.7·1.8·1.9·1.10을 확인하며, 그 밖의 버전은 통과가 아니라 `판정 불가`로 끝낸다([EVIDENCE_VERIFICATION.md](EVIDENCE_VERIFICATION.md)).
 - 기준선 파일(`.iron-laws-baseline.json`)은 별도의 `schema_version`(정수)을 가진다. 형식이 바뀌면 이전 기준선은 읽지 않고 다시 만들도록 안내한다. 선택 키 `routes`(기준선 시점의 라우트 목록)가 없는 기준선도 그대로 읽으며, 이때는 공격 표면 비교(AI-127)를 하지 않는다.
 
 ### `summary`
@@ -70,7 +71,7 @@
 `approval_id`, `status`(`valid` / `needs_review` / `invalid` / `revoked` / `resolved` / `unobserved`), `reasons`, `rule_id`, `path`, `approved_fingerprint`, `finding_id`(이번 실행에서 맺어진 지적), `expires`, `policy`(승인 당시 계약·설정·규칙·도구 지문). `valid`는 승인한 지적과 같은 코드 모양의 지적이 지금도 있다는 뜻이다. 승인 기록 파일의 해시 연결이나 기록 형식이 틀리면 그 승인은 `invalid`이며 유효한 승인으로 쓰지 않는다.
 
 ### `diagnostics[]`
-`kind`(read, encoding, parse, rule_error, worker, analysis_limit, suppression, baseline, approval, consistency, eol_data), `severity`(info, warning, error), `message`, `file_path`, `line`.
+`kind`(read, encoding, parse, rule_error, worker, analysis_limit, suppression, baseline, approval, consistency, eol_data, stage), `severity`(info, warning, error), `message`, `file_path`, `line`.
 `error`가 하나라도 있으면 `scan_status`가 `incomplete`다. `consistency`는 보고서를 내보내기 전에 독립 검증기가 찾은 내부 모순이며, 있으면 통과로 내보내지 않고 `incomplete`로 표시한다.
 
 ### `metadata`

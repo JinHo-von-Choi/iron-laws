@@ -19,10 +19,30 @@ iron-laws routes .                         # 웹 주소(라우트)별 로그인�
 iron-laws routes . --auth no --format csv   # 로그인 검사가 없는 라우트 목록(CSV)
 iron-laws tenancy .                        # 매퍼 문장별 소속(테넌트) 조건 확인 표(설정의 tenancy 필요)
 iron-laws audit . --format markdown --standard fin-selfcheck-2026 -o report.md   # 금융권 자체점검 12개 항목별 현황과 증빙 표
-iron-laws init                             # 기본 설정 파일 .iron-laws.yml 만들기
+iron-laws init --stage launch              # 기본 설정 파일 .iron-laws.yml 만들기(단계 지정)
+iron-laws stage preview production         # 단계를 올리면 새로 막히는 지적 미리 보기
 iron-laws guidelines export -o 지침.md      # 코딩 에이전트 지침(CLAUDE.md용)
 iron-laws check . --build-manifest git     # git 추적 파일과 대조해 빠진 파일과 이유 보기
 ```
+
+## 프로젝트 단계
+
+`stage`를 정하면 프로젝트 단계에 맞춰 통과를 막는 지적의 범주가 바뀝니다. 정하지 않으면 지금처럼 `fail_on` 이상 심각도의 지적이 막습니다.
+
+| 단계 | 언제 | 통과를 막는 지적 |
+|---|---|---|
+| `prototype` | 내 PC에서만 돌려 본다 | 비밀값 노출(IL-101, AI-102~104), 확정 CRITICAL 지적 |
+| `launch` | 링크를 공유하거나 시험 배포한다 | 위에 더해 인증 없는 관리 기능(IL-525), 보안 규칙의 확정 지적 가운데 `fail_on` 이상 |
+| `production` | 실제 사용자·결제가 있다 | 위에 더해 모든 규칙의 `fail_on` 이상 지적, 구조 계약 위반(ARC-207) |
+
+```yaml
+stage: launch
+```
+
+- 막지 않는 지적도 보고서와 수정 지시문에 그대로 나옵니다. 단계가 있으면 `fix-prompt`와 콘솔의 "먼저 할 일"이 그 단계에서 막는 지적을 앞에 둡니다.
+- 단계를 올리기 전에 `iron-laws stage preview <단계>`로 새로 막히는 지적을 봅니다.
+- `prototype`인데 Dockerfile·`vercel.json` 같은 배포 설정이 있으면 단계를 올리라고 알립니다.
+- 에이전트 훅, `guidelines export`의 차단 표시도 같은 단계 정책을 씁니다. 에이전트가 단계를 낮추면 훅이 정책 완화로 알립니다.
 
 ## 지적이 많은 프로젝트에 도입하기
 

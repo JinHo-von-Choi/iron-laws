@@ -38,8 +38,18 @@ def _write(text: str, output: Path | None) -> None:
 
 
 FailOnOpt = typer.Option("HIGH", "--fail-on", help="차단으로 볼 심각도 기준. hook·check에 쓰는 값과 같게 주십시오")
+StageOpt = typer.Option(None, "--stage", help="프로젝트 단계(prototype, launch, production). 주면 그 단계에서 막는 규칙을 차단으로 표시합니다")
 LangOpt = typer.Option(None, "--lang", help="쉼표로 구분한 언어(python,typescript,java …). 그 언어에 적용되는 규칙만 다룹니다")
 OutputOpt = typer.Option(None, "--output", "-o", help="저장 파일")
+
+
+def _stage(stage: str | None) -> str | None:
+    from iron_laws.core.gating import STAGES
+
+    if stage is not None and stage not in STAGES:
+        err.print(f"[bold red]--stage는 {', '.join(STAGES)} 가운데 하나여야 합니다.[/bold red]")
+        raise typer.Exit(2)
+    return stage
 
 
 @guidelines_app.command("export")
@@ -48,6 +58,7 @@ def guidelines_export_command(
     lang: str | None = LangOpt,
     min_severity: str = typer.Option("LOW", "--min-severity", help="이 심각도 이상 규칙만 내보냅니다"),
     output: Path | None = OutputOpt,
+    stage: str | None = StageOpt,
 ):
     """
     규칙을 코딩 에이전트 지침(CLAUDE.md·AGENTS.md에 붙여 넣을 마크다운)으로 내보냅니다.
@@ -55,7 +66,7 @@ def guidelines_export_command(
     """
     threshold, languages = _options(fail_on, lang)
     floor, _ = _options(min_severity, None)
-    _write(export_guidelines([cls() for cls in ALL_RULES], threshold, languages, floor), output)
+    _write(export_guidelines([cls() for cls in ALL_RULES], threshold, languages, floor, _stage(stage)), output)
 
 
 @guidelines_app.command("check")
@@ -66,6 +77,7 @@ def guidelines_check_command(
     fmt: str = typer.Option("console", "--format", help="console 또는 json"),
     fail_on_unenforced: bool = typer.Option(False, "--fail-on-unenforced", help="강제 수단이 없는 지시 문장이 있으면 종료코드 1"),
     output: Path | None = OutputOpt,
+    stage: str | None = StageOpt,
 ):
     """
     지침 파일의 지시 문장마다 대응하는 오철칙 규칙과 강제 수단을 보여 줍니다.
@@ -80,7 +92,7 @@ def guidelines_check_command(
     except (OSError, UnicodeDecodeError) as e:
         err.print(f"[bold red]지침 파일을 읽지 못했습니다: {escape(str(e))}[/bold red]")
         raise typer.Exit(2) from e
-    result = check_guidelines(text, [cls() for cls in ALL_RULES], threshold, languages)
+    result = check_guidelines(text, [cls() for cls in ALL_RULES], threshold, languages, _stage(stage))
     _write(json.dumps(result, ensure_ascii=False, indent=2) + "\n" if fmt == "json" else render_check(result), output)
     if fail_on_unenforced and result["counts"]["none"]:
         raise typer.Exit(1)

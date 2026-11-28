@@ -1,10 +1,8 @@
 """catalog 명령군."""
 
 import sys
-from pathlib import Path
 
 import typer
-import yaml
 from rich.markup import escape
 from rich.panel import Panel
 from rich.table import Table
@@ -16,7 +14,6 @@ from iron_laws.commands.common import (
     err,
     experience_lessons,
 )
-from iron_laws.core.config import IronLawsConfig
 from iron_laws.core.models import AuditReport, AuditSummary
 from iron_laws.reporters.coverage import (
     build_design_status,
@@ -154,24 +151,6 @@ def explain_command(rule_id: str = typer.Argument(..., help="규칙 ID (예: IL-
             return
     err.print(f"[bold red]규칙을 찾을 수 없습니다: {escape(rule_id)}[/bold red]")
     raise typer.Exit(2)
-
-
-@app.command("init")
-def init_command(target_dir: Path = typer.Argument(Path("."), help="설정 파일을 생성할 디렉터리")):
-    """
-    현재 디렉터리에 .iron-laws.yml 기본 설정 파일을 생성합니다.
-    """
-    config_path = target_dir / ".iron-laws.yml"
-    if config_path.exists():
-        err.print(f"[bold yellow]이미 설정 파일이 존재합니다: {config_path}[/bold yellow]")
-        return
-
-    body = yaml.safe_dump(
-        IronLawsConfig().model_dump(mode="json"), allow_unicode=True, sort_keys=False
-    )
-    content = f"# 오철칙 (Iron Laws) 프로젝트 설정 파일\n{body}"
-    config_path.write_text(content, encoding="utf-8")
-    err.print(f"[bold green]기본 설정 파일이 생성되었습니다: {config_path}[/bold green]")
 
 
 def _pack_coverage(pack_id: str, rules) -> None:

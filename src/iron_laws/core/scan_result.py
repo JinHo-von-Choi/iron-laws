@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from iron_laws.core.baseline import apply_baseline
+from iron_laws.core.gating import blocks, stage_policy
 from iron_laws.core.models import (
     ApprovalCheck,
     AuditReport,
@@ -44,7 +45,24 @@ class ScanResultInputs:
     files_by_language: Counter
 
 
+DEPLOY_MARKERS = frozenset({"Dockerfile", "vercel.json", "netlify.toml", "fly.toml", "render.yaml", "Procfile", "app.yaml", "railway.json", "railway.toml"})
+
+
 class ScanResultBuilder:
+    def _note_stage_mismatch(self) -> None:
+        """단계가 prototype인데 배포 설정이 보이면 단계를 올리라고 알린다(판정에는 영향이 없다)"""
+        if self.config.stage != "prototype":
+            return
+        found = sorted(p for p in self._all_paths if p.rsplit("/", 1)[-1] in DEPLOY_MARKERS)
+        if found:
+            self._diagnostics.append(
+                Diagnostic(kind="stage", severity="warning", file_path=found[0], message=f"배포 설정({', '.join(found[:3])})이 있는데 단계가 prototype입니다. 링크를 공유하거나 배포한다면 `stage: launch`로 올리십시오.")
+            )
+
+    def stage_policy(self) -> dict | None:
+        """설정의 단계에 맞는 차단 정책. 단계가 없으면 None이며 fail_on만으로 판정한다"""
+        return stage_policy(self.config.stage, self.config.fail_on.value)
+
     def _assemble_report(self, inputs: ScanResultInputs) -> AuditReport:
         sources, violations = inputs.sources, inputs.violations
         suppressed, ledger = inputs.suppressed, inputs.ledger
@@ -64,6 +82,7 @@ class ScanResultBuilder:
 
         if self.approvals is not None:
             self._apply_approvals(violations, sources)
+        self._note_stage_mismatch()
 
         scope_note: dict | None = None
         full_count = len(violations)
@@ -166,14 +185,19 @@ class ScanResultBuilder:
                             message=f"승인 {row.approval.id}: {row.status} — {'; '.join(row.reasons[:3])}",
                         )
                     )
-        threshold = SEVERITY_ORDER[self.config.fail_on]
         counted = [
             v
             for v in violations
             if (self.baseline is None or v.baseline_status in (BaselineStatus.NEW, BaselineStatus.REVIEW))
             and v.approval_status != "approved"  # 전제가 유지되는 유효한 승인은 받아들인 지적이다. 전제가 바뀐 승인은 다시 센다
         ]
-        summary.is_passed = not any(SEVERITY_ORDER[v.severity] >= threshold for v in counted)
+        policy = self.stage_policy()
+        fail_on = self.config.fail_on.value
+        summary.is_passed = not any(blocks(v.rule_id, v.severity.value, v.confidence.value, v.layer.value, policy, fail_on) for v in counted)
+        if policy is not None:  # 단계 정책 때문에 막지 않고 알리기만 한 지적(fail_on 이상)
+            self._stage_advisory = sum(
+                1 for v in counted if SEVERITY_ORDER[v.severity] >= SEVERITY_ORDER[self.config.fail_on] and not blocks(v.rule_id, v.severity.value, v.confidence.value, v.layer.value, policy, fail_on)
+            )
 
         summary.contract_mode = ledger.contract_mode
         summary.contract_status = ledger.status
@@ -200,7 +224,7 @@ class ScanResultBuilder:
     ) -> dict:
         """이번 실행의 설정·규칙 집합·제외 내역·기준 팩을 담는다."""
         metadata = {
-            "config": self.config.model_dump(mode="json"),
+            "config": self.config.report_dump(),
             "config_source": self.config_source,
             "config_hash": hashlib.sha256(self.config.hash_json().encode()).hexdigest()[:16],
             "fail_on_source": self.fail_on_source,
@@ -225,6 +249,10 @@ class ScanResultBuilder:
             metadata["file_coverage"] = self._file_coverage
         if self.baseline is not None:
             metadata["baseline"] = {"entries": len(self.baseline.entries), "tool_version": self.baseline.tool_version}
+        policy = self.stage_policy()
+        if policy is not None:
+            metadata["stage_policy"] = policy
+            metadata["stage_advisory_count"] = getattr(self, "_stage_advisory", 0)
         tenancy = getattr(self, "_tenancy", None)
         if tenancy is not None:
             metadata["tenancy"] = {"rows": tenancy[:MAX_ROUTE_ROWS], "truncated": len(tenancy) > MAX_ROUTE_ROWS}

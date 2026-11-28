@@ -94,8 +94,12 @@ def _sentence(rule: BaseRule) -> str:
     return text
 
 
-def enforcement_table(rules: list[BaseRule], fail_on: Severity = Severity.HIGH, languages: set[str] | None = None) -> dict[str, Enforcement]:
-    """규칙마다 강제 수단. languages를 주면 그 언어에서 적용되는 규칙만 담고 검증 언어도 그 안에서만 센다."""
+def enforcement_table(rules: list[BaseRule], fail_on: Severity = Severity.HIGH, languages: set[str] | None = None, stage: str | None = None) -> dict[str, Enforcement]:
+    """규칙마다 강제 수단. languages를 주면 그 언어에서 적용되는 규칙만 담고 검증 언어도 그 안에서만 센다.
+    차단 여부는 점검과 같은 판정(core/gating.py)으로 정하며, 규칙 단위라 지적이 확정이라고 보고 판정한다."""
+    from iron_laws.core.gating import blocks, stage_policy
+
+    policy = stage_policy(stage, fail_on.value)
     executed = {cls.rule_id for cls in FAMILY_RULES.values()}
     rows = {row.rule_id: row for row in build_support_matrix(rules)}
     table: dict[str, Enforcement] = {}
@@ -108,15 +112,15 @@ def enforcement_table(rules: list[BaseRule], fail_on: Severity = Severity.HIGH, 
             rule.rule_id,
             rule.name,
             rule.severity.value,
-            SEVERITY_ORDER.index(rule.severity) >= SEVERITY_ORDER.index(fail_on),
+            blocks(rule.rule_id, rule.severity.value, "CONFIRMED", rule.layer.value, policy, fail_on.value),
             rule.rule_id in executed,
             [lang for lang in applicable if cells[lang].verified],
         )
     return table
 
 
-def export_guidelines(rules: list[BaseRule], fail_on: Severity = Severity.HIGH, languages: set[str] | None = None, min_severity: Severity = Severity.LOW) -> str:
-    table = enforcement_table(rules, fail_on, languages)
+def export_guidelines(rules: list[BaseRule], fail_on: Severity = Severity.HIGH, languages: set[str] | None = None, min_severity: Severity = Severity.LOW, stage: str | None = None) -> str:
+    table = enforcement_table(rules, fail_on, languages, stage)
     by_id = {r.rule_id: r for r in rules}
     picked = [e for e in table.values() if SEVERITY_ORDER.index(Severity(e.severity)) >= SEVERITY_ORDER.index(min_severity)]
     blocking = sum(1 for e in picked if e.blocking)
@@ -187,8 +191,8 @@ def extract_directives(text: str) -> list[Directive]:
     return found
 
 
-def check_guidelines(text: str, rules: list[BaseRule], fail_on: Severity = Severity.HIGH, languages: set[str] | None = None) -> dict:
-    table = enforcement_table(rules, fail_on, languages)
+def check_guidelines(text: str, rules: list[BaseRule], fail_on: Severity = Severity.HIGH, languages: set[str] | None = None, stage: str | None = None) -> dict:
+    table = enforcement_table(rules, fail_on, languages, stage)
     directives = extract_directives(text)
     rows = []
     for d in directives:

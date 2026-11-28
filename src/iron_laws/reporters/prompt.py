@@ -4,6 +4,7 @@
 작성일: 2026-10-04
 """
 
+from iron_laws.core.gating import blocks
 from iron_laws.core.models import AuditReport, BaselineStatus, Confidence, Severity, Violation
 
 SEVERITY_ORDER = {Severity.CRITICAL: 0, Severity.HIGH: 1, Severity.MEDIUM: 2, Severity.LOW: 3}
@@ -95,6 +96,15 @@ def generate_fix_prompt(report: AuditReport, limit: int = 40) -> str:
         candidates,
         key=lambda v: (SEVERITY_ORDER[v.severity], str(v.file_path), v.line_number),
     )
+    policy = report.metadata.get("stage_policy")
+    stage_note = ""
+    if isinstance(policy, dict):  # 단계가 있으면 그 단계에서 통과를 막는 지적을 먼저 둔다
+        blocking = [v for v in ordered if blocks(v.rule_id, v.severity.value, v.confidence.value, v.layer.value, policy, policy["threshold"])]
+        ordered = blocking + [v for v in ordered if v not in blocking]
+        stage_note = (
+            f"프로젝트 단계 {policy['stage']}에서 통과를 막는 지적은 {len(blocking)}건입니다. 앞의 {len(blocking)}건부터 고치십시오. "
+            f"고친 뒤 `iron-laws check {report.target_path}`를 실행해 종료코드가 0인지 확인하십시오.\n"
+        )
     if report.summary.scan_status == "empty":
         return "점검한 파일이 없어 수정할 문제를 판단할 수 없습니다. 경로와 제외 설정을 확인하세요."
     gap = _ledger_section(report)
@@ -103,7 +113,7 @@ def generate_fix_prompt(report: AuditReport, limit: int = 40) -> str:
     if not ordered:
         return (notice + "\n" if notice else "") + "점검 결과 수정할 문제가 없습니다." + (" (불완전한 점검이므로 문제가 없다는 뜻이 아닙니다)" if notice else "")
     selected = ordered[:limit]
-    parts = [*([notice] if notice else []), PREAMBLE, f"총 {len(ordered)}건 중 우선순위가 높은 {len(selected)}건입니다.\n"]
+    parts = [*([notice] if notice else []), PREAMBLE, *([stage_note] if stage_note else []), f"총 {len(ordered)}건 중 우선순위가 높은 {len(selected)}건입니다.\n"]
     parts.extend(_entry(i, v) + "\n" for i, v in enumerate(selected, start=1))
     if len(ordered) > limit:
         parts.append(

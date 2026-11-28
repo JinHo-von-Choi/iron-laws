@@ -302,12 +302,28 @@ class IronLawsConfig(BaseModel):
     )
     enabled_rules: list[str] | None = None
     disabled_rules: list[str] = Field(default_factory=list)
+    stage: Literal["prototype", "launch", "production"] | None = Field(
+        default=None,
+        description="프로젝트 단계. 단계에 따라 통과를 막는 지적의 범주가 정해진다(core/gating.py). 비우면 fail_on만으로 판정한다",
+    )
+
+    def _unset_optional(self) -> dict:
+        """나중에 더한 선택 항목 가운데 기본값인 것. 지문과 보고서에서 빼서, 그 항목을 쓰지 않는 프로젝트의 결과가 바뀌지 않게 한다"""
+        exclude: dict = {}
+        if self.policies.entry_points == "web":
+            exclude["policies"] = {"entry_points"}
+        if self.stage is None:
+            exclude["stage"] = True
+        return exclude
 
     def hash_json(self) -> str:
-        """설정 지문용 직렬화. 나중에 더한 선택 항목은 기본값일 때 빼서, 그 항목을 쓰지 않는 프로젝트의 지문이 바뀌지 않게 한다"""
-        if self.policies.entry_points == "web":
-            return self.model_dump_json(exclude={"policies": {"entry_points"}})
-        return self.model_dump_json()
+        """설정 지문용 직렬화"""
+        exclude = self._unset_optional()
+        return self.model_dump_json(exclude=exclude) if exclude else self.model_dump_json()
+
+    def report_dump(self) -> dict:
+        """보고서 metadata.config에 적는 설정. 기본값인 선택 항목은 뺀다"""
+        return self.model_dump(mode="json", exclude={"stage"} if self.stage is None else None)
 
 
 CONFIG_NAMES = (".iron-laws.yml", ".iron-laws.yaml")

@@ -160,9 +160,9 @@ def project_root(target: Path, cwd: Path | None = None) -> Path:
     return folder
 
 
-def _scan_in_project(target: Path, cwd: Path | None) -> list[Violation]:
+def _scan_in_project(target: Path, cwd: Path | None) -> tuple[list[Violation], str | None]:
     """파일 하나를 그 파일이 속한 프로젝트의 설정·기준선·상대 경로로 점검한다. 설정에서 제외한 파일이면 빈 결과다.
-    기준선이 있으면 기준선에 없던 지적과 다시 볼 지적만 돌려준다."""
+    기준선이 있으면 기준선에 없던 지적과 다시 볼 지적만 돌려준다. 함께 돌려주는 값은 그 프로젝트 설정의 단계(stage)다."""
     from iron_laws.core.baseline import load_baseline
     from iron_laws.core.config import ConfigError, load_config
     from iron_laws.core.scanner import AuditScanner
@@ -171,7 +171,7 @@ def _scan_in_project(target: Path, cwd: Path | None) -> list[Violation]:
     config, _source = load_config(root)
     rel = target.resolve().relative_to(root)
     if AuditScanner(root, config=config.model_copy(deep=True))._matching_exclude(target.resolve()) is not None:
-        return []
+        return [], config.stage
     baseline_path = root / BASELINE_NAME
     baseline = None
     if baseline_path.is_file():
@@ -182,17 +182,22 @@ def _scan_in_project(target: Path, cwd: Path | None) -> list[Violation]:
     scanner = AuditScanner(target, config=config, baseline=baseline)
     scanner.single_file_rel = rel
     violations = scanner.scan().violations
-    if baseline is None:
-        return violations
-    return [v for v in violations if v.baseline_status is None or v.baseline_status.value in ("new", "review")]
+    if baseline is not None:
+        violations = [v for v in violations if v.baseline_status is None or v.baseline_status.value in ("new", "review")]
+    return violations, config.stage
 
 
 def blocking_findings(files: list[Path], threshold: Severity, cwd: Path | None = None) -> list[tuple[Path, Violation]]:
+    """막을 지적. 프로젝트 설정에 단계(stage)가 있으면 단계 정책으로, 없으면 threshold 이상 심각도로 정한다(core/gating.py)"""
+    from iron_laws.core.gating import blocks, stage_policy
+
     found: list[tuple[Path, Violation]] = []
     for target in files:
         if not target.is_file():
             continue
-        found.extend((target, v) for v in _scan_in_project(target, cwd) if SEVERITY_ORDER.index(v.severity) >= SEVERITY_ORDER.index(threshold))
+        violations, stage = _scan_in_project(target, cwd)
+        policy = stage_policy(stage, threshold.value)
+        found.extend((target, v) for v in violations if blocks(v.rule_id, v.severity.value, v.confidence.value, v.layer.value, policy, threshold.value))
     return found
 
 
@@ -240,7 +245,14 @@ def start_text(cwd: Path, threshold: Severity) -> str:
                 languages.add(lang.value)
     if not languages:
         return ""
-    text = export_guidelines([cls() for cls in ALL_RULES], threshold, languages, Severity.HIGH)
+    from iron_laws.core.config import ConfigError, load_config
+
+    try:
+        stage = load_config(project_root(base / "_", base))[0].stage
+    except ConfigError as exc:
+        logger.debug("설정을 읽지 못해 단계 없이 지침을 만듭니다: %s", exc)
+        stage = None
+    text = export_guidelines([cls() for cls in ALL_RULES], threshold, languages, Severity.HIGH, stage)
     if len(text) > MAX_START_TEXT:
         text = text[:MAX_START_TEXT].rsplit("\n", 1)[0] + "\n…(이하 생략. 전체는 `iron-laws guidelines export`)\n"
     return text
@@ -354,6 +366,10 @@ def policy_changes(path: Path, root: Path) -> list[str]:
     old_fail, new_fail = str(before.get("fail_on", "HIGH")).upper(), str(now.get("fail_on", "HIGH")).upper()
     if order.get(new_fail, 0) > order.get(old_fail, 0):
         notes.append(f"fail_on을 {old_fail}에서 {new_fail}로 올렸습니다(차단 기준이 느슨해짐)")
+    stages = ("prototype", "launch", "production")
+    old_stage, new_stage = before.get("stage"), now.get("stage")
+    if old_stage in stages and (new_stage not in stages or stages.index(new_stage) < stages.index(old_stage)):
+        notes.append(f"단계를 {old_stage}에서 {new_stage or '(없음)'}로 낮췄습니다(통과를 막는 지적이 줄어듦)")
     for key, label in (("excludes", "점검 제외 경로"), ("disabled_rules", "끈 규칙")):
         added = sorted(set(map(str, now.get(key) or [])) - set(map(str, before.get(key) or [])))
         if added:

@@ -90,7 +90,7 @@ def shape_errors(value: object, spec: object, path: str = "$", *, optional: bool
     return []
 
 
-SUPPORTED_REPORT_VERSIONS = ("1.3", "1.4", "1.5", "1.6", "1.7", "1.8", "1.9")
+SUPPORTED_REPORT_VERSIONS = ("1.3", "1.4", "1.5", "1.6", "1.7", "1.8", "1.9", "1.10")
 SUPPORTED_RECEIPT_VERSIONS = ("1",)
 
 # 검사 계열 → 그 계열의 지적을 내는 규칙. 보고서가 다른 계열의 지적을 연결하면 모순이다.
@@ -330,13 +330,32 @@ def _check_ledger(c: _Collector, ledger: dict[str, Any], findings: dict[str, dic
     c.check(ledger.get("status") == expected_status, "ledger.status_mismatch", f"장부 상태 {ledger.get('status')!r}가 차단 사유·분석 파일에서 계산한 {expected_status!r}와 다르다(비적용·충족이 차단 사유를 가렸는지 확인)")
 
 
+def _stage_blocks(v: dict[str, Any], policy: dict[str, Any]) -> bool:
+    """보고서에 적힌 단계 정책(metadata.stage_policy)만으로 그 지적이 통과를 막는지 다시 계산한다"""
+    severity, confidence = v.get("severity", ""), v.get("confidence", "")
+    if v.get("rule_id") in (policy.get("always_block_rules") or []):
+        return True
+    if policy.get("block_confirmed_critical") and confidence == "CONFIRMED" and severity == "CRITICAL":
+        return True
+    layers = policy.get("threshold_layers")
+    if layers != "all" and v.get("layer") not in (layers or []):
+        return False
+    if policy.get("threshold_confirmed_only") and confidence != "CONFIRMED":
+        return False
+    return SEVERITY_RANK.get(severity, 0) >= SEVERITY_RANK.get(str(policy.get("threshold", "HIGH")).upper(), 3)
+
+
 def _check_passed(c: _Collector, data: dict[str, Any], summary: dict[str, Any], ledger: dict[str, Any], violations: list[dict[str, Any]], execution: dict[str, Any]) -> None:
     metadata = data.get("metadata") or {}
     config = metadata.get("config") or {}
     threshold = SEVERITY_RANK.get(str(config.get("fail_on", "HIGH")).upper(), 3)
     has_baseline = "baseline" in metadata
     counted = [v for v in violations if (not has_baseline or v.get("baseline_status") in ("new", "review")) and v.get("approval_status") != "approved"]
-    blocked_by_findings = any(SEVERITY_RANK.get(v.get("severity", ""), 0) >= threshold for v in counted)
+    policy = metadata.get("stage_policy")
+    if isinstance(policy, dict):
+        blocked_by_findings = any(_stage_blocks(v, policy) for v in counted)
+    else:
+        blocked_by_findings = any(SEVERITY_RANK.get(v.get("severity", ""), 0) >= threshold for v in counted)
     passed = bool(summary.get("is_passed"))
     status = summary.get("scan_status")
     if status != "complete":
@@ -362,7 +381,7 @@ GATE_FIELDS = {"max_analysis_unknown_rate": "analysis_unknown_rate", "max_unveri
 
 def _check_standards(c: _Collector, data: dict[str, Any], violations: list[dict[str, Any]]) -> None:
     """기준 팩 참조(1.5 이후): 지적의 기준 항목이 보고서에 적힌 팩·판본을 가리키고, 대응표 확인 여부가 팩의 값과 같은지 본다."""
-    if data.get("schema_version") not in ("1.5", "1.6", "1.7", "1.8", "1.9"):  # iron-laws: ignore[IL-307] 1.5 이전 보고서에는 기준 팩 칸이 없어 이 검사를 적용하지 않는다
+    if data.get("schema_version") not in ("1.5", "1.6", "1.7", "1.8", "1.9", "1.10"):  # iron-laws: ignore[IL-307] 1.5 이전 보고서에는 기준 팩 칸이 없어 이 검사를 적용하지 않는다
         return
     listed = (data.get("metadata") or {}).get("standard_packs") or []
     if not c.check(isinstance(listed, list) and all(isinstance(p, dict) for p in listed), "standards.shape", "metadata.standard_packs가 객체 목록이 아니다", "metadata.standard_packs"):  # iron-laws: ignore[IL-307] 형식 위반은 c.check가 결과에 기록한 뒤 다음 검사를 멈춘다
@@ -400,7 +419,7 @@ def _check_file_coverage(c: _Collector, data: dict[str, Any]) -> None:
 
 def _check_trust(c: _Collector, data: dict[str, Any], summary: dict[str, Any], ledger: dict[str, Any], violations: list[dict[str, Any]]) -> None:
     """신뢰 지표(1.4 이후): 분석 unknown 비율을 장부에서 다시 계산해 대조하고, 상한 초과가 통과로 표시되지 않았는지 본다."""
-    if data.get("schema_version") not in ("1.4", "1.5", "1.6", "1.7", "1.8", "1.9"):  # iron-laws: ignore[IL-307] 1.4 이전 보고서에는 신뢰 칸이 없어 이 검사를 적용하지 않는다
+    if data.get("schema_version") not in ("1.4", "1.5", "1.6", "1.7", "1.8", "1.9", "1.10"):  # iron-laws: ignore[IL-307] 1.4 이전 보고서에는 신뢰 칸이 없어 이 검사를 적용하지 않는다
         return
     for index, v in enumerate(violations):
         c.check(v.get("verification_grade", "") in ("", "verified", "unverified"), "trust.grade_unknown", f"알 수 없는 검증 등급: {v.get('verification_grade')!r}", f"violations[{index}]")

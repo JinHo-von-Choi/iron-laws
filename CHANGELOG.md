@@ -5,6 +5,16 @@
 
 ## [Unreleased]
 
+### Added
+- 설정 `stage`(prototype·launch·production): 프로젝트 단계에 따라 통과를 막는 지적의 범주를 정한다. prototype은 비밀값 노출과 확정 CRITICAL 지적만, launch는 여기에 인증 없는 관리 기능(IL-525)과 보안 규칙의 확정 지적 가운데 `fail_on` 이상을, production은 모든 규칙의 `fail_on` 이상 지적과 ARC-207을 막는다. `stage`를 정하지 않으면 판정과 설정 지문이 이전과 같다.
+- `iron-laws init --stage <단계>`, `iron-laws stage preview <단계>`(단계를 바꾸면 새로 막히는 지적과 더는 막지 않는 지적). `init`은 터미널에서 실행하고 `--stage`를 주지 않았을 때만 단계를 묻는다.
+- 단계가 있으면 `fix-prompt`와 콘솔의 "먼저 할 일"이 그 단계에서 막는 지적을 앞에 둔다. 에이전트 훅과 `guidelines export/check`(`--stage`)도 같은 판정을 쓴다. 훅은 설정에서 단계를 낮추는 변경을 정책 완화로 알린다.
+- prototype 단계인데 배포 설정(Dockerfile, vercel.json 등)이 있으면 진단(`stage`)으로 알린다.
+
+### Changed
+- 보고서 `schema_version`을 1.10으로 올린다. `metadata.stage_policy`, `metadata.stage_advisory_count`를 더한다(단계를 정했을 때만). 독립 검증기는 1.10을 확인하고, 단계 정책이 있으면 그 정책으로 통과 판정을 다시 계산한다.
+- `init`이 `.iron-laws.yaml`이 있어도 새 설정 파일을 만들지 않는다.
+
 ### Fixed
 - 에이전트 훅이 하위 폴더의 파일을 편집하면 프로젝트 루트의 `.iron-laws.yml`을 적용하지 않던 것을 고친다. 훅은 편집한 파일에서 위로 올라가며 설정 파일이 있는 폴더(없으면 git 루트, 그것도 없으면 작업 폴더)를 프로젝트 루트로 쓰고, 그 설정의 `disabled_rules`·`excludes`와 루트 기준 경로로 점검한다. 루트에 `.iron-laws-baseline.json`이 있으면 기준선에 없던 지적과 다시 볼 지적만 알린다.
 

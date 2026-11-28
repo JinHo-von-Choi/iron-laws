@@ -42,9 +42,6 @@ from iron_laws.commands.catalog import (
     explain_command as explain_command,
 )
 from iron_laws.commands.catalog import (
-    init_command as init_command,
-)
-from iron_laws.commands.catalog import (
     rules_command as rules_command,
 )
 from iron_laws.commands.catalog import (
@@ -184,6 +181,12 @@ from iron_laws.commands.inspect import (
 )
 from iron_laws.commands.inspect import (
     deps_command as deps_command,
+)
+from iron_laws.commands.onboarding import (
+    init_command as init_command,
+)
+from iron_laws.commands.onboarding import (
+    stage_preview_command as stage_preview_command,
 )
 from iron_laws.commands.pilot import (
     _pilot_call as _pilot_call,

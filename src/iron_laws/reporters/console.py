@@ -90,7 +90,7 @@ def first_steps(report: AuditReport) -> list:
         return []
     ranked = sorted(report.violations, key=lambda v: (_SEVERITY_ORDER.get(v.severity.value, 9), v.confidence.value != "CONFIRMED", v.file_path.as_posix(), v.line_number))
     if isinstance(policy, dict):
-        ranked = [v for v in ranked if blocks(v.rule_id, v.severity.value, v.confidence.value, v.layer.value, policy, policy["threshold"])]
+        ranked = [v for v in ranked if blocks(v.rule_id, v.severity.value, v.confidence.value, v.layer.value, policy, policy["threshold"], v.tags)]
     return ranked[:3]
 
 

@@ -99,7 +99,7 @@ def generate_fix_prompt(report: AuditReport, limit: int = 40) -> str:
     policy = report.metadata.get("stage_policy")
     stage_note = ""
     if isinstance(policy, dict):  # 단계가 있으면 그 단계에서 통과를 막는 지적을 먼저 둔다
-        blocking = [v for v in ordered if blocks(v.rule_id, v.severity.value, v.confidence.value, v.layer.value, policy, policy["threshold"])]
+        blocking = [v for v in ordered if blocks(v.rule_id, v.severity.value, v.confidence.value, v.layer.value, policy, policy["threshold"], v.tags)]
         ordered = blocking + [v for v in ordered if v not in blocking]
         stage_note = (
             f"프로젝트 단계 {policy['stage']}에서 통과를 막는 지적은 {len(blocking)}건입니다. 앞의 {len(blocking)}건부터 고치십시오. "

@@ -29,18 +29,20 @@ def test_stage_unset_keeps_config_hash_and_report_config():
 
 
 def test_each_stage_blocks_its_categories():
-    def b(stage, rule, sev, conf, layer):
-        return blocks(rule, sev, conf, layer, stage_policy(stage, "HIGH"), "HIGH")
+    def b(stage, rule, sev, conf, layer, tags=()):
+        return blocks(rule, sev, conf, layer, stage_policy(stage, "HIGH"), "HIGH", tags)
 
     assert b("prototype", "IL-101", "CRITICAL", "CONFIRMED", "STANDARD")
     assert b("prototype", "IL-504", "CRITICAL", "CONFIRMED", "STANDARD")
     assert not b("prototype", "AI-112", "HIGH", "CONFIRMED", "AI_CODE")
     assert not b("prototype", "IL-525", "MEDIUM", "REVIEW", "AI_CODE")
-    assert b("launch", "IL-525", "MEDIUM", "REVIEW", "AI_CODE")
+    assert b("launch", "IL-525", "MEDIUM", "REVIEW", "AI_CODE", ["admin_route"])  # 인증 없는 관리 라우트
+    assert not b("launch", "IL-525", "MEDIUM", "REVIEW", "AI_CODE")  # 관리 라우트가 아닌 중요 기능 라우트는 알리기만 한다
     assert b("launch", "AI-112", "HIGH", "CONFIRMED", "AI_CODE")
     assert not b("launch", "AI-112", "HIGH", "REVIEW", "AI_CODE")  # launch는 확정 지적만 심각도로 막는다
-    assert not b("launch", "ARC-207", "MEDIUM", "CONFIRMED", "ARCHITECTURE")
-    assert b("production", "ARC-207", "MEDIUM", "CONFIRMED", "ARCHITECTURE")
+    assert not b("launch", "ARC-207", "MEDIUM", "CONFIRMED", "ARCHITECTURE", ["contract"])
+    assert b("production", "ARC-207", "MEDIUM", "CONFIRMED", "ARCHITECTURE", ["contract"])
+    assert not b("production", "ARC-207", "MEDIUM", "REVIEW", "ARCHITECTURE")  # 계약 없이 폴더 이름으로 추정한 계층 위반
     assert b("production", "AI-112", "HIGH", "REVIEW", "AI_CODE")
     assert blocks("AI-112", "HIGH", "REVIEW", "AI_CODE", None, "HIGH")  # 단계가 없으면 fail_on만 본다
 

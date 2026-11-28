@@ -392,7 +392,10 @@ class LayerDirectionRule(ArchRule):
         files = {f.path.as_posix(): f for f in project.source_files()}
         contract = project.config.architecture
         if contract.active:
-            return self._check_contract(project, files, contract)
+            found = self._check_contract(project, files, contract)
+            for v in found:
+                v.tags = ["contract"]  # 단계 정책(production)이 구조 계약 위반을 막는 표지
+            return found
         layers = {p: infer_layer(f) for p, f in files.items()}
         known = {layer for layer in layers.values() if layer}
         if len(known) < 2:

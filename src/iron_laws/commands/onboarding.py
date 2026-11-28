@@ -175,7 +175,7 @@ def stage_preview_command(
     now, then = stage_policy(scanner.config.stage, fail_on), stage_policy(target, fail_on)
 
     def blocked(v, policy) -> bool:
-        return blocks(v.rule_id, v.severity.value, v.confidence.value, v.layer.value, policy, fail_on)
+        return blocks(v.rule_id, v.severity.value, v.confidence.value, v.layer.value, policy, fail_on, v.tags)
 
     gained = [v for v in report.violations if blocked(v, then) and not blocked(v, now)]
     lost = [v for v in report.violations if blocked(v, now) and not blocked(v, then)]

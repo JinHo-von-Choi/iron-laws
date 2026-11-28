@@ -112,7 +112,7 @@ def enforcement_table(rules: list[BaseRule], fail_on: Severity = Severity.HIGH, 
             rule.rule_id,
             rule.name,
             rule.severity.value,
-            blocks(rule.rule_id, rule.severity.value, "CONFIRMED", rule.layer.value, policy, fail_on.value),
+            blocks(rule.rule_id, rule.severity.value, "CONFIRMED", rule.layer.value, policy, fail_on.value, None),
             rule.rule_id in executed,
             [lang for lang in applicable if cells[lang].verified],
         )

@@ -197,7 +197,7 @@ def blocking_findings(files: list[Path], threshold: Severity, cwd: Path | None =
             continue
         violations, stage = _scan_in_project(target, cwd)
         policy = stage_policy(stage, threshold.value)
-        found.extend((target, v) for v in violations if blocks(v.rule_id, v.severity.value, v.confidence.value, v.layer.value, policy, threshold.value))
+        found.extend((target, v) for v in violations if blocks(v.rule_id, v.severity.value, v.confidence.value, v.layer.value, policy, threshold.value, v.tags))
     return found
 
 
@@ -294,7 +294,7 @@ def structure_findings(files: list[Path], threshold: Severity, cwd: Path | None)
             target = rels.get(v.file_path.as_posix())
             if target is None or (baseline is not None and v.baseline_status is not None and v.baseline_status.value == "existing"):
                 continue
-            if blocks(v.rule_id, v.severity.value, v.confidence.value, v.layer.value, policy, threshold.value):
+            if blocks(v.rule_id, v.severity.value, v.confidence.value, v.layer.value, policy, threshold.value, v.tags):
                 found.append((target, v))
     return found
 

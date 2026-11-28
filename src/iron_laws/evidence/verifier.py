@@ -333,8 +333,11 @@ def _check_ledger(c: _Collector, ledger: dict[str, Any], findings: dict[str, dic
 def _stage_blocks(v: dict[str, Any], policy: dict[str, Any]) -> bool:
     """보고서에 적힌 단계 정책(metadata.stage_policy)만으로 그 지적이 통과를 막는지 다시 계산한다"""
     severity, confidence = v.get("severity", ""), v.get("confidence", "")
-    if v.get("rule_id") in (policy.get("always_block_rules") or []):
-        return True
+    tags = v.get("tags") or []
+    for entry in policy.get("always_block_rules") or []:
+        rule, _, tag = str(entry).partition("#")
+        if rule == v.get("rule_id") and (not tag or tag in tags):
+            return True
     if policy.get("block_confirmed_critical") and confidence == "CONFIRMED" and severity == "CRITICAL":
         return True
     layers = policy.get("threshold_layers")

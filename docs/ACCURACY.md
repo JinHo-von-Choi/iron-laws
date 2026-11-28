@@ -194,6 +194,21 @@ uv run python benchmarks/blueprint_ab.py work docs/benchmark_results/blueprint_a
   --ai-cmd="claude -p --tools '' --strict-mcp-config --setting-sources '' --no-session-persistence --model sonnet"
 ```
 
+### 4.6 단계별 관문에서 막히는 지적 수
+
+실측 순환 프로젝트 4개를 설정 없이 점검하고, 같은 지적을 단계 정책마다 다시 판정했다(`fail_on: HIGH`, 기준선 없음). 괄호는 막힌 지적이 많은 규칙이다.
+
+| 프로젝트 | 전체 지적 | 단계 없음 | prototype | launch | production |
+|---|---:|---|---|---|---|
+| WebGoat | 541 | 108 (IL-101 28, IL-501 18, IL-506 15) | 53 (IL-101 28, IL-501 17, IL-102 3) | 105 (IL-101 28, IL-501 17, IL-506 15) | 130 (IL-101 28, ARC-204 22, IL-501 18) |
+| NodeGoat | 43 | 9 (IL-503 3, IL-101 3, IL-504 1) | 6 (IL-503 3, IL-101 3) | 7 (IL-503 3, IL-101 3, IL-506 1) | 10 (IL-503 3, IL-101 3, OPS-103 1) |
+| juice-shop | 1,274 | 348 (IL-101 288, IL-501 13, IL-302 12) | 313 (IL-101 288, IL-501 13, IL-108 6) | 346 (IL-101 288, IL-501 13, IL-302 12) | 397 (IL-101 288, ARC-204 45, IL-501 13) |
+| spring-petclinic | 17 | 2 (IL-101 1, AI-106 1) | 1 (IL-101 1) | 2 (IL-101 1, OPS-102 1) | 3 (IL-101 1, OPS-102 1, AI-106 1) |
+
+- prototype은 비밀값과 확정 CRITICAL만 막아 단계 없음보다 적게 막는다. launch는 보안 규칙을 확정 지적만 심각도로 막으므로, 확인 필요 HIGH가 빠지고 운영 필수 항목(OPS-101·102)과 인증 없는 관리 라우트가 더해진다.
+- production의 ARC-204는 기준선 없이 센 값이다. 기준선을 쓰면 기준선에 없던 중복만 막는다.
+- IL-525는 관리 라우트(`admin_route` 표지)일 때만, ARC-207은 `architecture` 계약으로 판정한 위반(`contract` 표지)일 때만 단계 정책이 항상 막는다. 표지 없이 두 규칙을 막으면 juice-shop은 launch에서 IL-525 확인 필요 128건이, WebGoat는 production에서 폴더 이름으로 추정한 ARC-207 60건이 막혔다.
+
 ## 5. 의존성 권고·성능·AI 공격면 규칙
 
 ### 5.1 의존성 권고(`iron-laws deps`)

@@ -14,7 +14,7 @@
 
   | 판 | 추가한 것 |
   |---|---|
-  | 1.10 | `metadata.stage_policy`(설정의 `stage`에 따른 차단 정책: `always_block_rules`, `block_confirmed_critical`, `threshold`, `threshold_layers`, `threshold_confirmed_only`), `metadata.stage_advisory_count`(fail_on 이상이지만 단계 정책 때문에 막지 않은 지적 수). 둘 다 `stage`를 정했을 때만 있다. 진단 종류 `stage` |
+  | 1.10 | 지적의 `tags`(판정 세부 표지: `admin_route` 관리 라우트, `contract` 구조 계약 위반), `metadata.stage_policy`(설정의 `stage`에 따른 차단 정책: `always_block_rules`(`규칙#표지` 항목은 그 표지가 있는 지적만 막는다), `block_confirmed_critical`, `threshold`, `threshold_layers`, `threshold_confirmed_only`), `metadata.stage_advisory_count`(fail_on 이상이지만 단계 정책 때문에 막지 않은 지적 수). 둘 다 `stage`를 정했을 때만 있다. 진단 종류 `stage` |
   | 1.9 | `metadata.routes.rows[].kind`(라우트 종류 auth_flow·admin·normal, 관리 라우트 행 포함), `metadata.tenancy`(조회문별 소속 확인 표), `metadata.eol`(지원 종료 판정 표와 자료 출처), `execution.reference_data`(판정에 쓴 외부 자료의 기준일과 지문), `execution.cost.counters`(매퍼 문장 수·미해석 매퍼 호출 수) |
   | 1.8 | `metadata.file_coverage`(외부 파일 목록과 분석한 파일의 대조), `review_opinion`의 `basis`(오탐 의견의 근거)·`check`(근거 대조 결과) |
   | 1.7 | `execution.cost`(점검에 쓴 시간과 메모리) |

@@ -223,6 +223,8 @@ class UnauthenticatedEndpointRule(BaseRule):
             where = f"{route.method} {route.path} 라우트"
             if route.auth == "no":
                 found.append(self.at_node(src, route.node, f"{where}에 인증·권한 확인이 보이지 않습니다({route.auth_reason}). 로그인하지 않은 사용자도 호출할 수 있는지 확인하십시오.", confidence=Confidence.REVIEW))
+                if route.kind == "admin":
+                    found[-1].tags = ["admin_route"]  # 단계 정책(launch)이 인증 없는 관리 라우트를 막는 표지
             else:
                 found.append(self.at_node(src, route.node, f"{where}에 인증이 적용되는지 정할 수 없습니다({route.auth_reason}). 전역 설정이 이 경로를 보호하는지 확인하십시오.", severity=Severity.LOW, confidence=Confidence.REVIEW))
         return found

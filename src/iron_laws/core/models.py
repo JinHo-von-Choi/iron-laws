@@ -111,6 +111,7 @@ class Violation(BaseModel):
     snippet_full: str = Field(default="", exclude=True)  # 길이를 제한하기 전의 코드 줄(토큰 형식만 가린 상태). 같은 줄의 비밀을 알게 된 뒤 다시 가려 제한한다
     shape: str = Field(default="", exclude=True)  # 주석을 뺀 정규화한 코드 줄(지문 계산용, 비밀은 가린 상태)
     evidence: list[EvidenceStep] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list, description="판정 세부 표지(admin_route: 관리 라우트, contract: 구조 계약 위반). 단계 정책이 표지로 막을 지적을 고른다")
     baseline_status: BaselineStatus | None = None
     approval_status: str | None = None  # 사람의 검토 승인 대비 상태: approved / needs_review / expired / revoked / none
     approval_id: str | None = None

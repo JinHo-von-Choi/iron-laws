@@ -6,7 +6,7 @@
 ## [Unreleased]
 
 ### Added
-- 설정 `stage`(prototype·launch·production): 프로젝트 단계에 따라 통과를 막는 지적의 범주를 정한다. prototype은 비밀값 노출과 확정 CRITICAL 지적만, launch는 여기에 인증 없는 관리 기능(IL-525)과 보안 규칙의 확정 지적 가운데 `fail_on` 이상을, production은 모든 규칙의 `fail_on` 이상 지적과 ARC-204·ARC-207을 막는다. `stage`를 정하지 않으면 판정과 설정 지문이 이전과 같다.
+- 설정 `stage`(prototype·launch·production): 프로젝트 단계에 따라 통과를 막는 지적의 범주를 정한다. prototype은 비밀값 노출과 확정 CRITICAL 지적만, launch는 여기에 인증 없는 관리 라우트(IL-525 가운데 관리 라우트)와 보안 규칙의 확정 지적 가운데 `fail_on` 이상을, production은 모든 규칙의 `fail_on` 이상 지적과 ARC-204, 구조 계약으로 판정한 ARC-207을 막는다. `stage`를 정하지 않으면 판정과 설정 지문이 이전과 같다.
 - `iron-laws init --stage <단계>`, `iron-laws stage preview <단계>`(단계를 바꾸면 새로 막히는 지적과 더는 막지 않는 지적). `init`은 터미널에서 실행하고 `--stage`를 주지 않았을 때만 단계를 묻는다.
 - 단계가 있으면 `fix-prompt`와 콘솔의 "먼저 할 일"이 그 단계에서 막는 지적을 앞에 둔다. 에이전트 훅과 `guidelines export/check`(`--stage`)도 같은 판정을 쓴다. 훅은 설정에서 단계를 낮추는 변경을 정책 완화로 알린다.
 - 운영 기본기 규칙(웹 라우트가 있는 프로젝트만): OPS-101(CI가 시험을 돌리지 않음), OPS-102(DB를 쓰는데 마이그레이션 기록 없음), OPS-103(컨테이너 배포에 상태 확인 주소·HEALTHCHECK 없음). 모두 확인 필요이며, launch 단계에서 OPS-101·102를, production 단계에서 OPS-103을 막는다.
@@ -21,7 +21,7 @@
 - prototype 단계인데 배포 설정(Dockerfile, vercel.json 등)이 있으면 진단(`stage`)으로 알린다.
 
 ### Changed
-- 보고서 `schema_version`을 1.10으로 올린다. `metadata.stage_policy`, `metadata.stage_advisory_count`를 더한다(단계를 정했을 때만). 독립 검증기는 1.10을 확인하고, 단계 정책이 있으면 그 정책으로 통과 판정을 다시 계산한다.
+- 보고서 `schema_version`을 1.10으로 올린다. 지적의 `tags`(관리 라우트, 구조 계약 위반 표지), `metadata.stage_policy`, `metadata.stage_advisory_count`(단계를 정했을 때만)를 더한다. 독립 검증기는 1.10을 확인하고, 단계 정책이 있으면 그 정책으로 통과 판정을 다시 계산한다.
 - `init`이 `.iron-laws.yaml`이 있어도 새 설정 파일을 만들지 않는다.
 - 판정이 바뀐 규칙의 판 번호를 올린다: ARC-202(2, FastAPI 의존성으로 받은 세션의 `db.add`·`db.query`·`db.get` 등), ARC-203(3)·ARC-207(4, tsconfig `paths` 별칭 import), IL-525(3, Next.js Server Actions), PERF-104(2, GET 라우트 핸들러 안의 한도 없는 조회는 페이지 없는 목록 API로 MEDIUM). 기준선을 쓰면 `baseline migrate`로 지문을 옮긴다.
 

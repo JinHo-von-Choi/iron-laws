@@ -193,10 +193,10 @@ class ScanResultBuilder:
         ]
         policy = self.stage_policy()
         fail_on = self.config.fail_on.value
-        summary.is_passed = not any(blocks(v.rule_id, v.severity.value, v.confidence.value, v.layer.value, policy, fail_on) for v in counted)
+        summary.is_passed = not any(blocks(v.rule_id, v.severity.value, v.confidence.value, v.layer.value, policy, fail_on, v.tags) for v in counted)
         if policy is not None:  # 단계 정책 때문에 막지 않고 알리기만 한 지적(fail_on 이상)
             self._stage_advisory = sum(
-                1 for v in counted if SEVERITY_ORDER[v.severity] >= SEVERITY_ORDER[self.config.fail_on] and not blocks(v.rule_id, v.severity.value, v.confidence.value, v.layer.value, policy, fail_on)
+                1 for v in counted if SEVERITY_ORDER[v.severity] >= SEVERITY_ORDER[self.config.fail_on] and not blocks(v.rule_id, v.severity.value, v.confidence.value, v.layer.value, policy, fail_on, v.tags)
             )
 
         summary.contract_mode = ledger.contract_mode

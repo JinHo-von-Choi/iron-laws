@@ -35,15 +35,19 @@ Java, JavaScript, Python, C#, Go, Rust, PHP, C/C++ 오픈소스 프로젝트 수
 
 `benchmarks/realworld/projects.json`의 고정 커밋 프로젝트를 점검하고, 이전 기록과 달라진 보안 지적을 사람이 분류한다(`benchmarks/realworld_loop.py`). 커밋이 고정되어 있으므로 지적이 달라지면 오철칙이 바뀐 것이다.
 
-| 프로젝트 | 지적 | 공개 API 모드에서 늘어나는 `확인 필요` |
-|---|---:|---:|
-| WebGoat | 526 | 18 |
-| NodeGoat | 42 | 0 |
-| juice-shop | 1,279 | 11 |
-| spring-petclinic | 16 | 0 |
+1.12.1 기록(`benchmarks/realworld/<이름>.json`, 보안 규칙만)과 지금 판정을 비교한 결과다. 새로 생김·사라짐은 (규칙, 파일, 줄, 심각도·확정 여부)가 다른 지적이다.
 
-- WebGoat `SerializationHelper.java:23`의 역직렬화는 `확인 필요`다. 데이터가 메서드 매개변수이고 프로젝트 안에 이 메서드를 부르는 곳이 없어 출처를 알 수 없다. 요청 값을 역직렬화하는 `InsecureDeserializationTask.java:45`는 확정이다.
+| 프로젝트 | 새로 생긴 보안 지적 | 사라진 보안 지적 | 공개 API 모드에서 늘어나는 `확인 필요` |
+|---|---:|---:|---:|
+| WebGoat | 39 | 2 | 18 |
+| NodeGoat | 0 | 0 | 0 |
+| juice-shop | 3 | 0 | 11 |
+| spring-petclinic | 0 | 0 | 0 |
+
+- WebGoat의 새 지적 39건 가운데 37건은 1.13.0에서 넣은 인증·감사 규칙의 지적이다: AI-128(감사 기록 없음) 13, IL-532(시도 제한) 13, AI-123(비밀값 응답 노출) 5, AI-124(GET으로 상태 변경) 5, IL-525 1. 이 37건은 아직 사람이 분류하지 않았다.
+- WebGoat IL-515 2건은 같은 줄의 판정이 바뀐 것이다(새로 생김·사라짐 각 2건). `SerializationHelper.java:23`은 데이터가 메서드 매개변수이고 프로젝트 안에 이 메서드를 부르는 곳이 없어 출처를 알 수 없으므로 `확인 필요`다. 요청 값을 역직렬화하는 `InsecureDeserializationTask.java:45`는 확정 CRITICAL이다.
 - juice-shop `server.ts:271`(`path.resolve`)·`:276`(`fs.readFile`)의 `확인 필요` 2건은 오탐이다. 정규화한 경로를 구분자 없이 `startsWith`로 기준 폴더와 비교해서 `확인 필요`로 냈지만, 경로가 `/`로 시작하는 `req.path`를 `path.normalize`로 정리한 값이라 기준 폴더 밖으로 나가지 못한다.
+- juice-shop `server.ts:617`의 AI-128은 비밀번호 변경 라우트(`/rest/user/change-password`)에 감사 기록이 없다는 지적으로, 규칙의 정의에 맞는다.
 - 공개 API 모드에서 늘어나는 지적은 모두 `확인 필요`이고, 확정 지적은 두 모드가 같다.
 
 ## 3. OWASP Benchmark v1.2 (Java, 2,740개 테스트)

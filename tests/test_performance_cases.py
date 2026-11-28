@@ -109,6 +109,16 @@ CASES: list[tuple[str, str, dict[str, str], dict[str, list[int]]]] = [
     ("dp-table-fill-reads-neighbor-cells", "PERF-102", {"a.ts": "function lcs(a: string[], b: string[]) {\n  const m: number[][] = [];\n  for (let i = 1; i <= a.length; i++) {\n    for (let j = 1; j <= b.length; j++) {\n      m[i][j] = a[i - 1] === b[j - 1] ? m[i - 1][j - 1] + 1 : 0;\n    }\n  }\n}\n"}, {}),
     ("constant-attribute-chain-is-enumeration", "PERF-102", {"a.js": "function f() {\n  for (const l of MATRIX.languages) {\n    for (const c of MATRIX.classes) {\n      use(l, c);\n    }\n  }\n}\n"}, {}),
     ("try-wrapped-assignment-is-derived-from-outer-item", "PERF-102", {"a.ts": "function f(order) {\n  for (const { root } of order) {\n    let entries;\n    try { entries = fs.readdirSync(root); } catch { continue; }\n    for (const e of entries) {\n      use(e);\n    }\n  }\n}\n"}, {}),
+    # ---- PERF-106 조회 조건 열의 인덱스 없음
+    ("perf106-sql-where-no-index", "PERF-106", {"schema.sql": "CREATE TABLE users (\n  id INTEGER PRIMARY KEY,\n  email TEXT NOT NULL,\n  name TEXT\n);\n", "repo.py": "def find(cur, email):\n    cur.execute(\"SELECT * FROM users WHERE email = ?\", (email,))\n"}, {"repo.py": [2]}),
+    ("perf106-sql-index-present", "PERF-106", {"schema.sql": "CREATE TABLE users (\n  id INTEGER PRIMARY KEY,\n  email TEXT NOT NULL,\n  name TEXT\n);\nCREATE INDEX idx_users_email ON users (email);\n", "repo.py": "def find(cur, email):\n    cur.execute(\"SELECT * FROM users WHERE email = ?\", (email,))\n"}, {}),
+    ("perf106-sql-inline-unique", "PERF-106", {"schema.sql": "CREATE TABLE users (\n  id INTEGER PRIMARY KEY,\n  email TEXT UNIQUE\n);\n", "repo.py": "def find(cur, email):\n    cur.execute(\"SELECT * FROM users WHERE email = ?\", (email,))\n"}, {}),
+    ("perf106-prisma-no-index", "PERF-106", {"prisma/schema.prisma": "model User {\n  id    Int    @id\n  email String @unique\n  name  String\n}\n", "users.ts": "export async function byName(name: string) {\n  return prisma.user.findMany({ where: { name: name } });\n}\n"}, {"users.ts": [2]}),
+    ("perf106-prisma-block-index", "PERF-106", {"prisma/schema.prisma": "model User {\n  id    Int    @id\n  name  String\n  @@index([name])\n}\n", "users.ts": "export async function byName(name: string) {\n  return prisma.user.findMany({ where: { name: name } });\n}\n"}, {}),
+    ("perf106-alter-table-primary-key", "PERF-106", {"schema.sql": "CREATE TABLE users (\n  id INTEGER,\n  email TEXT\n);\nALTER TABLE users ADD CONSTRAINT users_email_key UNIQUE (email);\n", "repo.py": "def find(cur, email):\n    cur.execute(\"SELECT * FROM users WHERE email = ?\", (email,))\n"}, {}),
+    ("perf106-no-schema", "PERF-106", {"repo.py": "def find(cur, email):\n    cur.execute(\"SELECT * FROM users WHERE email = ?\", (email,))\n"}, {}),
+    # ---- PERF-104 목록 API
+    ("perf104-fastapi-list-route", "PERF-104", {"main.py": "from fastapi import FastAPI\napp = FastAPI()\n\n@app.get(\"/notes\")\ndef list_notes(db):\n    return db.query(Note).all()\n"}, {"main.py": [6]}),
 ]
 
 
@@ -135,3 +145,15 @@ def test_every_perf_finding_needs_review_and_has_plain_advice(tmp_path: Path):
     perf = [v for v in AuditScanner(tmp_path).scan().violations if v.rule_id.startswith("PERF")]
     assert perf and all(v.confidence.value == "REVIEW" and v.plain and v.how_to_fix for v in perf)
     assert all("1,000" in v.plain or "급격히" in v.plain or "느립니다" in v.plain or "멈" in v.plain or "메모리" in v.plain or "기다" in v.plain or "되풀이" in v.plain for v in perf)
+
+
+def test_perf104_list_route_is_medium(tmp_path: Path):
+    from iron_laws.core.scanner import AuditScanner
+
+    (tmp_path / "main.py").write_text(
+        'from fastapi import FastAPI\napp = FastAPI()\n\n@app.get("/notes")\ndef list_notes(db):\n    return db.query(Note).all()\n\ndef export(db):\n    return db.query(Note).all()\n',
+        encoding="utf-8",
+    )
+    found = {v.line_number: v for v in AuditScanner(tmp_path).scan().violations if v.rule_id == "PERF-104"}
+    assert found[6].severity.value == "MEDIUM" and "GET /notes" in found[6].message  # 목록 API
+    assert found[9].severity.value == "LOW"  # 라우트가 아닌 함수

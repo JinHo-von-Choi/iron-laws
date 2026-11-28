@@ -39,7 +39,15 @@ UNBOUNDED_SQL = re.compile(r"(?is)^\s*select\b.+?\bfrom\b")
 SQL_LIMITED = re.compile(r"(?is)\b(where|limit|top|fetch\s+first|group\s+by|rownum)\b")
 
 
+def _get_handlers(src: SourceFile) -> list:
+    """이 파일의 GET 라우트 핸들러(경로, 함수 노드). 라우트 탐지(engine/routes.py)를 이 파일 하나로 돌린다"""
+    from iron_laws.engine.routes import discover_routes
+
+    return [(r.path, r.node) for r in discover_routes([src]) if r.method in ("GET", "ANY") and r.node is not None]
+
+
 class UnboundedQueryRule(PerfRule):
+    version = 2  # 목록 API(GET 라우트 핸들러) 안의 한도 없는 조회는 페이지 없는 목록 API로 MEDIUM
     rule_id = "PERF-104"
     name = "한도 없는 조회 탐지"
     severity = Severity.LOW
@@ -49,7 +57,8 @@ class UnboundedQueryRule(PerfRule):
     )
     how_to_fix = (
         "필요한 만큼만 가져오세요: `LIMIT 50`, 페이지 번호(`OFFSET`), 조건(`WHERE`). ORM이면 `.limit(50)`, 슬라이스 `[:50]`, `Paginator`를 쓰세요. "
-        "전체가 정말 필요하면 한 번에 다 읽지 말고 `fetchmany(1000)`처럼 나눠서 처리하세요."
+        "전체가 정말 필요하면 한 번에 다 읽지 말고 `fetchmany(1000)`처럼 나눠서 처리하세요. "
+        "고친 뒤에는 데이터를 10건과 1,000건 넣은 시험에서 응답 개수가 페이지 크기를 넘지 않는지 확인하세요."
     )
     all_call = re.compile(r"(?:^|\.)(fetchall|findAll|findMany)$")
     orm_all = re.compile(r"(?i)(objects|query|session|repo\w*|repository|\w*Repository)\b.*\.all$|\.objects\.all$|\.query\.all$")
@@ -59,6 +68,7 @@ class UnboundedQueryRule(PerfRule):
             return []
         found: list[Violation] = []
         reported: set[int] = set()
+        handlers: list | None = None
         for call in iter_calls(src):
             if call.line in reported:
                 continue
@@ -66,7 +76,12 @@ class UnboundedQueryRule(PerfRule):
             if message is None:
                 continue
             reported.add(call.line)
-            found.append(self.at_node(src, call.node, message, severity=Severity.LOW, confidence=Confidence.REVIEW))
+            if handlers is None:
+                handlers = _get_handlers(src)
+            route = next((path for path, node in handlers if node.start_byte <= call.node.start_byte < node.end_byte), None)
+            if route is not None:
+                message = f"목록 API(GET {route})가 페이지 없이 결과 전체를 돌려줍니다. {message} 페이지 번호·개수 매개변수를 받고, 데이터 10건과 1,000건에서 응답 크기가 같은지 확인하십시오."
+            found.append(self.at_node(src, call.node, message, severity=Severity.MEDIUM if route else Severity.LOW, confidence=Confidence.REVIEW))
             if len(found) >= MAX_PER_FILE:
                 break
         return found

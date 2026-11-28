@@ -1236,7 +1236,7 @@
   },
   "python": {
    "negative": 7,
-   "positive": 3
+   "positive": 4
   }
  },
  "PERF-105": {
@@ -1247,6 +1247,24 @@
   "python": {
    "negative": 3,
    "positive": 2
+  }
+ },
+ "PERF-106": {
+  "kind:sql": {
+   "negative": 4,
+   "positive": 0
+  },
+  "kind:text": {
+   "negative": 2,
+   "positive": 0
+  },
+  "python": {
+   "negative": 4,
+   "positive": 1
+  },
+  "typescript": {
+   "negative": 1,
+   "positive": 1
   }
  },
  "TYP-301": {

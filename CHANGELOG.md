@@ -14,13 +14,14 @@
 - `iron-laws init --stack nextjs|fastapi|auto [--write]`: 스택별 구조 틀(구조 계약, `AGENTS.md`·`CLAUDE.md`의 프로젝트 구조 절, 폴더)을 미리 보거나 만든다. 기존 파일은 덮어쓰지 않고, 지침 파일에는 표시 주석으로 감싼 절만 넣는다. 이미 코드가 있으면 계약에 어긋나는 import 수와 먼저 고칠 곳 하나를 보여 준다.
 - 라우트 목록이 Next.js Server Actions(`'use server'`)를 `nextjs-action` 종류의 POST 엔드포인트(`/_action/<폴더>/<함수>`)로 넣는다.
 - 에이전트 훅이 세션 시작 때 함수 지문 색인을 만들고, 편집 중 새로 만든 함수가 이미 있는 함수와 거의 같으면 기존 위치와 함께 알린다. 종료 직전에는 프로젝트 전체로 순환(ARC-203)·계층 위반(ARC-207)을 보고 이번 세션에 편집한 파일의 지적을 알린다. 둘 다 단계 정책이 막는 지적일 때만 알린다.
+- PERF-106(조회 조건 열의 인덱스 없음): SQL 파일의 CREATE TABLE·CREATE INDEX·ALTER TABLE과 Prisma 스키마의 인덱스를, 코드의 SQL `WHERE`·Prisma `where` 조건 열과 대조한다. 스키마가 있을 때만 판정하며 확인 필요다.
 - `benchmarks/blueprint_ab.py`: 같은 기능 요청을 AI에게 구조 틀 없이·함께 시키고 기능 시험을 통과한 결과만 구조 지표로 비교한다.
 - prototype 단계인데 배포 설정(Dockerfile, vercel.json 등)이 있으면 진단(`stage`)으로 알린다.
 
 ### Changed
 - 보고서 `schema_version`을 1.10으로 올린다. `metadata.stage_policy`, `metadata.stage_advisory_count`를 더한다(단계를 정했을 때만). 독립 검증기는 1.10을 확인하고, 단계 정책이 있으면 그 정책으로 통과 판정을 다시 계산한다.
 - `init`이 `.iron-laws.yaml`이 있어도 새 설정 파일을 만들지 않는다.
-- 판정이 바뀐 규칙의 판 번호를 올린다: ARC-202(2, FastAPI 의존성으로 받은 세션의 `db.add`·`db.query`·`db.get` 등), ARC-203(3)·ARC-207(4, tsconfig `paths` 별칭 import), IL-525(3, Next.js Server Actions). 기준선을 쓰면 `baseline migrate`로 지문을 옮긴다.
+- 판정이 바뀐 규칙의 판 번호를 올린다: ARC-202(2, FastAPI 의존성으로 받은 세션의 `db.add`·`db.query`·`db.get` 등), ARC-203(3)·ARC-207(4, tsconfig `paths` 별칭 import), IL-525(3, Next.js Server Actions), PERF-104(2, GET 라우트 핸들러 안의 한도 없는 조회는 페이지 없는 목록 API로 MEDIUM). 기준선을 쓰면 `baseline migrate`로 지문을 옮긴다.
 
 ### Fixed
 - 에이전트 훅이 하위 폴더의 파일을 편집하면 프로젝트 루트의 `.iron-laws.yml`을 적용하지 않던 것을 고친다. 훅은 편집한 파일에서 위로 올라가며 설정 파일이 있는 폴더(없으면 git 루트, 그것도 없으면 작업 폴더)를 프로젝트 루트로 쓰고, 그 설정의 `disabled_rules`·`excludes`와 루트 기준 경로로 점검한다. 루트에 `.iron-laws-baseline.json`이 있으면 기준선에 없던 지적과 다시 볼 지적만 알린다.

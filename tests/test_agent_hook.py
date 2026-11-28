@@ -156,3 +156,31 @@ def test_cursor_reports_protected_edits_at_stop(tmp_path: Path):
     assert _run("cursor", {**base, "hook_event_name": "afterFileEdit", "file_path": str(target), "edits": []}).stdout == ""
     stop = _run("cursor", {**base, "hook_event_name": "stop", "status": "completed", "loop_count": 0})
     assert "AGENTS.md" in json.loads(stop.stdout)["followup_message"]
+
+
+SECRET = 'API_KEY = "AKIAIOSFODNN7ABCDEFG"\n'
+
+
+def test_subfolder_edit_uses_project_config(tmp_path: Path):
+    (tmp_path / ".iron-laws.yml").write_text('disabled_rules: ["IL-101"]\nexcludes: ["generated"]\n', encoding="utf-8")
+    (tmp_path / "app").mkdir()
+    (tmp_path / "app" / "main.py").write_text(SECRET + RISKY, encoding="utf-8")
+    (tmp_path / "generated").mkdir()
+    (tmp_path / "generated" / "client.py").write_text(RISKY, encoding="utf-8")
+    result = _run("claude-code", {"hook_event_name": "PostToolUse", "cwd": str(tmp_path), "tool_input": {"file_path": "app/main.py"}})
+    assert result.exit_code == 2
+    assert "IL-101" not in result.stderr  # 프로젝트 루트 설정에서 끈 규칙
+    assert "IL-504" in result.stderr and "app/main.py:" in result.stderr  # 프로젝트 기준 경로로 알린다
+    excluded = _run("claude-code", {"hook_event_name": "PostToolUse", "cwd": str(tmp_path), "tool_input": {"file_path": "generated/client.py"}})
+    assert excluded.exit_code == 0  # 설정에서 제외한 폴더
+
+
+def test_existing_findings_in_baseline_do_not_block(tmp_path: Path):
+    (tmp_path / "app").mkdir()
+    (tmp_path / "app" / "main.py").write_text(RISKY, encoding="utf-8")
+    assert runner.invoke(app, ["baseline", "create", str(tmp_path), "-o", str(tmp_path / ".iron-laws-baseline.json")]).exit_code == 0
+    payload = {"hook_event_name": "PostToolUse", "cwd": str(tmp_path), "tool_input": {"file_path": "app/main.py"}}
+    assert _run("claude-code", payload).exit_code == 0  # 기준선에 있던 지적
+    (tmp_path / "app" / "main.py").write_text(RISKY + "\ndef again():\n    os.system('rm ' + request.args['f'])\n", encoding="utf-8")
+    result = _run("claude-code", payload)
+    assert result.exit_code == 2 and "app/main.py:8" in result.stderr  # 새로 생긴 지적만 알린다

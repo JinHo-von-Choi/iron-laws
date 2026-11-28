@@ -32,6 +32,7 @@ PATCH_FILE_RE = re.compile(r"^\*\*\* (?:Add File|Update File|Move to): (.+?)\s*$
 MAX_RECORDED_FILES = 200
 MAX_START_TEXT = 8000
 CURSOR_FOLLOWUP_LIMIT = 3
+BASELINE_NAME = ".iron-laws-baseline.json"
 SEVERITY_ORDER = [Severity.LOW, Severity.MEDIUM, Severity.HIGH, Severity.CRITICAL]
 LOCKED_PROTECTED = (".iron-laws.yml", ".iron-laws.yaml", ".iron-laws-contract.yml", ".iron-laws-approvals*", ".iron-laws-baseline*", ".iron-laws-experience*", ".iron-laws-runner.yml")
 DEFAULT_PROTECTED = (
@@ -135,15 +136,63 @@ def record_files(agent: str, session: str, files: list[Path]) -> None:
         return
 
 
-def blocking_findings(files: list[Path], threshold: Severity) -> list[tuple[Path, Violation]]:
+def _git_root(folder: Path) -> Path | None:
+    for candidate in (folder, *folder.parents):
+        if (candidate / ".git").exists():
+            return candidate
+    return None
+
+
+def project_root(target: Path, cwd: Path | None = None) -> Path:
+    """편집한 파일이 속한 프로젝트 루트. 파일의 폴더에서 위로 올라가며 설정 파일이 있는 첫 폴더를 찾는다.
+    올라가는 범위는 git 루트까지(git이 없으면 작업 폴더까지)이며, 설정 파일이 없으면 그 범위의 끝이 루트다."""
+    from iron_laws.core.config import CONFIG_NAMES
+
+    folder = target.resolve().parent
+    limit = _git_root(folder)
+    if limit is None and cwd is not None and folder.is_relative_to(cwd.resolve()):
+        limit = cwd.resolve()
+    for candidate in (folder, *folder.parents):
+        if any((candidate / name).is_file() for name in CONFIG_NAMES):
+            return candidate
+        if candidate == limit:
+            return candidate
+    return folder
+
+
+def _scan_in_project(target: Path, cwd: Path | None) -> list[Violation]:
+    """파일 하나를 그 파일이 속한 프로젝트의 설정·기준선·상대 경로로 점검한다. 설정에서 제외한 파일이면 빈 결과다.
+    기준선이 있으면 기준선에 없던 지적과 다시 볼 지적만 돌려준다."""
+    from iron_laws.core.baseline import load_baseline
+    from iron_laws.core.config import ConfigError, load_config
     from iron_laws.core.scanner import AuditScanner
 
+    root = project_root(target, cwd)
+    config, _source = load_config(root)
+    rel = target.resolve().relative_to(root)
+    if AuditScanner(root, config=config.model_copy(deep=True))._matching_exclude(target.resolve()) is not None:
+        return []
+    baseline_path = root / BASELINE_NAME
+    baseline = None
+    if baseline_path.is_file():
+        try:
+            baseline = load_baseline(baseline_path)
+        except ConfigError as exc:
+            logger.debug("기준선을 읽지 못해 기준선 없이 점검합니다: %s", exc)
+    scanner = AuditScanner(target, config=config, baseline=baseline)
+    scanner.single_file_rel = rel
+    violations = scanner.scan().violations
+    if baseline is None:
+        return violations
+    return [v for v in violations if v.baseline_status is None or v.baseline_status.value in ("new", "review")]
+
+
+def blocking_findings(files: list[Path], threshold: Severity, cwd: Path | None = None) -> list[tuple[Path, Violation]]:
     found: list[tuple[Path, Violation]] = []
     for target in files:
         if not target.is_file():
             continue
-        report = AuditScanner(target).scan()
-        found.extend((target, v) for v in report.violations if SEVERITY_ORDER.index(v.severity) >= SEVERITY_ORDER.index(threshold))
+        found.extend((target, v) for v in _scan_in_project(target, cwd) if SEVERITY_ORDER.index(v.severity) >= SEVERITY_ORDER.index(threshold))
     return found
 
 
@@ -208,7 +257,7 @@ def handle(agent: str, payload: dict, threshold: Severity, limit: int, forced: s
         if event.continuing:
             return HookResult()
         recorded = recorded_files(agent, event.session)[-50:]
-        found = blocking_findings(recorded, threshold)
+        found = blocking_findings(recorded, threshold, event.cwd)
         parts = [feedback_text(found, threshold, limit, "끝내기 전에 고치십시오.")] if found else []
         if agent == "cursor":  # 편집 직후에 알릴 수 없었으므로 종료 때 보호 경로 변경도 알린다
             root, globs = protected_globs(event.cwd)
@@ -226,7 +275,7 @@ def handle(agent: str, payload: dict, threshold: Severity, limit: int, forced: s
         return HookResult()  # afterFileEdit는 응답을 에이전트에 전달하지 못한다. stop에서 알린다
     root, globs = protected_globs(event.cwd)
     touched = [f for f in files if is_protected(f, root, globs)]
-    found = blocking_findings(files, threshold)
+    found = blocking_findings(files, threshold, event.cwd)
     parts = [protected_notice(touched, root)] if touched else []
     if found:
         parts.append(feedback_text(found, threshold, limit, "고친 뒤 다시 저장하십시오."))

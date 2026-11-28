@@ -57,7 +57,8 @@ class ScanFileReader:
 
     def _relative(self, path: Path) -> Path:
         if self.root_path.is_file():
-            return Path(path.name)
+            # 파일 하나를 점검할 때 프로젝트 안의 위치(single_file_rel)를 알면 그 경로로 판정한다(시험 파일 판정, 제외 패턴, 기준선 지문)
+            return getattr(self, "single_file_rel", None) or Path(path.name)
         return path.relative_to(self.root_path)
 
     def _matching_exclude(self, path: Path) -> str | None:

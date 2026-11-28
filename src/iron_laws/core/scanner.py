@@ -219,6 +219,7 @@ class AuditScanner(ScanFileReader, ScanEvidenceBuilder, ScanResultBuilder):
         self._trust_cells: dict[tuple[str, str], bool] | None = None
         self._skipped: list[dict[str, str]] = []
         self._diagnostics: list[Diagnostic] = []
+        self.single_file_rel: Path | None = None  # 파일 하나를 점검할 때 프로젝트 루트 기준 상대 경로(에이전트 훅이 정한다)
         self._gitignore_patterns: list[str] = self._load_gitignore() if self.config.respect_gitignore else []
         self._all_paths: set[str] = set()
         self._excluded_files: Counter[str] = Counter()

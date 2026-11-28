@@ -75,12 +75,54 @@ def _stack(root: Path, stack: str, stage: str | None, write: bool) -> None:
     _first_move(root, key)
 
 
+HOOK_GUIDE = (
+    "Claude Code: `claude plugin marketplace add JinHo-von-Choi/iron-laws` 다음 `/plugin install iron-laws --marketplace JinHo-von-Choi/iron-laws`",
+    "Codex CLI·Cursor: https://github.com/JinHo-von-Choi/iron-laws/blob/main/docs/AGENT_INTEGRATION.md 의 훅 설정 파일을 프로젝트에 넣기",
+)
+
+
+def _vibe(root: Path, stage: str | None) -> None:
+    """처음 쓰는 사람을 위한 한 번에 시작: 설정 만들기 → 구조 틀 미리보기 → 에이전트 훅 연결 안내 → 첫 점검과 먼저 고칠 것 3개"""
+    from iron_laws.blueprints import BLUEPRINTS, detect
+    from iron_laws.core.scanner import AuditScanner
+    from iron_laws.reporters.console import first_steps
+
+    existing = next((root / name for name in CONFIG_NAMES if (root / name).exists()), None)
+    console.print("1. 설정")
+    if existing is None:
+        stage = stage or _ask_stage()
+        (root / CONFIG_NAMES[0]).write_text("# 오철칙 (Iron Laws) 프로젝트 설정 파일\n" + yaml.safe_dump(IronLawsConfig(stage=stage).report_dump(), allow_unicode=True, sort_keys=False), encoding="utf-8")
+        console.print(f"   {CONFIG_NAMES[0]}를 만들었습니다." + (f" 단계: {stage}({STAGE_QUESTIONS[stage]})" if stage else " 단계는 정하지 않았습니다(--stage로 정할 수 있습니다)."))
+    else:
+        console.print(f"   이미 있는 {existing.name}를 그대로 씁니다.")
+    key = detect(root)
+    console.print("2. 구조 틀")
+    if key is None:
+        console.print("   스택을 알아내지 못했습니다. Next.js나 FastAPI면 `iron-laws init --stack nextjs`(또는 fastapi)로 틀을 미리 볼 수 있습니다.")
+    else:
+        console.print(f"   {BLUEPRINTS[key].title} 프로젝트로 보입니다. `iron-laws init --stack {key}`로 틀을 미리 보고, `--write`로 만드십시오.")
+    console.print("3. 코딩 에이전트 연결(편집할 때마다 자동 점검)")
+    for line in HOOK_GUIDE:
+        console.print(f"   - {line}", markup=False)
+    console.print("4. 첫 점검")
+    report = AuditScanner(root).scan()
+    picks = first_steps(report) or sorted(report.violations, key=lambda v: (["CRITICAL", "HIGH", "MEDIUM", "LOW"].index(v.severity.value), v.confidence.value != "CONFIRMED"))[:3]
+    if not picks:
+        console.print("   지적이 없습니다." + ("" if report.summary.scan_status == "complete" else " 점검을 끝까지 하지 못했으니 `iron-laws check`로 이유를 보십시오."))
+        return
+    console.print(f"   지적 {report.summary.total_violations}건 가운데 먼저 고칠 것:")
+    for i, v in enumerate(picks, start=1):
+        console.print(f"   {i}. [{v.severity.value}] {v.rule_id} {v.file_path.as_posix()}:{v.line_number} {v.plain or v.message}", markup=False)
+    console.print(f"   다음: `iron-laws fix-prompt {root} --limit 3`으로 AI에게 붙여 넣을 수정 지시문을 만들고, 고친 뒤 `iron-laws check {root}`로 확인하십시오.", markup=False)
+
+
 @app.command("init")
 def init_command(
     target_dir: Path = typer.Argument(Path("."), help="설정 파일을 생성할 디렉터리"),
     stage: str | None = StageOpt,
     stack: str | None = typer.Option(None, "--stack", help="구조 틀: nextjs, fastapi, auto(코드에서 알아냄). 기본은 미리보기이고 --write를 주면 파일을 만듭니다"),
     write: bool = typer.Option(False, "--write", help="--stack의 구조 계약·지침 절·폴더를 실제로 만듭니다. 기존 파일은 덮어쓰지 않고 지침 파일에는 표시한 절만 넣습니다"),
+    vibe: bool = typer.Option(False, "--vibe", help="처음 쓰는 사람용: 설정 만들기, 구조 틀 안내, 에이전트 연결 안내, 첫 점검과 먼저 고칠 것 3개를 차례로 보여 줍니다"),
 ):
     """
     현재 디렉터리에 .iron-laws.yml 기본 설정 파일을 생성합니다. 이미 설정 파일(.iron-laws.yml·.iron-laws.yaml)이 있으면 덮어쓰지 않습니다.
@@ -89,6 +131,9 @@ def init_command(
     if stage is not None and stage not in STAGES:
         err.print(f"[bold red]--stage는 {', '.join(STAGES)} 가운데 하나여야 합니다.[/bold red]")
         raise typer.Exit(2)
+    if vibe:
+        _vibe(target_dir, stage)
+        return
     if stack is not None:
         _stack(target_dir, stack, stage, write)
         return

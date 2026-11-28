@@ -19,6 +19,7 @@ iron-laws routes .                         # 웹 주소(라우트)별 로그인�
 iron-laws routes . --auth no --format csv   # 로그인 검사가 없는 라우트 목록(CSV)
 iron-laws tenancy .                        # 매퍼 문장별 소속(테넌트) 조건 확인 표(설정의 tenancy 필요)
 iron-laws audit . --format markdown --standard fin-selfcheck-2026 -o report.md   # 금융권 자체점검 12개 항목별 현황과 증빙 표
+iron-laws init --vibe                      # 처음 한 번: 설정, 구조 틀 안내, 에이전트 연결 안내, 먼저 고칠 것 3개
 iron-laws init --stage launch              # 기본 설정 파일 .iron-laws.yml 만들기(단계 지정)
 iron-laws stage preview production         # 단계를 올리면 새로 막히는 지적 미리 보기
 iron-laws init --stack fastapi              # 구조 틀(구조 계약·에이전트 지침 절·폴더) 미리 보기. --write로 만들기

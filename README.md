@@ -53,9 +53,10 @@ pip install git+https://github.com/JinHo-von-Choi/iron-laws.git
 
 ## 처음 써 보기
 
-점검할 프로젝트 폴더에서 실행합니다.
+점검할 프로젝트 폴더에서 실행합니다. `init --vibe`는 설정 파일을 만들고, 구조 틀과 코딩 에이전트 연결 방법을 알려 준 뒤, 첫 점검에서 먼저 고칠 것 3개를 보여 줍니다.
 
 ```bash
+iron-laws init --vibe      # 처음 한 번: 설정, 구조 틀 안내, 에이전트 연결 안내, 먼저 고칠 것 3개
 iron-laws check .          # 점검. HIGH 이상 지적이 있으면 종료코드 1
 iron-laws fix-prompt .     # 코딩 AI에게 붙여 넣을 수정 지시문
 ```

@@ -64,3 +64,15 @@ def test_nextjs_contract_catches_alias_imports(tmp_path: Path):
     assert lines_of(violations, "ARC-207", "app/page.tsx") == []
     result = runner.invoke(app, ["init", str(root), "--stack", "nextjs"])
     assert "먼저 고칠 것: components/UserCard.tsx:1" in result.output
+
+
+def test_init_vibe_walks_through_first_steps(tmp_path: Path):
+    _write(tmp_path, {"main.py": "from fastapi import FastAPI\napp = FastAPI()\nAPI_KEY = \"AKIAIOSFODNN7ABCDEFG\"\n"})
+    result = runner.invoke(app, ["init", str(tmp_path), "--vibe", "--stage", "launch"])
+    assert result.exit_code == 0, result.output
+    assert "stage: launch" in (tmp_path / ".iron-laws.yml").read_text(encoding="utf-8")
+    assert "init --stack fastapi" in result.output and "Claude Code" in result.output
+    assert "1. [CRITICAL] IL-101 main.py:3" in result.output  # 첫 점검의 먼저 고칠 것
+    (tmp_path / ".iron-laws.yml").write_text("fail_on: LOW\n", encoding="utf-8")
+    runner.invoke(app, ["init", str(tmp_path), "--vibe"])
+    assert (tmp_path / ".iron-laws.yml").read_text(encoding="utf-8") == "fail_on: LOW\n"  # 이미 있는 설정은 그대로 쓴다

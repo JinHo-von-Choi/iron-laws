@@ -279,6 +279,7 @@ def tenancy_command(
     from rich.table import Table
 
     from iron_laws.core.scanner import AuditScanner
+    from iron_laws.engine import xfile
     from iron_laws.engine.project import ProjectContext
     from iron_laws.rules.ai_code_tenancy import tenancy_rows
 
@@ -293,8 +294,13 @@ def tenancy_command(
     if not scanner.config.tenancy.active:
         err.print("[bold red]설정 파일에 tenancy.keys와 tenancy.principal을 적어야 소속 확인 표를 만들 수 있습니다.[/bold red]")
         raise typer.Exit(2)
-    project = ProjectContext(root=scanner.root_path, files=scanner._read_sources(), config=scanner.config)
-    rows = [row.as_row() for row, _src, _node in tenancy_rows(project)]
+    sources = scanner._read_sources()
+    project = ProjectContext(root=scanner.root_path, files=sources, config=scanner.config)
+    xfile.set_index(xfile.ProjectIndex.build(sources, scanner.config.limits.max_cross_file_lookups, scanner.root_path))
+    try:
+        rows = [row.as_row() for row, _src, _node in tenancy_rows(project)]
+    finally:
+        xfile.set_index(None)
     if fmt == "json":
         typer.echo(json.dumps(rows, ensure_ascii=False, indent=2))
         return

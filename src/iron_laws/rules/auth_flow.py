@@ -3,7 +3,8 @@
 
 - 로그인 상태 저장: 세션에 로그인 사용자를 넣거나(setAttribute·session[...]·req.session.*), 인증 객체를 정하는 코드
   (setAuthentication·login_user·req.login). 비밀번호를 함께 넘기는 서블릿 로그인(request.login)은 컨테이너가 검증하므로 넣지 않는다.
-- 검증: 비밀번호 대조·인증 관리자·서명 토큰 검증 호출. 그 호출(또는 그 결과를 담은 변수)이 저장 위치를 감싼 if 조건에 있거나,
+- 검증: 비밀번호 대조·인증 관리자·서명 토큰 검증 호출, 그리고 본문이 그런 호출로 실패 분기를 끊거나 그 결과를 돌려주는 프로젝트 함수
+  (서비스 계층의 로그인 메서드, 2단계까지). 그 호출(또는 그 결과를 담은 변수)이 저장 위치를 감싼 if 조건에 있거나,
   저장 앞에서 실패 시 return·throw로 끝나는 if 조건에 있으면 검증된 것으로 본다.
 - 라우트 핸들러 안의 저장은 직접 판정하고, 핸들러가 요청 값을 넘기는 도우미(같은 파일·다른 파일, 2단계)의 저장은 확인 필요로 낸다.
 - login_state_judgments는 IL-526이 같은 줄의 중복 지적을 거를 때도 쓴다.
@@ -30,6 +31,7 @@ from iron_laws.engine.source import SourceFile
 from iron_laws.engine.taint import is_tainted, param_name, resolve_any
 from iron_laws.engine.taint.nodes import if_parts
 from iron_laws.rules.base import BaseRule
+from iron_laws.rules.guards import _negated, _or_terms
 from iron_laws.standards import mois_ref
 
 CREDENTIAL_CHECK = re.compile(
@@ -46,6 +48,7 @@ JS_LOGIN = re.compile(r"^req\.(?:login|logIn)$")
 TOKEN_COMPARE = re.compile(r"(?i)(?:token|ticket|nonce|key|code)\w*\s*\)?\s*(?:\.equals(?:IgnoreCase)?\(|===?)|\.equals(?:IgnoreCase)?\(\s*[\w.]*(?:token|ticket|nonce|key|code)")
 EXIT_RE = re.compile(r"\b(return|throw|raise|abort)\b")
 IF_TYPES = frozenset({"if_statement", "if_expression"})
+FAIL_EXIT = re.compile(r"\b(?:throw|raise)\b|\breturn\s*(?:null|None|false|False|nil|undefined)?\s*(?:;|\}|$)")
 SUCCESS_NAME = re.compile(r"(?i)success|loginok|afterlogin|onauth|authenticated")
 
 
@@ -109,6 +112,39 @@ def _assigned_names(src: SourceFile, node: Node) -> list[str]:
     return []
 
 
+def _verifies(src: SourceFile, fn: Node, depth: int) -> bool:
+    """fn 본문이 자격 증명을 확인한다: 검증이 실패하면 실패 값으로 끝내거나(`if (!matches) return null`),
+    성공할 때만 값을 돌려주는(`if (matches) return user`) 분기가 있거나, 검증 호출 결과를 돌려준다"""
+    for node in walk(fn):
+        if node.type in IF_TYPES:
+            cond, consequence = if_parts(node)
+            if cond is None or consequence is None or not EXIT_RE.search(src.text_of(consequence)):
+                continue
+            fails = bool(FAIL_EXIT.search(src.text_of(consequence)))
+            if any(_is_check(src, t, depth) and (_negated(t) is not None) == fails for t in _or_terms(src, cond)):  # iron-laws: ignore[IL-307] 검증 함수인지 판정한 결과다
+                return True
+        elif node.type == "return_statement" and _is_check(src, node, depth):
+            return True
+    return False
+
+
+def _calls_verifier(src: SourceFile, node: Node, depth: int) -> bool:
+    """node 안의 호출 가운데 자격 증명을 확인하는 프로젝트 함수(서비스 계층의 로그인 메서드 등)가 있다"""
+    if depth <= 0:  # iron-laws: ignore[IL-307] 따라갈 단계가 남지 않았다는 판정 결과다
+        return False
+    for call in iter_calls(src):
+        if not _inside(call.node, node):
+            continue
+        for hsrc, fn in resolve_any(src, call.callee, len(call.args), at=call.node):
+            if fn.node.id != node.id and _verifies(hsrc, fn.node, depth - 1):  # iron-laws: ignore[IL-307] 검증 함수를 부른다는 판정 결과다
+                return True
+    return False
+
+
+def _is_check(src: SourceFile, node: Node, depth: int = 2) -> bool:
+    return bool(CREDENTIAL_CHECK.search(src.text_of(node))) or _calls_verifier(src, node, depth)
+
+
 def _check_vars(src: SourceFile, fn: Node, before: int) -> set[str]:
     """fn 안에서 before 앞에 검증 호출 결과를 담은 변수 이름"""
     names: set[str] = set()
@@ -116,7 +152,7 @@ def _check_vars(src: SourceFile, fn: Node, before: int) -> set[str]:
         if node.start_byte >= before or node.type not in ("variable_declarator", "assignment", "assignment_expression"):
             continue
         value = node.child_by_field_name("value") or node.child_by_field_name("right")
-        if value is not None and CREDENTIAL_CHECK.search(src.text_of(value)):
+        if value is not None and _is_check(src, value):
             names.update(_assigned_names(src, node))
     return names
 
@@ -128,15 +164,16 @@ def _mentions(text: str, names: set[str]) -> bool:
 def guard_status(src: SourceFile, target: Node, fn: Node, value: Node | None = None) -> str:
     """target(저장·초기화 위치)이 검증에 묶였는지: checked / token / unbound / none"""
     check_vars = _check_vars(src, fn, target.start_byte)
-    conditions: list[str] = []
+    enclosing: list[Node] = []
     node = target.parent
     while node is not None and node.id != fn.id:
         if node.type in IF_TYPES:
             cond, consequence = if_parts(node)
             if cond is not None and consequence is not None and _inside(target, consequence):
-                conditions.append(src.text_of(cond))
+                enclosing.append(cond)
         node = node.parent
-    if any(CREDENTIAL_CHECK.search(c) or _mentions(c, check_vars) for c in conditions):
+    conditions = [src.text_of(c) for c in enclosing]
+    if any(_is_check(src, c) or _mentions(src.text_of(c), check_vars) for c in enclosing):
         return "checked"
     for node in walk(fn):
         if node.type not in IF_TYPES or node.end_byte > target.start_byte:
@@ -144,8 +181,7 @@ def guard_status(src: SourceFile, target: Node, fn: Node, value: Node | None = N
         cond, consequence = if_parts(node)
         if cond is None or consequence is None:
             continue
-        text = src.text_of(cond)
-        if (CREDENTIAL_CHECK.search(text) or _mentions(text, check_vars)) and EXIT_RE.search(src.text_of(consequence)):
+        if EXIT_RE.search(src.text_of(consequence)) and (_mentions(src.text_of(cond), check_vars) or _is_check(src, cond)):
             return "checked"
     if value is not None and _mentions(src.text_of(value), check_vars):
         return "checked"

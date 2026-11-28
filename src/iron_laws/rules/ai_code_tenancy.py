@@ -4,6 +4,8 @@
 
 - AI-129는 설정의 tenancy(keys·principal)가 있을 때만 판정한다. MyBatis 매퍼 문장(engine/mybatis.py)을 Java 호출에 이어
   WHERE의 소속 열과 그 열에 바인딩한 값의 출처(로그인 사용자·요청 값·알 수 없음)를 본다.
+  요청 값이라도 호출 앞에서 그 값을 로그인 사용자의 소속과 비교해 다르면 실행을 끊으면(직접 비교, 또는 본문이 그렇게 비교하는
+  프로젝트 함수) 확인된 값(checked)으로 본다.
 - tenancy_rows는 `iron-laws tenancy` 명령의 조회문별 소속 확인 표를 만든다.
 작성자: 최진호
 작성일: 2026-11-23
@@ -20,10 +22,18 @@ from iron_laws.engine.languages import Lang
 from iron_laws.engine.mybatis import MapperStatement
 from iron_laws.engine.project import ProjectContext
 from iron_laws.engine.source import SourceFile
-from iron_laws.engine.taint import is_tainted, reaching_definitions
+from iron_laws.engine.taint import is_tainted, param_name, reaching_definitions, resolve_any
 from iron_laws.engine.taint.nodes import if_parts
 from iron_laws.rules.ai_code_common import AiRule
 from iron_laws.rules.auth_flow import login_sinks
+from iron_laws.rules.guards import (
+    _negated,
+    _or_terms,
+    _unwrap,
+    redefined_between,
+    runs_before,
+    terminates,
+)
 
 STATE_CHANGE_CALL = re.compile(r"(?i)^(?:delete|remove|approve|cancel|switch|change|update|modify|reset|withdraw|transfer|insert|save|create|register|regist|grant|revoke|assign)\w*")
 READ_ONLY_HINT = re.compile(r"(?i)view|hit|read|count|access|visit|log|history|cache|lastlogin|stat|touch")
@@ -147,7 +157,7 @@ class TenancyRow:
     tables: str
     key_column: str  # where / optional / missing / n/a
     binding: str
-    source: str  # principal / request / unknown / -
+    source: str  # principal / checked / request / unknown / -
     call: str
     verdict: str  # ok / violation / review / n/a
 
@@ -181,8 +191,75 @@ def _value_source(project: ProjectContext, src: SourceFile, fn: Node | None, arg
     if any(p in t for p in principals for t in texts):
         return "principal"
     if is_tainted(src, arg):
+        at = arg.parent
+        while at is not None and at.parent is not None and (fn is None or at.parent.id != fn.id) and at.type not in ("expression_statement", "return_statement", "local_variable_declaration"):
+            at = at.parent
+        if fn is not None and at is not None and _owner_checked(src, fn, at, arg, principals):
+            return "checked"
         return "request"
     return "unknown"
+
+
+def _compares(text: str, name: str, principals: list[str]) -> bool:
+    """text가 name과 로그인 사용자의 소속 식을 같은지 비교한다(equals·==·!=·Objects.equals)"""
+    n = rf"(?<![\w.]){re.escape(name)}\b"
+    for p in principals:
+        q = re.escape(p)
+        if re.search(rf"{n}\s*\.\s*equals(?:IgnoreCase)?\(\s*[\w.]*{q}|{q}\s*\.\s*equals(?:IgnoreCase)?\(\s*{n}\s*\)|{n}\s*[!=]==?\s*[\w.]*{q}|{q}\s*[!=]==?\s*{n}", text):
+            return True
+        if re.search(rf"Objects\.equals\(\s*(?:{n}\s*,\s*[\w.]*{q}|[\w.]*{q}\s*,\s*{n})\s*\)", text):
+            return True
+    return False
+
+
+def _negated_compare(text: str, name: str, principals: list[str]) -> bool:
+    n = rf"(?<![\w.]){re.escape(name)}\b"
+    return any(
+        re.search(rf"!\s*{n}\s*\.\s*equals|{n}\s*!==?\s*[\w.]*{re.escape(p)}|{re.escape(p)}\s*!==?\s*{n}|!\s*Objects\.equals", text) for p in principals
+    )
+
+
+def _owner_check_call(src: SourceFile, cond: Node, name: str, principals: list[str]) -> bool:
+    """cond 안에 name을 넘겨받아 본문에서 그 매개변수를 로그인 사용자의 소속과 비교하는 프로젝트 함수 호출이 있다"""
+    for call in _calls_in(src, cond):
+        for i, a in enumerate(call.args):
+            if src.text_of(a) != name:
+                continue
+            for hsrc, fn in resolve_any(src, call.callee, len(call.args), at=call.node):
+                params = [q for q in fn.params if hsrc.text_of(q) not in ("self", "cls")]
+                pname = param_name(hsrc, params[i]) if i < len(params) else None
+                returns = [hsrc.text_of(r) for r in walk(fn.node) if r.type == "return_statement"]
+                if pname and any(_compares(r, pname, principals) and not _negated_compare(r, pname, principals) for r in returns):  # iron-laws: ignore[IL-307] 소속 확인 함수라는 판정 결과다
+                    return True
+    return False
+
+
+def _mismatch_term(src: SourceFile, term: Node, name: str, principals: list[str]) -> bool:
+    """or로 나눈 거부 조건의 한 항이 'name이 로그인 사용자의 소속과 다르다'이다. 이 항만 참이어도 실행이 끊긴다"""
+    inner = _negated(term)
+    if inner is not None:
+        return _compares(src.text_of(inner), name, principals) or _owner_check_call(src, inner, name, principals)
+    term = _unwrap(term)
+    operator = term.child_by_field_name("operator") if term.type == "binary_expression" else None
+    return operator is not None and src.text_of(operator) in ("!=", "!==") and _compares(src.text_of(term), name, principals)
+
+
+def _owner_checked(src: SourceFile, fn: Node, at: Node, arg: Node, principals: list[str]) -> bool:
+    """at 앞에서 arg 변수를 로그인 사용자의 소속과 비교해 다르면 실행을 끊는다"""
+    if arg.type != "identifier":  # iron-laws: ignore[IL-307] 변수가 아닌 값은 검사 분기를 추적하지 않는다는 판정 결과다
+        return False
+    name = src.text_of(arg)
+    for node in walk(fn):
+        if node.type not in ("if_statement", "if_expression"):
+            continue
+        cond, consequence = if_parts(node)
+        if cond is None or not terminates(src, consequence) or not runs_before(src, node, at, fn):
+            continue
+        if redefined_between(src, fn, name, node.end_byte, at.start_byte):
+            continue
+        if any(_mismatch_term(src, t, name, principals) for t in _or_terms(src, cond)):  # iron-laws: ignore[IL-307] 소속을 확인했다는 판정 결과다
+            return True
+    return False
 
 
 def _bound_arg(src: SourceFile, call: Call, binding: str, params: list[str] | None = None) -> Node | None:
@@ -223,7 +300,7 @@ def tenancy_rows(project: ProjectContext) -> list[tuple[TenancyRow, SourceFile |
                 binding = st.where[key]
                 arg = _bound_arg(src, call, binding, mappers.bindings_of(st))
                 source = _value_source(project, src, enclosing_function(call.node, src.lang), arg)
-                verdict = {"principal": "ok", "request": "violation", "unknown": "review"}[source]
+                verdict = {"principal": "ok", "checked": "ok", "request": "violation", "unknown": "review"}[source]
                 rows.append((TenancyRow(**base, key_column="where", binding=binding, source=source, verdict=verdict), src, call.node))
                 continue
             optional = next((k for k in keys if k in st.optional_where), None)

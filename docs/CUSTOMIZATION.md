@@ -98,6 +98,8 @@ tenancy:
   tables: [payout, settlement]                # 소속 격리 대상 테이블. 비우면 DDL·매퍼 조건에서 keys 열이 있는 테이블
 ```
 
+소속 조건에 요청 값을 넣더라도, 호출 앞에서 그 값을 `principal` 식과 비교해 다르면 예외를 던지거나 반환하면 통과로 봅니다(예: `if (!mid.equals(getLoginUser().getMid())) throw …`). 본문에서 그렇게 비교하는 프로젝트 함수(예: `if (!auth.isOwnedMerchant(mid)) throw …`)도 같습니다. `iron-laws tenancy` 표에서는 값 출처가 `checked`로 나옵니다.
+
 - MyBatis 매퍼 문장의 WHERE에 소속 열이 없거나, 그 열에 요청 값을 바인딩하면 지적합니다. 동적 절(`<if>` 등) 안에만 있는 조건과 값의 출처를 정할 수 없는 경우는 확인 필요로 냅니다.
 - `iron-laws tenancy .`로 매퍼 호출별 판정 표를 보고, `audit --format json`의 `metadata.tenancy`에도 같은 표가 들어갑니다.
 - `spec draft`의 `config_hints`에 로그인 사용자의 소속을 읽는 호출식(`tenancy.principal` 후보)이 나옵니다.

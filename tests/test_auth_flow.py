@@ -140,6 +140,106 @@ def test_tenant_boundary_principal_value(tmp_path: Path):
     assert lines_of(violations, "AI-125") == []
 
 
+SERVICE_LOGIN = {
+    "src/main/java/app/LoginController.java": """package app;
+import javax.servlet.http.HttpSession;
+import org.springframework.web.bind.annotation.*;
+@RestController
+public class LoginController {
+    private final MemberService memberService;
+    public LoginController(MemberService s) { this.memberService = s; }
+    @PostMapping("/login")
+    public String login(@RequestParam String id, @RequestParam String pw, HttpSession session) {
+        Member m = memberService.login(id, pw);
+        if (m == null) { return "fail"; }
+        session.setAttribute("loginUser", m);
+        return "ok";
+    }
+}
+""",
+    "src/main/java/app/MemberService.java": """package app;
+import org.springframework.security.crypto.password.PasswordEncoder;
+public class MemberService {
+    private final MemberMapper mapper; private final PasswordEncoder encoder;
+    public MemberService(MemberMapper m, PasswordEncoder e) { mapper = m; encoder = e; }
+    public Member login(String id, String pw) {
+        Member m = mapper.findById(id);
+        if (m == null || !encoder.matches(pw, m.getPassword())) { return null; }
+        return m;
+    }
+}
+""",
+    "src/main/java/app/Member.java": "package app;\npublic class Member { private String password; public String getPassword() { return password; } }\n",
+    "src/main/java/app/MemberMapper.java": "package app;\npublic interface MemberMapper { Member findById(String id); }\n",
+}
+
+
+def test_service_layer_password_check(tmp_path: Path):
+    root = _write(tmp_path / "svc", SERVICE_LOGIN)
+    assert lines_of(AuditScanner(root).scan().violations, "IL-534") == []
+    service = root / "src/main/java/app/MemberService.java"
+    service.write_text(service.read_text(encoding="utf-8").replace(" || !encoder.matches(pw, m.getPassword())", ""), encoding="utf-8")
+    violations = [v for v in AuditScanner(root).scan().violations if v.rule_id == "IL-534"]
+    assert [(v.line_number, v.confidence.value) for v in violations] == [(12, "CONFIRMED")]
+    service.write_text(service.read_text(encoding="utf-8").replace("if (m == null)", "if (m == null || encoder.matches(pw, m.getPassword()))"), encoding="utf-8")
+    assert lines_of(AuditScanner(root).scan().violations, "IL-534") == [12]  # 비밀번호가 맞을 때 거부하는 메서드는 검증이 아니다
+
+
+OWNER_CHECK = {
+    ".iron-laws.yml": "tenancy:\n  keys: [mid]\n  principal: ['getLoginUser().getMid()']\n",
+    "src/main/java/app/TxController.java": """package app;
+import java.util.List;
+import org.springframework.web.bind.annotation.*;
+@RestController
+public class TxController {
+    private final TxMapper txMapper; private final AuthHelper auth;
+    public TxController(TxMapper m, AuthHelper a) { txMapper = m; auth = a; }
+    @GetMapping("/tx")
+    public List<Tx> list(@RequestParam String mid) {
+        if (!auth.isOwnedMerchant(mid)) { throw new IllegalStateException("forbidden"); }
+        return txMapper.selectTx(mid);
+    }
+    @GetMapping("/tx2")
+    public List<Tx> list2(@RequestParam String mid) {
+        if (!mid.equals(auth.getLoginUser().getMid())) { throw new IllegalStateException("forbidden"); }
+        return txMapper.selectTx(mid);
+    }
+    @GetMapping("/tx3")
+    public List<Tx> list3(@RequestParam String mid) {
+        if (!mid.equals(auth.getLoginUser().getMid())) { System.out.println("other merchant"); }
+        return txMapper.selectTx(mid);
+    }
+}
+""",
+    "src/main/java/app/TxMapper.java": "package app;\nimport java.util.List;\nimport org.apache.ibatis.annotations.Param;\npublic interface TxMapper { List<Tx> selectTx(@Param(\"mid\") String mid); }\n",
+    "src/main/java/app/Tx.java": "package app;\npublic class Tx { }\n",
+    "src/main/java/app/AuthHelper.java": """package app;
+public class AuthHelper {
+    public User getLoginUser() { return null; }
+    public boolean isOwnedMerchant(String mid) { return mid != null && mid.equals(getLoginUser().getMid()); }
+    public static class User { public String getMid() { return ""; } }
+}
+""",
+    "src/main/resources/mapper/TxMapper.xml": """<?xml version="1.0" encoding="UTF-8"?>
+<mapper namespace="app.TxMapper">
+  <select id="selectTx" resultType="app.Tx">SELECT * FROM tx WHERE mid = #{mid}</select>
+</mapper>
+""",
+}
+
+
+def test_tenant_boundary_owner_check(tmp_path: Path):
+    root = _write(tmp_path / "owner", OWNER_CHECK)
+    assert lines_of(AuditScanner(root).scan().violations, "AI-129") == [21]  # 다르다고 기록만 하고 계속 실행하는 분기는 확인이 아니다
+    rows = json.loads(runner.invoke(app, ["tenancy", str(root), "--format", "json"]).output)
+    assert [(r["source"], r["verdict"]) for r in rows if r["statement"] == "selectTx"] == [("checked", "ok"), ("checked", "ok"), ("request", "violation")]
+    controller = root / "src/main/java/app/TxController.java"
+    controller.write_text(controller.read_text(encoding="utf-8").replace("if (!mid.equals(auth.getLoginUser().getMid())) { throw", "if (!mid.equals(auth.getLoginUser().getMid()) && !force) { throw").replace("list2(@RequestParam String mid)", "list2(@RequestParam String mid, @RequestParam boolean force)"), encoding="utf-8")
+    helper = root / "src/main/java/app/AuthHelper.java"
+    helper.write_text(helper.read_text(encoding="utf-8").replace("return mid != null && mid.equals(getLoginUser().getMid());", "boolean ok = mid.equals(getLoginUser().getMid()); return true;"), encoding="utf-8")
+    assert lines_of(AuditScanner(root).scan().violations, "AI-129") == [11, 16, 21]  # and로 묶인 우회 조건, 비교 결과를 쓰지 않는 함수
+
+
 def test_tenancy_command(tmp_path: Path):
     root = _project(tmp_path, TENANCY)
     result = runner.invoke(app, ["tenancy", str(root), "--format", "json"])

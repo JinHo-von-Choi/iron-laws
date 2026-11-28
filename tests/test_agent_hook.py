@@ -184,3 +184,39 @@ def test_existing_findings_in_baseline_do_not_block(tmp_path: Path):
     (tmp_path / "app" / "main.py").write_text(RISKY + "\ndef again():\n    os.system('rm ' + request.args['f'])\n", encoding="utf-8")
     result = _run("claude-code", payload)
     assert result.exit_code == 2 and "app/main.py:8" in result.stderr  # 새로 생긴 지적만 알린다
+
+
+HELPER = "def normalize_phone(raw):\n    digits = ''.join(ch for ch in raw if ch.isdigit())\n    if digits.startswith('82'):\n        digits = '0' + digits[2:]\n    if len(digits) == 11:\n        return digits[:3] + '-' + digits[3:7] + '-' + digits[7:]\n    if len(digits) == 10:\n        return digits[:3] + '-' + digits[3:6] + '-' + digits[6:]\n    return digits\n"
+
+
+def test_new_duplicate_function_is_reported_once_in_production(tmp_path: Path):
+    (tmp_path / ".iron-laws.yml").write_text("stage: production\n", encoding="utf-8")
+    (tmp_path / "util.py").write_text(HELPER, encoding="utf-8")
+    (tmp_path / "views.py").write_text("x = 1\n", encoding="utf-8")
+    session = {"session_id": "dup-1", "cwd": str(tmp_path)}
+    assert _run("claude-code", {**session, "hook_event_name": "SessionStart"}).exit_code == 0
+    (tmp_path / "views.py").write_text(HELPER.replace("normalize_phone", "format_phone"), encoding="utf-8")
+    edit = {**session, "hook_event_name": "PostToolUse", "tool_input": {"file_path": "views.py"}}
+    first = _run("claude-code", edit)
+    assert first.exit_code == 2 and "format_phone" in first.stderr and "util.py:1" in first.stderr
+    assert "format_phone" not in _run("claude-code", edit).stderr  # 같은 알림은 한 번만
+    (tmp_path / ".iron-laws.yml").write_text("stage: launch\n", encoding="utf-8")
+    other = {"session_id": "dup-2", "cwd": str(tmp_path)}
+    _run("claude-code", {**other, "hook_event_name": "SessionStart"})
+    (tmp_path / "views2.py").write_text(HELPER.replace("normalize_phone", "clean_phone"), encoding="utf-8")
+    assert "clean_phone" not in _run("claude-code", {**other, "hook_event_name": "PostToolUse", "tool_input": {"file_path": "views2.py"}}).stderr  # launch는 중복을 막지 않는다
+
+
+def test_stop_reports_layer_violation_from_edited_file(tmp_path: Path):
+    (tmp_path / ".iron-laws.yml").write_text(
+        "stage: production\narchitecture:\n  layers:\n    - {name: api, paths: ['app/api/**']}\n    - {name: repo, paths: ['app/repo/**']}\n", encoding="utf-8"
+    )
+    for rel in ("app/__init__.py", "app/api/__init__.py", "app/repo/__init__.py"):
+        (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / rel).write_text("", encoding="utf-8")
+    (tmp_path / "app/api/users.py").write_text("def get_users():\n    return []\n", encoding="utf-8")
+    (tmp_path / "app/repo/users.py").write_text("from app.api.users import get_users\n", encoding="utf-8")
+    session = {"session_id": "layer-1", "cwd": str(tmp_path)}
+    assert _run("claude-code", {**session, "hook_event_name": "PostToolUse", "tool_input": {"file_path": "app/repo/users.py"}}).exit_code == 0
+    stop = _run("claude-code", {**session, "hook_event_name": "Stop"})
+    assert stop.exit_code == 2 and "ARC-207" in stop.stderr and "app/repo/users.py:1" in stop.stderr

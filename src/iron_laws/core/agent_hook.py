@@ -201,6 +201,104 @@ def blocking_findings(files: list[Path], threshold: Severity, cwd: Path | None =
     return found
 
 
+def _index_file(agent: str, session: str) -> Path:
+    return _state_file(agent, session).with_suffix(".functions.json")
+
+
+def _project_config(target: Path, cwd: Path | None):
+    from iron_laws.core.config import load_config
+
+    root = project_root(target, cwd)
+    return root, load_config(root)[0]
+
+
+def build_session_index(agent: str, session: str, cwd: Path) -> None:
+    """세션 시작 때 프로젝트 함수 지문 색인을 임시 폴더에 남긴다(편집 중 새 중복 알림용). 상한을 넘으면 남기지 않는다"""
+    from iron_laws.core import hook_index
+    from iron_laws.core.config import ConfigError
+
+    try:
+        root, config = _project_config(cwd.resolve() / "_", cwd)
+    except ConfigError as exc:
+        logger.debug("설정을 읽지 못해 함수 색인을 만들지 않습니다: %s", exc)
+        return
+    _state_file(agent, session).with_suffix(".notes.json").unlink(missing_ok=True)  # 세션을 새로 시작하면 알린 기록과 색인을 새로 쓴다
+    _index_file(agent, session).unlink(missing_ok=True)
+    index = hook_index.build(root, config)
+    if index is not None:
+        hook_index.save(_index_file(agent, session), index)
+
+
+def duplicate_notes(agent: str, session: str, files: list[Path], threshold: Severity, cwd: Path | None) -> str:
+    """이번 세션에 새로 만든 함수가 이미 있는 함수와 거의 같으면 알린다. 단계 정책이 ARC-204를 막을 때(production, 또는 threshold가 MEDIUM 이하)만 알린다.
+    같은 알림은 세션에서 한 번만 한다"""
+    from iron_laws.core import hook_index
+    from iron_laws.core.gating import blocks, stage_policy
+
+    index = hook_index.load(_index_file(agent, session))
+    if index is None:
+        return ""
+    seen_file = _state_file(agent, session).with_suffix(".notes.json")
+    try:
+        seen = set(json.loads(seen_file.read_text(encoding="utf-8")))
+    except (OSError, ValueError):  # iron-laws: ignore[IL-301] 알린 기록이 없으면 처음 알리는 것으로 본다
+        seen = set()
+    lines: list[str] = []
+    for target in files:
+        root, config = _project_config(target, cwd)
+        if not blocks("ARC-204", "MEDIUM", "CONFIRMED", "ARCHITECTURE", stage_policy(config.stage, threshold.value), threshold.value):
+            continue
+        for hint in hook_index.new_duplicates(index, target, target.resolve().relative_to(root).as_posix(), config):
+            key = f"{hint.path}:{hint.name}:{hint.other_path}:{hint.other_name}"
+            if key not in seen:
+                seen.add(key)
+                lines.append(f"- ARC-204 {hint.text()}")
+    if not lines:
+        return ""
+    try:
+        seen_file.write_text(json.dumps(sorted(seen)), encoding="utf-8")
+    except OSError as exc:
+        logger.debug("알린 기록을 쓰지 못했습니다: %s", exc)
+    return "오철칙: 이미 있는 함수와 거의 같은 함수를 새로 만들었습니다.\n" + "\n".join(lines) + "\n"
+
+
+STRUCTURE_SECONDS = 30.0
+
+
+def structure_findings(files: list[Path], threshold: Severity, cwd: Path | None) -> list[tuple[Path, Violation]]:
+    """종료 직전에 프로젝트 전체로 순환(ARC-203)·계층 위반(ARC-207)을 보고, 이번 세션에 편집한 파일의 지적 가운데 막을 것만 돌려준다"""
+    from iron_laws.core.baseline import load_baseline
+    from iron_laws.core.config import ConfigError
+    from iron_laws.core.gating import blocks, stage_policy
+    from iron_laws.core.scanner import AuditScanner
+
+    by_root: dict[Path, list[Path]] = {}
+    for target in files:
+        if target.is_file():
+            by_root.setdefault(project_root(target, cwd), []).append(target)
+    found: list[tuple[Path, Violation]] = []
+    for root, targets in by_root.items():
+        try:
+            _root, config = _project_config(targets[0], cwd)
+            baseline = load_baseline(root / BASELINE_NAME) if (root / BASELINE_NAME).is_file() else None
+        except ConfigError as exc:
+            logger.debug("구조 점검을 건너뜁니다: %s", exc)
+            continue
+        policy = stage_policy(config.stage, threshold.value)
+        scoped = config.model_copy(deep=True)
+        scoped.enabled_rules = ["ARC-203", "ARC-207"]
+        scoped.limits.max_wall_seconds = STRUCTURE_SECONDS
+        report = AuditScanner(root, config=scoped, baseline=baseline).scan()
+        rels = {t.resolve().relative_to(root).as_posix(): t for t in targets}
+        for v in report.violations:
+            target = rels.get(v.file_path.as_posix())
+            if target is None or (baseline is not None and v.baseline_status is not None and v.baseline_status.value == "existing"):
+                continue
+            if blocks(v.rule_id, v.severity.value, v.confidence.value, v.layer.value, policy, threshold.value):
+                found.append((target, v))
+    return found
+
+
 def feedback_text(found: list[tuple[Path, Violation]], threshold: Severity, limit: int, action: str) -> str:
     names = sorted({target.name for target, _ in found})
     label = names[0] if len(names) == 1 else f"{names[0]} 외 {len(names) - 1}개 파일"
@@ -263,14 +361,18 @@ def handle(agent: str, payload: dict, threshold: Severity, limit: int, forced: s
     if event.kind == "ignore":
         return HookResult()
     if event.kind == "start":
+        build_session_index(agent, event.session, event.cwd)
         text = start_text(event.cwd, threshold)
         return _respond(agent, "start", text, event) if text else HookResult()
     if event.kind == "stop":
         if event.continuing:
             return HookResult()
         recorded = recorded_files(agent, event.session)[-50:]
-        found = blocking_findings(recorded, threshold, event.cwd)
+        found = blocking_findings(recorded, threshold, event.cwd) + structure_findings(recorded, threshold, event.cwd)
         parts = [feedback_text(found, threshold, limit, "끝내기 전에 고치십시오.")] if found else []
+        if agent == "cursor":  # 편집 직후에 알릴 수 없었으므로 새 중복도 종료 때 알린다
+            notes = duplicate_notes(agent, event.session, recorded, threshold, event.cwd)
+            parts += [notes] if notes else []
         if agent == "cursor":  # 편집 직후에 알릴 수 없었으므로 종료 때 보호 경로 변경도 알린다
             root, globs = protected_globs(event.cwd)
             touched = [f for f in recorded if f.is_file() and is_protected(f, root, globs)]
@@ -291,6 +393,9 @@ def handle(agent: str, payload: dict, threshold: Severity, limit: int, forced: s
     parts = [protected_notice(touched, root)] if touched else []
     if found:
         parts.append(feedback_text(found, threshold, limit, "고친 뒤 다시 저장하십시오."))
+    notes = duplicate_notes(agent, event.session, files, threshold, event.cwd)
+    if notes:
+        parts.append(notes)
     if not parts:
         return HookResult()
     return _respond(agent, "edit", "".join(parts), event)

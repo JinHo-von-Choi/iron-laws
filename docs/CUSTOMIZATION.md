@@ -15,7 +15,7 @@
 | 라이브러리 요약 | `summaries` | 외부 함수가 오염을 옮기는지(`propagate`), 경로를 정규화하는지(`normalize`) | `copy_into(src, dst)`, `FileUtils.resolveFile` |
 
 - 항목마다 `family`(command·sql·path·code·xpath·ldap·xss·redirect)를 적습니다. 싱크는 `family` 대신 `context`(shell·sql·path·code·xpath·ldap·html·url)를 적어도 됩니다.
-- 검사 함수는 `name`(호출 이름 정규식), `arg`(검사하는 인자 위치), `success`(참을 돌려주면 안전한지, 기본 true), `context`(막는 문맥)를 적습니다. 참이면 실행을 끊는 분기에서 쓰일 때, 그 분기를 통과한 값을 그 문맥에서 안전하다고 봅니다.
+- 검사 함수는 `name`(호출 이름 정규식), `arg`(검사하는 인자 위치), `success`(참을 돌려주면 안전한지, 기본 true), `context`(막는 문맥)를 적습니다. 검사에 실패하면 실행을 끊는 분기(`if not is_safe_name(n): return`)를 지난 값만 그 문맥에서 안전하다고 봅니다.
 - 전달 요약은 `summary: propagate`, `from_arg`(원본 인자), `to`(`return` 또는 인자 위치)를 적습니다.
 - 정규화 요약(`summary: normalize`)은 정제가 아닙니다. 정규화 요약을 붙인 값만으로는 지적이 사라지지 않고, 그 값을 기준 폴더와 비교하는 검사가 있을 때 정규화 근거로만 씁니다. 구분자 없는 문자열 접두사 비교라면 확인 필요까지만 낮춥니다.
 - 예제는 `positive`(지적되어야 하는 코드)와 `negative`(지적되지 않아야 하는 코드)로 줍니다. 언어가 둘 이상이면 `{python: …, java: …}`처럼 언어별로 줍니다. `expect`(기본 confirmed)는 positive가 받아야 하는 판정, `negative_expect`(기본 review)는 negative가 받을 수 있는 가장 강한 판정입니다. `positive_line`을 주면 그 줄에 지적이 있어야 합니다.
@@ -98,11 +98,15 @@ tenancy:
   tables: [payout, settlement]                # 소속 격리 대상 테이블. 비우면 DDL·매퍼 조건에서 keys 열이 있는 테이블
 ```
 
-소속 조건에 요청 값을 넣더라도, 호출 앞에서 그 값을 `principal` 식과 비교해 다르면 예외를 던지거나 반환하면 통과로 봅니다(예: `if (!mid.equals(getLoginUser().getMid())) throw …`). 본문에서 그렇게 비교하는 프로젝트 함수(예: `if (!auth.isOwnedMerchant(mid)) throw …`)도 같습니다. `iron-laws tenancy` 표에서는 값 출처가 `checked`로 나옵니다.
-
 - MyBatis 매퍼 문장의 WHERE에 소속 열이 없거나, 그 열에 요청 값을 바인딩하면 지적합니다. 동적 절(`<if>` 등) 안에만 있는 조건과 값의 출처를 정할 수 없는 경우는 확인 필요로 냅니다.
 - `iron-laws tenancy .`로 매퍼 호출별 판정 표를 보고, `audit --format json`의 `metadata.tenancy`에도 같은 표가 들어갑니다.
 - `spec draft`의 `config_hints`에 로그인 사용자의 소속을 읽는 호출식(`tenancy.principal` 후보)이 나옵니다.
+
+요청 값을 바인딩해도, 매퍼를 부르기 전에 그 값이 로그인 사용자의 소속과 다르면 예외를 던지거나 반환하는 분기가 있으면 통과로 봅니다. 이때 `iron-laws tenancy` 표의 값 출처는 `checked`입니다.
+
+- 직접 비교: `if (!mid.equals(getLoginUser().getMid())) throw …`
+- 확인 함수: `if (!auth.isOwnedMerchant(mid)) throw …`. 그 함수는 값이 `principal` 식과 같은지 비교한 결과를 돌려줘야 합니다.
+- `if (!mid.equals(…) && !force)`처럼 다른 조건과 `&&`로 묶인 분기는 인정하지 않습니다. `force`가 참이면 소속이 달라도 지나가기 때문입니다.
 
 ## 감사 기록 (`audit`)
 

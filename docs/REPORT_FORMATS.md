@@ -46,7 +46,7 @@
 - `scope_name`: 지적이 속한 함수 이름(구문 분석 언어)
 - `verification_grade`(1.4): 이 지적의 (규칙, 언어) 조합 검증 등급. `verified`(양성·음성 시험이 모두 있음) / `unverified`. 구문 분석 언어가 아닌 파일의 지적은 빈 값이다.
 - `rule_version`: 규칙 판정 의미의 버전. 올라가면 기준선의 기존 지적이 `review`로 바뀐다.
-- `evidence[]`: 외부 입력이 들어온 곳 → 전달 → 위험 호출(싱크)의 `role`·`file_path`·`line`·`note`. `role`은 `source`·`propagation`·`guard`(만난 검사 분기와 확인 필요 사유)·`sink`다. **코드 원문과 값은 담지 않는다.** 외부 입력 흐름을 추적하는 규칙에서만 채워지며, 확인 필요 지적에도 싱크 인자까지 실제로 이어진 대입과 검사 분기를 담는다. `source`는 싱크 인자까지 이어진 정의에서 찾은 곳이라, 찾지 못하면 비어 있을 수 있다.
+- `evidence[]`: 외부 입력이 들어온 곳 → 전달 → 위험 호출(싱크)의 `role`·`file_path`·`line`·`note`. `role`은 `source`·`propagation`·`guard`(만난 검사 분기와 확인 필요 사유)·`sink`다. **코드 원문과 값은 담지 않는다.** 외부 입력 흐름을 추적하는 규칙과 IL-534에서 채워진다. 확인 필요 지적에도 싱크 인자까지 실제로 이어진 대입과 검사 분기를 담는다. IL-534는 라우트 핸들러(`source`), 핸들러에서 도우미까지의 호출(`propagation`), 로그인 상태를 저장하는 곳(`sink`)을 담는다. `source`는 싱크 인자까지 이어진 정의에서 찾은 곳이라, 찾지 못하면 비어 있을 수 있다.
 - `baseline_status`: `new` / `existing` / `review` (기준선을 쓸 때만)
 - `approval_status`: `approved` / `needs_review` / `expired` / `revoked` / `invalid`(승인 기록의 무결성·형식 검증에 실패) / `none` (승인 기록을 쓸 때만), `approval_id`, `approval_reasons`(승인을 유지할 수 없는 이유)
 - `snippet`: 비밀값이 있을 수 있는 규칙(IL-101, IL-108, IL-111, AI-101~104)은 값을 `****`로 가린 줄이다.

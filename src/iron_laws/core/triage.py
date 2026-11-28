@@ -112,6 +112,24 @@ def handler_context(root: Path, rel: str, line: int, secrets: set[str]) -> str:
     return mask_code_secrets(redact_text(body, _with_named_secrets(body, secrets)))
 
 
+MAX_CHAIN_FUNCTIONS = 4
+
+
+def chain_context(root: Path, violation: Violation, secrets: set[str]) -> str:
+    """지적의 근거 사슬(라우트 핸들러 → 호출한 도우미 → 지적 위치)에 있는 함수들. 같은 함수는 한 번만 넣고 최대 MAX_CHAIN_FUNCTIONS개다.
+    근거 사슬이 없으면 지적 줄을 감싼 함수만 넣는다."""
+    places = [(s.file_path, s.line) for s in violation.evidence if s.role in ("source", "propagation")]
+    places.append((violation.file_path.as_posix(), violation.line_number))
+    blocks: list[tuple[str, str]] = []
+    for rel, line in places:
+        body = handler_context(root, rel, line, secrets)
+        if body and all(body != b for _, b in blocks):
+            blocks.append((rel, body))
+    if len(blocks) <= 1:
+        return blocks[0][1] if blocks else ""
+    return "\n\n".join(f"# {rel}\n{body}" for rel, body in blocks[:MAX_CHAIN_FUNCTIONS])
+
+
 def criteria_for(violation: Violation) -> str:
     """지적의 CWE에 맞는 판정 기준. 기준이 없는 규칙은 빈 글이다."""
     for cwe in _cwes(violation):
@@ -195,7 +213,7 @@ def build_prompt(report: AuditReport, root: Path, secrets: set[str], lessons: di
         if question := RULE_QUESTIONS.get(v.rule_id):
             extra.append(f"물음: {question}")
         detail = "".join(f"{line}\n" for line in extra)
-        code = handler_context(base, v.file_path.as_posix(), v.line_number, secrets) if v.rule_id in HANDLER_CONTEXT_RULES else ""
+        code = chain_context(base, v, secrets) if v.rule_id in HANDLER_CONTEXT_RULES else ""
         parts.append(f"## {i}. {v.rule_id} {v.rule_name} — {v.file_path.as_posix()}:{v.line_number}\n지적: {v.message}\n{detail}```\n{code or _window(base, v.file_path.as_posix(), v.line_number, secrets)}\n```\n")
     return "\n".join(parts), picks
 

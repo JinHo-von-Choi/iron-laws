@@ -9,7 +9,7 @@
 
 ## 취약한 의존성: `iron-laws deps`
 
-`uv.lock`, `poetry.lock`, `package-lock.json`, `pnpm-lock.yaml`, `requirements.txt`(`==`로 고정한 것)와 Maven·Gradle 매니페스트(`pom.xml`, `build.gradle`, `build.gradle.kts`, `gradle/libs.versions.toml`)에 적힌 버전이 공개 취약점 데이터베이스(OSV)의 권고에 걸리는지 봅니다. 걸리면 몇 버전 이상으로 올려야 권고가 사라지는지도 알려 줍니다. 잠금 파일이 없으면 버전을 알 수 없어 점검하지 않습니다.
+`uv.lock`, `poetry.lock`, `package-lock.json`, `pnpm-lock.yaml`, `requirements.txt`(`==`로 고정한 것)와 Maven·Gradle 매니페스트(`pom.xml`, `build.gradle`, `build.gradle.kts`, `gradle/libs.versions.toml`)에 적힌 버전이 공개 취약점 데이터베이스(OSV)의 권고에 걸리는지 봅니다. 걸리면 몇 버전 이상으로 올려야 권고가 사라지는지도 알려 줍니다. Python·Node.js 프로젝트는 잠금 파일이 없으면 설치될 버전을 알 수 없어 점검하지 않습니다.
 
 ```bash
 # 권고 목록을 한 번 받아 둡니다(에코시스템별 all.zip)

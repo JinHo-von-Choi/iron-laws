@@ -343,6 +343,51 @@ def test_triage_prompt_includes_handler(tmp_path: Path):
     assert "public String switchIn" in prompt and "물음:" in prompt
 
 
+HELPER_LOGIN = {
+    "src/main/java/app/SwitchController.java": """package app;
+import javax.servlet.http.HttpSession;
+import org.springframework.web.bind.annotation.*;
+@RestController
+public class SwitchController {
+    private final SessionHelper sessionHelper;
+    public SwitchController(SessionHelper h) { this.sessionHelper = h; }
+    @PostMapping("/switch")
+    public String switchUser(@RequestParam String id, HttpSession session) {
+        sessionHelper.loginAs(id, session);
+        return "ok";
+    }
+}
+""",
+    "src/main/java/app/SessionHelper.java": """package app;
+import javax.servlet.http.HttpSession;
+public class SessionHelper {
+    private final MemberMapper mapper;
+    public SessionHelper(MemberMapper m) { mapper = m; }
+    public void loginAs(String id, HttpSession session) {
+        session.setAttribute("loginUser", mapper.findById(id));
+    }
+}
+""",
+    "src/main/java/app/MemberMapper.java": "package app;\npublic interface MemberMapper { Object findById(String id); }\n",
+}
+
+
+def test_triage_prompt_includes_call_chain(tmp_path: Path):
+    from iron_laws.core.triage import build_prompt
+
+    root = _write(tmp_path / "chain", HELPER_LOGIN)
+    report = AuditScanner(root).scan()
+    report.violations = [v for v in report.violations if v.rule_id == "IL-534"]
+    assert [(v.file_path.as_posix(), v.line_number, v.confidence.value) for v in report.violations] == [("src/main/java/app/SessionHelper.java", 7, "REVIEW")]
+    assert [(e.role, e.file_path, e.line) for e in report.violations[0].evidence] == [
+        ("source", "src/main/java/app/SwitchController.java", 8),  # 메서드 선언은 애너테이션 줄에서 시작한다
+        ("propagation", "src/main/java/app/SwitchController.java", 10),
+        ("sink", "src/main/java/app/SessionHelper.java", 7),
+    ]
+    prompt, _picks = build_prompt(report, root, set())
+    assert "public String switchUser" in prompt and "public void loginAs" in prompt  # 라우트 핸들러와 도우미를 함께 보낸다
+
+
 def test_spec_draft_config_hints(tmp_path: Path):
     from iron_laws.core.spec_draft import build_draft
 

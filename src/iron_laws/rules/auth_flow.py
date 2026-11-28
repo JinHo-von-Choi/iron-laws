@@ -7,17 +7,18 @@
   (서비스 계층의 로그인 메서드, 2단계까지). 그 호출(또는 그 결과를 담은 변수)이 저장 위치를 감싼 if 조건에 있거나,
   저장 앞에서 실패 시 return·throw로 끝나는 if 조건에 있으면 검증된 것으로 본다.
 - 라우트 핸들러 안의 저장은 직접 판정하고, 핸들러가 요청 값을 넘기는 도우미(같은 파일·다른 파일, 2단계)의 저장은 확인 필요로 낸다.
+  지적의 evidence에 라우트 핸들러, 도우미까지의 호출, 저장 위치를 차례로 남긴다. 검토 의견 요청은 이 사슬의 함수들을 함께 보낸다.
 - login_state_judgments는 IL-526이 같은 줄의 중복 지적을 거를 때도 쓴다.
 작성자: 최진호
 작성일: 2026-11-23
 """
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from tree_sitter import Node
 
-from iron_laws.core.models import Confidence, IronLaw, Severity, Violation
+from iron_laws.core.models import Confidence, EvidenceStep, IronLaw, Severity, Violation
 from iron_laws.engine.ast_tools import (
     Call,
     enclosing_function,
@@ -59,6 +60,7 @@ class LoginJudgment:
     severity: Severity
     confidence: Confidence
     message: str
+    chain: list[EvidenceStep] = field(default_factory=list)  # 라우트 핸들러 → 도우미 호출 → 로그인 상태 저장
 
     @property
     def key(self) -> tuple[str, int]:
@@ -193,13 +195,13 @@ def guard_status(src: SourceFile, target: Node, fn: Node, value: Node | None = N
     return "none"
 
 
-def _helpers(src: SourceFile, scope: Node, depth: int = 2) -> list[tuple[SourceFile, Node, frozenset[str], Call]]:
-    """scope 안의 호출 가운데 외부 입력을 매개변수로 넘기는 프로젝트 함수 (함수 파일, 함수 노드, 오염된 매개변수, 처음 호출)"""
-    out: list[tuple[SourceFile, Node, frozenset[str], Call]] = []
-    work: list[tuple[SourceFile, Node, frozenset[str], Call | None, int]] = [(src, scope, frozenset(), None, 0)]
+def _helpers(src: SourceFile, scope: Node, depth: int = 2) -> list[tuple[SourceFile, Node, frozenset[str], tuple[tuple[SourceFile, Call], ...]]]:
+    """scope 안의 호출 가운데 외부 입력을 매개변수로 넘기는 프로젝트 함수 (함수 파일, 함수 노드, 오염된 매개변수, 핸들러에서 그 함수까지의 호출들)"""
+    out: list[tuple[SourceFile, Node, frozenset[str], tuple[tuple[SourceFile, Call], ...]]] = []
+    work: list[tuple[SourceFile, Node, frozenset[str], tuple[tuple[SourceFile, Call], ...], int]] = [(src, scope, frozenset(), (), 0)]
     seen: set[tuple[str, int]] = set()
     while work:
-        fsrc, fnode, seeds, root, level = work.pop()
+        fsrc, fnode, seeds, path, level = work.pop()
         if level >= depth:
             continue
         for call in iter_calls(fsrc):
@@ -216,9 +218,9 @@ def _helpers(src: SourceFile, scope: Node, depth: int = 2) -> list[tuple[SourceF
                 if not tainted:
                     continue
                 seen.add(key)
-                first = root or call
-                out.append((hsrc, fn.node, tainted, first))
-                work.append((hsrc, fn.node, tainted, first, level + 1))
+                here = (*path, (fsrc, call))
+                out.append((hsrc, fn.node, tainted, here))
+                work.append((hsrc, fn.node, tainted, here, level + 1))
     return out
 
 
@@ -238,6 +240,10 @@ def _judge(status: str, route_auth: str, direct: bool) -> tuple[Severity, Confid
     return Severity.HIGH, Confidence.REVIEW, "요청 값으로 조회한 사용자를 검증 없이 로그인 상태로 만드는 것으로 보입니다. 이 라우트가 로그인을 요구하는지 확인하십시오."
 
 
+def _stored(src: SourceFile, node: Node) -> EvidenceStep:
+    return EvidenceStep(role="sink", file_path=src.path.as_posix(), line=src.line_of(node), note="로그인 상태 저장")
+
+
 def login_state_judgments(project: ProjectContext) -> list[LoginJudgment]:
     cached = project.cache.get("login_judgments")
     if cached is not None:
@@ -249,15 +255,17 @@ def login_state_judgments(project: ProjectContext) -> list[LoginJudgment]:
         if src is None or route.node is None:
             continue
         scope = route.node
+        handler = EvidenceStep(role="source", file_path=route.file, line=src.line_of(scope), note=f"{route.method} {route.path} 라우트 핸들러")
         for sink, value in login_sinks(src, scope):
             if not is_tainted(src, value):
                 continue
             judged = _judge(guard_status(src, sink, scope, value), route.auth, direct=True)
             if judged is not None:
-                j = LoginJudgment(src, sink, *judged)
+                j = LoginJudgment(src, sink, *judged, chain=[handler, _stored(src, sink)])
                 found.setdefault(j.key, j)
         handler_text_before = src.text_of(scope)
-        for hsrc, fn, seeds, first in _helpers(src, scope):
+        for hsrc, fn, seeds, path in _helpers(src, scope):
+            first = path[0][1]
             for sink, value in login_sinks(hsrc, fn):
                 if not is_tainted(hsrc, value, seeds=seeds):
                     continue
@@ -267,7 +275,11 @@ def login_state_judgments(project: ProjectContext) -> list[LoginJudgment]:
                 judged = _judge(status, route.auth, direct=False)
                 if judged is not None:
                     sev, _conf, msg = judged
-                    j = LoginJudgment(hsrc, sink, sev if sev is not Severity.CRITICAL else Severity.HIGH, Confidence.REVIEW, f"{route.method} {route.path} 라우트에서 넘어온 값으로: {msg}")
+                    calls = [EvidenceStep(role="propagation", file_path=c_src.path.as_posix(), line=c.line, note=f"{c.callee} 호출") for c_src, c in path]
+                    j = LoginJudgment(
+                        hsrc, sink, sev if sev is not Severity.CRITICAL else Severity.HIGH, Confidence.REVIEW,
+                        f"{route.method} {route.path} 라우트에서 넘어온 값으로: {msg}", chain=[handler, *calls, _stored(hsrc, sink)],
+                    )
                     found.setdefault(j.key, j)
     result = sorted(found.values(), key=lambda j: j.key)
     project.cache["login_judgments"] = result
@@ -297,7 +309,12 @@ class LoginStateRule(BaseRule):
     )
 
     def check_project(self, project: ProjectContext) -> list[Violation]:
-        return [self.at_node(j.src, j.node, j.message, severity=j.severity, confidence=j.confidence) for j in login_state_judgments(project)]
+        found = []
+        for j in login_state_judgments(project):
+            v = self.at_node(j.src, j.node, j.message, severity=j.severity, confidence=j.confidence)
+            v.evidence = list(j.chain)
+            found.append(v)
+        return found
 
 
 RESET_CALL = re.compile(r"(?i)^(?:reset|clear|init|initialize)\w*(?:fail|lock|attempt|retry)\w*$|^unlock\w*$")

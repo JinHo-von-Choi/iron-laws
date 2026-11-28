@@ -18,7 +18,7 @@ from iron_laws.engine.taint import (
     is_tainted,
 )
 from iron_laws.engine.xfile_python import imports, qualified_name
-from iron_laws.rules.auth_flow import il534_active, login_state_judgments
+from iron_laws.rules.auth_flow import il534_active, login_state_judgments, verified_login_stores
 from iron_laws.rules.base import BaseRule
 from iron_laws.rules.injection_common import (
     SinkRule,
@@ -117,7 +117,8 @@ class TrustBoundaryRule(SinkRule):
     ]
 
     def check(self, src: SourceFile) -> list[Violation]:
-        # IL-534가 켜져 있으면 같은 줄을 IL-534가 더 정확히 지적할 수 있어 프로젝트 단위(check_project)에서 함께 판정한다
+        # IL-534가 켜져 있으면 같은 줄을 IL-534가 더 정확히 지적할 수 있어 프로젝트 단위(check_project)에서 함께 판정한다.
+        # 비밀번호 대조·서명 토큰 검증 뒤에 로그인 사용자를 넣는 저장도 IL-534의 판정으로 검증된 값으로 보고 내지 않는다
         if il534_active(self.config):
             return []
         return self._file_check(src)
@@ -125,7 +126,7 @@ class TrustBoundaryRule(SinkRule):
     def check_project(self, project: ProjectContext) -> list[Violation]:
         if not il534_active(self.config):
             return []
-        taken = {j.key for j in login_state_judgments(project)}
+        taken = {j.key for j in login_state_judgments(project)} | verified_login_stores(project)
         found: list[Violation] = []
         for src in project.source_files(include_tests=self.include_tests):
             found.extend(v for v in self._file_check(src) if (v.file_path.as_posix(), v.line_number) not in taken)

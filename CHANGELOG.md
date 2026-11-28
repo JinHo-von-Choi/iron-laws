@@ -26,7 +26,7 @@
 ### Changed
 - 보고서 `schema_version`을 1.9로 올린다. `metadata.routes.rows[].kind`, `metadata.tenancy`, `metadata.eol`, `execution.reference_data`, `execution.cost.counters`를 더한다. 독립 검증기는 1.9를 확인한다.
 - 설정 스키마에 절을 더해 `config_hash`가 모든 프로젝트에서 한 번 바뀐다. 기존 승인 기록은 "점검 설정이 바뀌었다"로 재검토 대상이 된다. 새 절(`auth`, `tenancy`, `audit`, `baseline`)이 든 설정 파일은 이전 버전이 읽지 못한다.
-- 판정이 바뀐 규칙의 판 번호를 올린다: IL-305(2, 사용자 열거 문구), IL-512(3, 2단계 인증 대상), IL-525(2, 관리 라우트·`@RequestMapping` 메서드·Spring 인증 근거), IL-526(3, IL-534가 지적한 줄은 내지 않음. IL-534를 끄면 그대로 낸다), IL-532(2, 로그인·인증번호 확인 라우트마다 판정. 라이브러리 수준 제한이 있으면 통과, 라우트를 복원하지 못하는 언어는 이전 방식), AI-106(2, springdoc·swagger 활성화), AI-121(3, 지원 종료 자료, 시험 파일 제외). 기준선을 쓰면 `baseline migrate`로 지문을 옮긴다.
+- 판정이 바뀐 규칙의 판 번호를 올린다: IL-305(2, 사용자 열거 문구), IL-512(3, 2단계 인증 대상), IL-525(2, 관리 라우트·`@RequestMapping` 메서드·Spring 인증 근거), IL-526(3, IL-534가 지적한 줄과, 비밀번호 대조·서명 토큰 검증 뒤에 로그인 사용자를 넣는 줄은 내지 않음. IL-534를 끄면 그대로 낸다), IL-532(2, 로그인·인증번호 확인 라우트마다 판정. 라이브러리 수준 제한이 있으면 통과, 라우트를 복원하지 못하는 언어는 이전 방식), AI-106(2, springdoc·swagger 활성화), AI-121(3, 지원 종료 자료, 시험 파일 제외). 기준선을 쓰면 `baseline migrate`로 지문을 옮긴다.
 - Spring 라우트의 인증 근거로 본문의 `Authentication`·`Principal` 낱말 대신 보안 애너테이션, `Principal`·`Authentication` 매개변수, `getAuthentication()`·`getUserPrincipal()` 호출을 본다. `@RequestMapping`의 `method` 속성을 읽어 메서드마다 라우트를 만든다.
 - 기준선 파일에 선택 키 `routes`를 더한다. `routes`가 없는 기준선도 읽으며, 이때는 공격 표면 비교를 하지 않고 진단으로 알린다.
 - `iron-laws index fetch`의 `--ecosystem`은 `--eol`을 주지 않을 때만 필요하다.

@@ -8,7 +8,7 @@
   저장 앞에서 실패 시 return·throw로 끝나는 if 조건에 있으면 검증된 것으로 본다.
 - 라우트 핸들러 안의 저장은 직접 판정하고, 핸들러가 요청 값을 넘기는 도우미(같은 파일·다른 파일, 2단계)의 저장은 확인 필요로 낸다.
   지적의 evidence에 라우트 핸들러, 도우미까지의 호출, 저장 위치를 차례로 남긴다. 검토 의견 요청은 이 사슬의 함수들을 함께 보낸다.
-- login_state_judgments는 IL-526이 같은 줄의 중복 지적을 거를 때도 쓴다.
+- login_state_judgments와 verified_login_stores는 IL-526이 같은 줄의 중복 지적과, 검증 뒤에 로그인 사용자를 넣는 저장을 거를 때도 쓴다.
 작성자: 최진호
 작성일: 2026-11-23
 """
@@ -250,6 +250,7 @@ def login_state_judgments(project: ProjectContext) -> list[LoginJudgment]:
         return cached
     by_path = {f.path.as_posix(): f for f in project.source_files()}
     found: dict[tuple[str, int], LoginJudgment] = {}
+    verified: set[tuple[str, int]] = set()
     for route in project.routes():
         src = by_path.get(route.file)
         if src is None or route.node is None:
@@ -259,7 +260,10 @@ def login_state_judgments(project: ProjectContext) -> list[LoginJudgment]:
         for sink, value in login_sinks(src, scope):
             if not is_tainted(src, value):
                 continue
-            judged = _judge(guard_status(src, sink, scope, value), route.auth, direct=True)
+            status = guard_status(src, sink, scope, value)
+            if status == "checked":
+                verified.add((src.path.as_posix(), src.line_of(sink)))
+            judged = _judge(status, route.auth, direct=True)
             if judged is not None:
                 j = LoginJudgment(src, sink, *judged, chain=[handler, _stored(src, sink)])
                 found.setdefault(j.key, j)
@@ -272,6 +276,8 @@ def login_state_judgments(project: ProjectContext) -> list[LoginJudgment]:
                 status = guard_status(hsrc, sink, fn, value)
                 if status in ("none", "token") and CREDENTIAL_CHECK.search(handler_text_before[: first.node.start_byte - scope.start_byte]):
                     status = "checked"
+                if status == "checked":
+                    verified.add((hsrc.path.as_posix(), hsrc.line_of(sink)))
                 judged = _judge(status, route.auth, direct=False)
                 if judged is not None:
                     sev, _conf, msg = judged
@@ -283,7 +289,14 @@ def login_state_judgments(project: ProjectContext) -> list[LoginJudgment]:
                     found.setdefault(j.key, j)
     result = sorted(found.values(), key=lambda j: j.key)
     project.cache["login_judgments"] = result
+    project.cache["login_verified"] = verified - set(found)
     return result
+
+
+def verified_login_stores(project: ProjectContext) -> set[tuple[str, int]]:
+    """비밀번호 대조·서명 토큰 검증에 묶인 로그인 상태 저장 위치 (파일, 줄). IL-526이 이 줄을 검증 없는 저장으로 내지 않을 때 쓴다"""
+    login_state_judgments(project)
+    return project.cache["login_verified"]
 
 
 def il534_active(config) -> bool:

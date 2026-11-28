@@ -176,7 +176,11 @@ public class MemberService {
 
 def test_service_layer_password_check(tmp_path: Path):
     root = _write(tmp_path / "svc", SERVICE_LOGIN)
-    assert lines_of(AuditScanner(root).scan().violations, "IL-534") == []
+    violations = AuditScanner(root).scan().violations
+    assert lines_of(violations, "IL-534") == []
+    assert lines_of(violations, "IL-526") == []  # 비밀번호를 확인한 뒤 넣는 로그인 사용자는 검증 없는 입력이 아니다
+    root_alone = _write(tmp_path / "svc_alone", {**SERVICE_LOGIN, ".iron-laws.yml": "enabled_rules: [IL-526]\n"})
+    assert lines_of(AuditScanner(root_alone).scan().violations, "IL-526") == [12]  # IL-534를 끄면 IL-526은 예전처럼 낸다
     service = root / "src/main/java/app/MemberService.java"
     service.write_text(service.read_text(encoding="utf-8").replace(" || !encoder.matches(pw, m.getPassword())", ""), encoding="utf-8")
     violations = [v for v in AuditScanner(root).scan().violations if v.rule_id == "IL-534"]

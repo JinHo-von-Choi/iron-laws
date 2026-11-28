@@ -7,7 +7,10 @@ iron-laws architecture .                          # 진단과 단계별 개선�
 iron-laws architecture . --format prompt          # 먼저 풀 문제 한 단계를 코딩 AI 지시문으로
 iron-laws architecture . --format json -o now.json
 iron-laws architecture . --compare before.json    # 이전 진단과 지표 비교
+iron-laws architecture . --trend                  # 기록을 남기고 직전 기록보다 나빠진 곳과 먼저 볼 파일 3개
 ```
+
+`--trend`는 점검할 때마다 지표 상태와 계열별 지적 수를 `.iron-laws-health.jsonl`에 한 줄 남깁니다. 같은 브랜치의 직전 기록과 비교해 나빠진 지표와 늘어난 지적을 보여 주고, 자주 바뀌면서 지적이 있는 파일 상위 3개를 먼저 볼 곳으로 냅니다. 점수 하나로 합치지 않고 지표마다 상태를 비교합니다. 기록에는 시각, 브랜치, 커밋, 규칙 집합 지문, 지표 상태, 지적 수만 남기며 코드와 파일 경로는 남기지 않습니다.
 
 ## 구조 틀 (`init --stack`)
 

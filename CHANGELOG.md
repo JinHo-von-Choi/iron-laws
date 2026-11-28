@@ -10,6 +10,7 @@
 - `iron-laws init --stage <단계>`, `iron-laws stage preview <단계>`(단계를 바꾸면 새로 막히는 지적과 더는 막지 않는 지적). `init`은 터미널에서 실행하고 `--stage`를 주지 않았을 때만 단계를 묻는다.
 - 단계가 있으면 `fix-prompt`와 콘솔의 "먼저 할 일"이 그 단계에서 막는 지적을 앞에 둔다. 에이전트 훅과 `guidelines export/check`(`--stage`)도 같은 판정을 쓴다. 훅은 설정에서 단계를 낮추는 변경을 정책 완화로 알린다.
 - 운영 기본기 규칙(웹 라우트가 있는 프로젝트만): OPS-101(CI가 시험을 돌리지 않음), OPS-102(DB를 쓰는데 마이그레이션 기록 없음), OPS-103(컨테이너 배포에 상태 확인 주소·HEALTHCHECK 없음). 모두 확인 필요이며, launch 단계에서 OPS-101·102를, production 단계에서 OPS-103을 막는다.
+- `architecture --trend`: 지표 상태와 계열별 지적 수를 `.iron-laws-health.jsonl`에 남기고, 같은 브랜치의 직전 기록보다 나빠진 지표와 자주 바뀌면서 지적이 있는 파일 상위 3개를 보여 준다. 기록에는 코드와 경로를 남기지 않는다.
 - `architecture` 진단에 운영 준비도 표(`ops_readiness`)를 더한다. OPS 규칙과 AI-111·AI-104·ARC-206의 결과를 항목별 상태(지적 있음·점검함·해당 없음)로 모은다. 기존 지표와 `--compare`는 그대로다.
 - `iron-laws init --vibe`: 처음 쓰는 사람을 위해 설정 파일 만들기, 구조 틀 안내, 코딩 에이전트 훅 연결 안내, 첫 점검과 먼저 고칠 것 3개를 차례로 보여 준다. 이미 있는 설정은 그대로 쓴다.
 - `iron-laws init --stack nextjs|fastapi|auto [--write]`: 스택별 구조 틀(구조 계약, `AGENTS.md`·`CLAUDE.md`의 프로젝트 구조 절, 폴더)을 미리 보거나 만든다. 기존 파일은 덮어쓰지 않고, 지침 파일에는 표시 주석으로 감싼 절만 넣는다. 이미 코드가 있으면 계약에 어긋나는 import 수와 먼저 고칠 곳 하나를 보여 준다.

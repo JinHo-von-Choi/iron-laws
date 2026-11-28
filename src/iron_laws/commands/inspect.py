@@ -26,6 +26,7 @@ def architecture_command(
     fmt: str = typer.Option("markdown", "--format", help="markdown, json, prompt(먼저 풀 문제 한 단계를 코딩 AI 지시문으로)"),
     compare: Path | None = typer.Option(None, "--compare", help="이전 진단(JSON) 파일. 지표가 나아졌는지 비교합니다"),
     output: Path | None = typer.Option(None, "--output", "-o", help="저장 파일"),
+    trend: bool = typer.Option(False, "--trend", help="지표 상태와 지적 수를 .iron-laws-health.jsonl에 남기고, 같은 브랜치의 직전 기록보다 나빠진 곳과 먼저 볼 파일을 보여 줍니다(markdown)"),
 ):
     """
     프로젝트 전체의 구조 상태(양호·주의·붕괴)와 먼저 풀 문제, 단계별 개선안을 보여 줍니다. 종료코드: 0 진단함, 2 입력 오류.
@@ -49,6 +50,11 @@ def architecture_command(
     text = {"markdown": diagnose.markdown, "json": lambda d: json.dumps(d, ensure_ascii=False, indent=2), "prompt": diagnose.prompt}[fmt](data)
     if fmt == "markdown":
         text += "\n\n" + markdown_section(data["ops_readiness"])
+        if trend:
+            from iron_laws.architecture import trend as health
+            from iron_laws.core.scanner import AuditScanner
+
+            text += "\n\n" + health.markdown(path.resolve() if path.is_dir() else path.resolve().parent, data, AuditScanner(path, config=loaded).scan())
     if previous is not None:
         text += "\n\n## 이전 진단과 비교\n\n" + "\n".join(diagnose.compare(previous, data)) if fmt == "markdown" else ""
     _write_or_print(text, output, "구조 진단")

@@ -1137,6 +1137,52 @@
    "positive": 2
   }
  },
+ "OPS-101": {
+  "javascript": {
+   "negative": 0,
+   "positive": 1
+  },
+  "kind:actions": {
+   "negative": 1,
+   "positive": 1
+  },
+  "python": {
+   "negative": 3,
+   "positive": 1
+  }
+ },
+ "OPS-102": {
+  "javascript": {
+   "negative": 0,
+   "positive": 1
+  },
+  "python": {
+   "negative": 2,
+   "positive": 1
+  }
+ },
+ "OPS-103": {
+  "javascript": {
+   "negative": 1,
+   "positive": 0
+  },
+  "kind:compose": {
+   "negative": 2,
+   "positive": 0
+  },
+  "kind:docker": {
+   "negative": 3,
+   "positive": 3
+  },
+  "kind:yaml": {
+   "negative": 1,
+   "positive": 0
+  },
+  "python": {
+   "negative": 6,
+   "positive": 0
+  }
+ },
  "PERF-101": {
   "python": {
    "negative": 5,

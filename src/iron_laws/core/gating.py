@@ -3,8 +3,8 @@
 
 - stage가 없으면 지금처럼 fail_on 이상 심각도의 지적이 막는다.
 - prototype: 비밀값 노출 규칙과 확정 CRITICAL 지적만 막는다.
-- launch: 위에 더해 인증 없는 관리 기능(IL-525)과, 보안 계열 규칙의 확정 지적 가운데 fail_on 이상 심각도를 막는다.
-- production: 위에 더해 모든 규칙의 fail_on 이상 지적과 구조 계약 위반(ARC-207)을 막는다.
+- launch: 위에 더해 인증 없는 관리 기능(IL-525), CI 시험(OPS-101), DB 마이그레이션(OPS-102), 보안 계열 규칙의 확정 지적 가운데 fail_on 이상 심각도를 막는다.
+- production: 위에 더해 모든 규칙의 fail_on 이상 지적, 구조 계약 위반(ARC-207), 컨테이너 상태 확인(OPS-103)을 막는다.
 정책은 보고서 metadata.stage_policy에 그대로 적어, 독립 검증기가 엔진 코드 없이 같은 판정을 다시 계산할 수 있게 한다.
 작성자: 최진호
 작성일: 2026-11-28
@@ -12,8 +12,8 @@
 
 STAGES = ("prototype", "launch", "production")
 SECRET_RULES = ("AI-102", "AI-103", "AI-104", "IL-101")
-LAUNCH_RULES = ("IL-525",)
-PRODUCTION_RULES = ("ARC-207",)
+LAUNCH_RULES = ("IL-525", "OPS-101", "OPS-102")
+PRODUCTION_RULES = ("ARC-207", "OPS-103")
 SECURITY_LAYERS = ("AI_ATTACK", "AI_CODE", "STANDARD")
 SEVERITY_RANK = {"LOW": 0, "MEDIUM": 1, "HIGH": 2, "CRITICAL": 3}
 STAGE_QUESTIONS = {

@@ -254,6 +254,21 @@ Python 위험 모듈의 별칭(`import os as o`), 가져온 이름(`from os impo
 - JavaScript의 SQL 위험 호출 이름(`get`·`all`·`run`·`query`)은 라우터·HTTP·설정 객체에도 있어서, Python 밖의 언어에서는 DB 객체에서 부른 호출과 SQL 실행에만 쓰는 이름만 SQL 지점으로 센다. 이 제한 전 juice-shop의 SQL 지점은 501곳이었고 대부분 `config.get`·`app.get`·`this.http.get`이었다. 제한 뒤 22곳이다.
 - 정규식 검색도 놓치는 형태가 있으므로 "장부에 없는 곳 0"은 이 정규식 기준이다.
 
+### 5.8 운영 기본기 규칙(OPS)
+
+실측 순환의 고정 커밋 프로젝트 4개에서 OPS 규칙의 판정을 사람이 확인했다.
+
+| 프로젝트 | OPS-101 CI 시험 | OPS-102 마이그레이션 | OPS-103 상태 확인 |
+|---|---|---|---|
+| WebGoat | 지적 없음(CI가 빌드·시험) | 지적 없음(Flyway) | 지적 없음(Spring Boot Actuator) |
+| NodeGoat | 지적 없음 | 지적 없음 | 지적: Dockerfile에 HEALTHCHECK·상태 확인 주소 없음(맞음) |
+| juice-shop | 지적 없음 | 지적: sequelize를 쓰는데 마이그레이션 없음(맞음) | 지적: 앱 서비스에 상태 확인 없음(맞음) |
+| spring-petclinic | 지적 없음 | 지적: JPA를 쓰고 `schema.sql` 초기화 스크립트만 있음(규칙 정의대로 맞음) | 지적 없음(앱을 빌드하는 Dockerfile 없음) |
+
+지적 4건은 모두 규칙의 정의에 맞았다. 표본이 4개라 정밀도를 수치로 내지 않는다.
+
+- 상태 확인 근거는 그 근거가 의미 있는 파일에서만 인정한다. Dockerfile의 `HEALTHCHECK`, compose에서 이 저장소를 빌드하는 서비스(`build:`가 있는 서비스)의 `healthcheck`, Kubernetes 워크로드의 프로브, 빌드 파일의 Actuator 의존성이다. juice-shop의 compose에 있는 redis·mongo의 healthcheck와 예제 YAML의 healthcheck는 앱의 근거로 보지 않는다.
+
 ## 6. 다른 언어의 공개 벤치마크와 도구 비교
 
 ### 6.1 OWASP Benchmark for Python 0.1

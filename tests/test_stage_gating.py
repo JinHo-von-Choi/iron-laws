@@ -103,3 +103,21 @@ def test_lowering_stage_is_reported_as_weakening(tmp_path: Path):
     git("commit", "-qm", "c")
     config.write_text("stage: prototype\n", encoding="utf-8")
     assert any("단계를 production에서 prototype로 낮췄습니다" in n for n in policy_changes(config, tmp_path))
+
+
+def test_launch_blocks_missing_ci_and_readiness_table(tmp_path: Path):
+    from iron_laws.architecture.ops import readiness
+
+    root = tmp_path / "svc"
+    root.mkdir()
+    (root / "app.py").write_text("from flask import Flask\napp = Flask(__name__)\n\n@app.route('/items')\ndef items():\n    return 'x'\n", encoding="utf-8")
+    (root / ".iron-laws.yml").write_text("stage: prototype\n", encoding="utf-8")
+    assert AuditScanner(root).scan().summary.is_passed  # OPS-101(LOW)은 prototype에서 막지 않는다
+    (root / ".iron-laws.yml").write_text("stage: launch\n", encoding="utf-8")
+    assert not AuditScanner(root).scan().summary.is_passed
+    states = {r["rule_id"]: r["state"] for r in readiness(root)}
+    assert states["OPS-101"] == "지적 있음" and states["OPS-102"] == "점검함·지적 없음"
+    cli = tmp_path / "cli"
+    cli.mkdir()
+    (cli / "main.py").write_text("import sys\nprint(sys.argv)\n", encoding="utf-8")
+    assert {r["rule_id"]: r["state"] for r in readiness(cli)}["OPS-101"] == "해당 없음(웹 라우트 없음)"

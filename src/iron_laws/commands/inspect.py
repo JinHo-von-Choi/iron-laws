@@ -33,6 +33,7 @@ def architecture_command(
     """
     from iron_laws.architecture import diagnose
     from iron_laws.architecture.metrics import collect
+    from iron_laws.architecture.ops import markdown_section, readiness
 
     if fmt not in ("markdown", "json", "prompt"):
         err.print("[bold red]--format은 markdown·json·prompt 중 하나여야 합니다.[/bold red]")
@@ -40,11 +41,14 @@ def architecture_command(
     try:
         loaded = load_config(path, config)[0] if config is not None else None
         data = diagnose.evaluate(collect(path, loaded))
+        data["ops_readiness"] = readiness(path, loaded)
         previous = json.loads(compare.read_text(encoding="utf-8")) if compare is not None else None
     except (ConfigError, OSError, ValueError) as e:
         err.print(f"[bold red]입력 오류: {escape(str(e))}[/bold red]")
         raise typer.Exit(2) from e
     text = {"markdown": diagnose.markdown, "json": lambda d: json.dumps(d, ensure_ascii=False, indent=2), "prompt": diagnose.prompt}[fmt](data)
+    if fmt == "markdown":
+        text += "\n\n" + markdown_section(data["ops_readiness"])
     if previous is not None:
         text += "\n\n## 이전 진단과 비교\n\n" + "\n".join(diagnose.compare(previous, data)) if fmt == "markdown" else ""
     _write_or_print(text, output, "구조 진단")

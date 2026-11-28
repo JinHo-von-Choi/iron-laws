@@ -32,6 +32,7 @@ class RuleLayer(StrEnum):
     ARCHITECTURE = "ARCHITECTURE"  # 구조 건전성 점검 오철칙 자체 규칙
     AI_ATTACK = "AI_ATTACK"  # AI 에이전트·LLM 앱·AI 코딩 도구를 겨냥한 공격면 점검 오철칙 자체 규칙(OWASP GenAI 참조)
     PERFORMANCE = "PERFORMANCE"  # 데이터가 늘면 급격히 느려지는 코드 점검 오철칙 자체 규칙
+    OPERATIONS = "OPERATIONS"  # 웹 서비스 운영 기본기(CI 시험, 마이그레이션, 상태 확인) 점검 오철칙 자체 규칙
 
 
 class Confidence(StrEnum):

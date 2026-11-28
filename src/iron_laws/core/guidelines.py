@@ -18,7 +18,7 @@ from iron_laws.core.support_matrix import build_support_matrix
 from iron_laws.rules.base import BaseRule
 
 SEVERITY_ORDER = [Severity.LOW, Severity.MEDIUM, Severity.HIGH, Severity.CRITICAL]
-RULE_ID_RE = re.compile(r"\b(?:AIA|AI|ARC|IL|PERF|TYP)-\d{3}\b")
+RULE_ID_RE = re.compile(r"\b(?:AIA|AI|ARC|IL|OPS|PERF|TYP)-\d{3}\b")
 DIRECTIVE_RE = re.compile(
     r"(?i)\b(?:must|never|do not|don't|always|avoid|prefer|should|shall|required?|prohibit(?:ed)?|forbid(?:den)?)\b"
     r"|금지|지 ?않|지 ?말|말 ?것|반드시|항상|절대|안 ?된다|않도록"

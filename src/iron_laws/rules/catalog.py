@@ -23,6 +23,7 @@ FAMILY_ORDER: tuple[str, ...] = (
     "ai_agent_surface",
     "architecture",
     "performance",
+    "operations",
     "typing_rules",
     "review_rules",
 )

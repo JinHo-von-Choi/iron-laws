@@ -28,10 +28,7 @@ Claude Code는 [플러그인](#claude-code-플러그인으로-한-번에-설치)
 | Codex CLI | [ci/codex-hooks.json](ci/codex-hooks.json)을 `.codex/hooks.json`에 둡니다 | 편집·종료는 종료코드 2와 표준 오류, 시작은 표준 출력 글. `apply_patch`의 패치 본문에서 바뀐 파일을 읽습니다 |
 | Cursor | [ci/cursor-hooks.json](ci/cursor-hooks.json)을 `.cursor/hooks.json`에 둡니다 | `afterFileEdit`는 응답을 전달할 수 없어 편집한 파일만 기록합니다. `stop`은 `followup_message`로, `sessionStart`는 `additional_context`로 알립니다 |
 
-확인 범위는 다음과 같습니다.
-
-- Claude Code 2.1.296에서 편집 훅을 시험했습니다.
-- Codex와 Cursor는 각 도구의 공식 훅 문서에 맞춰 구현하고 고정 입력 샘플로 시험했습니다. 실제 프로그램에서 실행해 보지는 않았습니다.
+- Claude Code 훅은 2.1.296에서 동작을 확인했습니다. Codex·Cursor 훅은 각 도구의 공식 훅 문서와 고정 입력 샘플로만 시험했고, 실제 프로그램에서는 실행하지 않았습니다.
 - 편집한 파일 목록은 사용자 임시 폴더에 세션별로 기록하고, 프로젝트 폴더에는 아무것도 쓰지 않습니다.
 
 ### 정책·지침 파일 보호

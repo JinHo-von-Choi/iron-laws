@@ -100,6 +100,7 @@ Codex·Cursor 설정과 MCP 서버는 [에이전트 연결](docs/AGENT_INTEGRATI
 |---|---|
 | 행안부 49개 항목 | SQL·명령어·경로 삽입, XSS, SSRF, 하드코딩된 비밀, 취약 암호, 오류 처리 등 |
 | AI 코드 보정 | 노출된 비밀, 커밋된 `.env`, Supabase·Firebase 접근 규칙, 의존성 오타, 남의 데이터 접근 |
+| 인증 흐름·소속 경계 | 검증 없이 로그인 상태를 만드는 코드, 로그인 시도 제한, 세션 정책, 가맹점·고객사 소속 조건이 빠진 조회, 지원이 끝난 제품 |
 | 구조 | 큰 함수·파일, 계층 위반, 순환 의존, 중복 함수 |
 | AI 에이전트 공격면 | 규칙 파일에 숨긴 지시, MCP 설정의 위험, LLM 응답을 검증 없이 실행하는 코드 |
 | 성능, 타입 안전성 | 반복 안의 DB 조회, `any`와 `type: ignore` |
@@ -114,7 +115,7 @@ Python, JavaScript/TypeScript, Java, C#, Go, PHP는 입력이 어디서 어디�
 | [에이전트 연결](docs/AGENT_INTEGRATION.md) | 훅, MCP 서버, 플러그인, 지침 파일 |
 | [의존성 점검](docs/DEPENDENCIES.md) | 취약한 의존성, SBOM, 존재하지 않는 패키지 이름 |
 | [구조 진단](docs/ARCHITECTURE.md) | 구조 지표, 계층 계약 |
-| [프로젝트에 맞추기](docs/CUSTOMIZATION.md) | 사내 함수를 알려 주는 사용자 명세, 교훈 기록 |
+| [프로젝트에 맞추기](docs/CUSTOMIZATION.md) | 사내 함수를 알려 주는 사용자 명세, 로그인 검사·소속 경계·감사 기록 설정, 교훈 기록 |
 | [점검 영역과 한계](docs/RULES.md) | 규칙 분류, 지원 언어, 알려진 한계 |
 | [패치 검증과 승인 기록](docs/PATCH_VERIFICATION.md) | AI 수정본 검증, 회귀시험, 승인 |
 | [보고서 모순 검사](docs/EVIDENCE_VERIFICATION.md) | 보고서가 서로 맞는지 확인하는 항목 |

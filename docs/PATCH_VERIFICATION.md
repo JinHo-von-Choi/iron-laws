@@ -270,7 +270,7 @@ uv run python benchmarks/plan_experiments_v13.py    # 6.2
 ### 6.3 확인하지 못한 것
 
 - 전문가가 분류한 독립 표본
-- 여러 팀이 참여한 시범 운영(목표: 총 작업 시간 중앙값 20% 감소, 75백분위 악화 없음, 확인된 잘못된 승인 0, 설치 30분 이내)
+- 여러 팀이 참여한 시범 운영
 - Windows·macOS에서의 격리 실행, microVM 수준의 격리
 - Python 외 언어의 계약·근거 장부·회귀시험
 - 자동 patch 생성과 PR 게시

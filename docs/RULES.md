@@ -23,7 +23,7 @@
 
 | 수준 | 언어 | 하는 일 |
 |---|---|---|
-| 깊게 | Python, JavaScript/TypeScript, Java, C#, Go, PHP | 구문 분석, 외부 입력 추적(if·반복 갈래를 합친 판정, 객체 필드 한 단계, 같은 파일의 도우미 함수), 전체 규칙. 다른 파일의 함수까지 추적하는 언어는 Python(import한 함수, 지역 객체의 메서드), JavaScript/TypeScript, Java(static 메서드·주입 필드·지역 객체의 메서드), Go(같은 패키지·import), PHP(require·static)입니다. C#은 파일 안에서만 추적합니다 |
+| 깊게 | Python, JavaScript/TypeScript, Java, C#, Go, PHP | 구문 분석, 외부 입력 추적(if·반복 갈래를 합친 판정, 객체 필드 한 단계, 도우미 함수), 전체 규칙. C#은 파일 안에서만, 나머지는 다른 파일의 함수까지 추적합니다(아래 한계) |
 | 기본 | Kotlin | 구문 분석, Spring `@RequestParam`·Ktor `call.parameters` 입력에서 명령 실행·SQL 같은 위험 호출까지 추적 |
 | 제한 | Rust, C/C++ | 오류 처리, 메모리·포맷 문자열·위험 API, 타입 우회 |
 | 설정·정의 파일 | SQL, YAML, JSON, `.env`, Dockerfile, Compose, GitHub Actions, XML(MyBatis), HTML 템플릿 | 비밀, 접근 규칙(RLS·Firebase), 배포 설정, 템플릿 이스케이프 |
@@ -60,6 +60,6 @@
 ### 정확도
 
 - 통과 결과만으로 배포를 승인하지 마십시오. 기존 테스트, 코드 검토, 다른 보안 점검과 함께 쓰는 보조 도구입니다.
-- OWASP Benchmark(Java)의 확정 지적 점수는 SQL 삽입 +75.0%, 경로 조작 +88.7%, XSS +83.7%, 명령어 삽입 +50.8%입니다. 확정 지적의 오탐률은 XSS 5.7%와 취약 암호 23.3%를 빼면 0%입니다. 명령어 삽입은 취약 사례의 절반을 놓칩니다.
+- OWASP Benchmark(Java)에서는 쿠키 보안 속성과 예측 가능한 난수를 뺀 모든 분류에서 확정 지적의 탐지율이 100%, 오탐률이 0%입니다. 개발에 쓴 벤치마크라 실제 프로젝트의 정확도와는 다릅니다.
 - 실제 오픈소스 CVE(CWE-Bench-Java)에서는 경로 조작 취약점의 27.5%를 확정 지적으로 잡았습니다. 명령 삽입·XSS·코드 삽입은 확정으로 잡은 사례가 없습니다([ACCURACY.md](ACCURACY.md)).
 - 측정 방법과 전체 수치는 [ACCURACY.md](ACCURACY.md)에 있습니다.

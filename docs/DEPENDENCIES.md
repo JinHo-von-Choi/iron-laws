@@ -13,9 +13,10 @@
 
 ```bash
 # 권고 목록을 한 번 받아 둡니다(에코시스템별 all.zip)
-mkdir -p osv/PyPI osv/npm
-curl -o osv/PyPI/all.zip https://osv-vulnerabilities.storage.googleapis.com/PyPI/all.zip
-curl -o osv/npm/all.zip  https://osv-vulnerabilities.storage.googleapis.com/npm/all.zip
+mkdir -p osv/PyPI osv/npm osv/Maven
+curl -o osv/PyPI/all.zip  https://osv-vulnerabilities.storage.googleapis.com/PyPI/all.zip
+curl -o osv/npm/all.zip   https://osv-vulnerabilities.storage.googleapis.com/npm/all.zip
+curl -o osv/Maven/all.zip https://osv-vulnerabilities.storage.googleapis.com/Maven/all.zip
 
 iron-laws deps . --advisory-db osv                 # 마크다운 보고서
 iron-laws deps . --advisory-db osv --format prompt # 코딩 AI에 붙여 넣을 업그레이드 지시문
@@ -24,7 +25,7 @@ iron-laws deps . --advisory-db osv --fail-on high  # HIGH 이상 권고가 있�
 
 - 점검 중에는 네트워크를 쓰지 않고, 코드나 의존성 목록을 어디로도 보내지 않습니다. 권고 목록은 직접 받아 둔 파일을 씁니다.
 - 안내하는 버전은 권고가 "이 버전에서 고쳤다"고 적은 버전입니다. 앱과 호환된다는 보증은 아니니 올린 뒤 테스트를 돌리십시오. 직접 의존인지, 간접 의존이면 어느 패키지가 끌어오는지도 보여 줍니다.
-- Maven·Gradle은 잠금 파일이 없어 직접 의존성만 봅니다. 전이 의존성은 확인하지 않았다고 보고서에 적고, BOM·플러그인이 버전을 관리해 버전을 정하지 못한 의존성은 건너뛴 수를 적습니다. Maven 권고 목록은 `osv/Maven/all.zip`으로 받아 둡니다.
+- Maven·Gradle은 잠금 파일이 없어 직접 의존성만 봅니다. 전이 의존성은 확인하지 않았다고 보고서에 적고, BOM·플러그인이 버전을 관리해 버전을 정하지 못한 의존성은 건너뛴 수를 적습니다.
 - `--reachability`를 붙이면, 권고가 영향받는 함수를 알려 줄 때 코드가 그 함수를 부르는지 봅니다.
 
   | 결과 | 뜻 |
